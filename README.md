@@ -45,7 +45,7 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 
 ## Windows build
 
-`scripts\arcanist.ps1 Build` writes `build/windows/ProjectArcanist.exe` as a self-contained debug export. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly.
+`scripts\arcanist.ps1 Build` writes `build/windows-p4/ProjectArcanist.exe` as a self-contained debug export. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly. The Prompt 4 output folder allows a fresh build while another game session still holds the earlier `build/windows/ProjectArcanist.exe` open.
 
 ## Android setup and export
 
@@ -57,15 +57,15 @@ For a fresh Windows checkout:
 2. Run `scripts\arcanist.ps1 SetupAndroid`. This downloads Temurin JDK 17 and Google's command-line tools, installs the SDK packages required by Godot 4.7, accepts those SDK package licenses, creates the local debug key, and configures the ignored project-local Godot profile. It does not configure machine-global Java or Android settings.
 3. Run `scripts\arcanist.ps1 Android` to export `build/android/ProjectArcanist.apk`, inspect the package name and app label, and verify its debug signature.
 
-The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Android Platform 35, command-line tools, CMake 3.10.2.4988404 and NDK 28.1.13356709. Godot's current requirements are listed in its [Android export guide](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_android.html). `BuildAll` runs all test suites, exports Windows, then exports and inspects the Android APK. Generated SDK, JDK, keystore, Godot profile and build files stay ignored by Git.
+The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Android Platform 35, command-line tools, CMake 3.10.2.4988404 and NDK 28.1.13356709. Godot's 4.7.2 Android template emits an APK with compile/target API 36; the local exporter reports its documented Build Tools fallback to 35.0.1. The resulting APK is signed, package-inspected and installed/launched in the Android emulator. Godot's export requirements are listed in its [Android export guide](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_android.html). `BuildAll` runs all test suites, exports Windows, then exports and inspects the Android APK. Generated SDK, JDK, keystore, Godot profile and build files stay ignored by Git.
 
 ## Verification and visual QA
 
-`scripts\arcanist.ps1 Test` runs 55 simulation checks, 18 production-flow checks, 17 mobile acceptance checks, 44 progression/inventory checks, and 6 balance checks (140 total). The balance suite samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Mobile checks compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum 54-logical-pixel touch regions.
+`scripts\arcanist.ps1 Test` runs 55 simulation checks, 18 production-flow checks, 17 mobile acceptance checks, 44 progression/inventory checks, 40 playtest regression checks, and 6 balance checks (180 total). The balance suite samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Playtest regressions cover one-choice rewards, generic spellbooks, Command feedback, canonical creature glyphs and targeting cancellation.
 
-`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, scrolled web, targeting, route, reward and pause views. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
+`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, a panned ability branch, action palette, spellbook inventory and Codex, targeting, route, reward and pause views. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel and action tray while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
 
-The Prompt 2 build was physically tested by the user. This updated Prompt 3 APK has not been installed on a physical phone by Codex; verify touch feel, physical text size, performance/heat, system Back, suspend/resume and the specific device's cutout behavior after installing this build.
+The Prompt 2 build was physically tested by the user. The current Prompt 4 APK was installed and launched in the Android emulator; a touchscreen tap entered a run, weapon targeting was activated, and Android Back cancelled targeting before opening Pause. Codex did not use a physical handset for this build. Verify physical touch feel, text size, performance/heat, suspend/resume and the specific device's cutout behavior after installing it.
 
 ## Content editing
 

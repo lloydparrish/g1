@@ -54,7 +54,7 @@ func run_suite() -> void:
 	_check(not hidden_graph.any(func(node: Dictionary) -> bool: return String(node.school) == "Demonology"), "Demonology is absent before a discovery source is found")
 	hidden.run.inventory.append("lesser_key_of_ash")
 	var book_index: int = hidden.run.inventory.find("lesser_key_of_ash")
-	_check(hidden.study_spellbook(book_index, 0), "spellbook can be studied through its shared simulation command")
+	_check(hidden.study_spellbook(book_index, [0]), "spellbook choice is resolved through its shared simulation command")
 	var revealed_graph: Array = hidden.get_progression_graph()
 	_check(hidden.run.schools.has("Demonology") and revealed_graph.any(func(node: Dictionary) -> bool: return node.id == "hellfire_pact"), "book discovery unlocks its school and reveals inspectable contents")
 	_check(hidden.run.discoveries.has("spellbook:lesser_key_of_ash"), "specific spellbook provenance persists as a discovery flag")

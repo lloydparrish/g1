@@ -390,3 +390,12 @@ There are exactly three major implementation phases before judging the baseline 
 3. Prompt 3 — Buildcraft & Content: expand the working game into the intended ability/school/discipline/artifact/environment ecosystem, then balance and polish it for both supported platforms.
 
 Later prompts may expand content, but must preserve the shared deterministic simulation and continue checking both platforms.
+
+## Playtest interaction regressions
+
+- Each reward resolution accepts and saves exactly one selected reward. Other choices become unavailable after the claim.
+- Spellbook learning is defined per book and supports teaching all listed abilities, selecting an exact number, or revealing a school. Inspectable book contents remain in the Codex after study or consumption.
+- The same target action selected again cancels targeting; another action replaces the current target mode. Cancel, Escape and Android Back use the same target-cancellation route before closing broader UI.
+- Command communicates occupied summon capacity. It is not spent like Mana; failure feedback identifies the resource that blocked the action or the full Command capacity.
+- Battlefield, timeline and inspection use the same simulation-owned entity presentation, including canonical creature glyphs.
+- Every playable ability must have a non-empty authored description in data. Content validation checks these descriptions and spellbook references.

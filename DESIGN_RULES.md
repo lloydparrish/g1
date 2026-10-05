@@ -22,6 +22,7 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Keep ordinary inventory as a compact 6×5 item grid with selected-item details and contextual actions; equipment belongs in the same inventory view. Do not reserve battlefield space for a closed pack.
 - The ability model is an extensible prerequisite graph. A viewport, screen size or current content count must never impose a logical node limit; the web UI must pan/scroll to reach every revealed branch.
 - Keep natural progression distinct from discovery. Schoolbooks and other authored sources record discovery flags and show their contents before study; unrelated knowledge remains hidden until found.
+- Keep progression data-driven and extensible: prerequisites are graph relationships and hidden branches stay hidden until discovered. The interface must pan and zoom through the graph instead of limiting its size.
 - Treat martial disciplines as complete build paths with active techniques and meaningful passives. A viable build must not require magic.
 
 ## Player-facing design
@@ -38,6 +39,15 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Completing an objective does not force a transition. Let the player explore and collect rewards, then choose the next location.
 - Use [`docs/Project_Arcanist_UI_Reference.png`](docs/Project_Arcanist_UI_Reference.png) as the production visual direction: resource/status information, a large battlefield, turn order, contextual inspection, action costs, and compact inventory/build panels.
 - Make inventory and build screens contextual. Opening them may reorganize available space; closing them should return the battlefield to its largest practical layout.
+
+## Production interaction contracts
+
+- A reward screen permits one choice. Persist the chosen reward and resolved state; disable every alternative after claiming it.
+- Spellbooks declare their learning mode and effects in content data: teach all, choose an exact number, or unlock a school. Show the offered contents before study, consume books only as their definition specifies, and retain the studied record in the Codex.
+- Re-selecting the active target action cancels targeting. Selecting a different action switches modes; the visible Cancel control, Escape and Android Back follow the same cancellation path.
+- Command is occupied summon capacity, not a spendable cost. Report the specific insufficient resource or full capacity when an action cannot be used.
+- Use one simulation-owned entity presentation source for symbols and names shown on the battlefield, timeline and inspection views.
+- Every playable ability needs an authored player-facing description in content data. Validate descriptions and spellbook references with the content registry.
 
 ## Opening difficulty and progression pacing
 

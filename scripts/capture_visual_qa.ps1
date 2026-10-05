@@ -21,6 +21,7 @@ foreach ($CaptureCase in @(
 	@{ Size = '1280x720'; Overlay = 'map' },
 	@{ Size = '1920x1080'; Overlay = 'rewards' },
 	@{ Size = '2400x1080'; Overlay = 'abilities' },
+	@{ Size = '2340x1080'; Overlay = 'action_palette' },
 	@{ Size = '2400x1080'; Overlay = 'pause' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Overlay)"
@@ -32,11 +33,25 @@ foreach ($CaptureCase in @(
 }
 
 $ScrolledWebDirectory = 'res://build/visual-qa/web-scrolled'
-& $Godot --path $ProjectRoot -- '--capture=2400x1080' "--capture-dir=$ScrolledWebDirectory" '--capture-overlay=abilities' '--capture-full-web' '--capture-web-pan=1700,0'
+& $Godot --path $ProjectRoot -- '--capture=2400x1080' "--capture-dir=$ScrolledWebDirectory" '--capture-overlay=abilities' '--capture-full-web' '--capture-web-pan=120,0'
 if ($LASTEXITCODE -ne 0) { throw 'Scrolled ability-web capture failed.' }
 $ScrolledWebCapture = Join-Path $ProjectRoot 'build\visual-qa\web-scrolled\2400x1080.png'
 if (-not (Test-Path -LiteralPath $ScrolledWebCapture)) { throw "Godot did not create the expected capture: $ScrolledWebCapture" }
 Write-Output "Captured $ScrolledWebCapture"
+
+$BookInventoryDirectory = 'res://build/visual-qa/spellbook-inventory'
+& $Godot --path $ProjectRoot -- '--capture=2340x1080' "--capture-dir=$BookInventoryDirectory" '--capture-overlay=inventory' '--capture-book=lesser_key_of_ash'
+if ($LASTEXITCODE -ne 0) { throw 'Spellbook inventory capture failed.' }
+$BookInventoryCapture = Join-Path $ProjectRoot 'build\visual-qa\spellbook-inventory\2340x1080.png'
+if (-not (Test-Path -LiteralPath $BookInventoryCapture)) { throw "Godot did not create the expected capture: $BookInventoryCapture" }
+Write-Output "Captured $BookInventoryCapture"
+
+$BookCodexDirectory = 'res://build/visual-qa/spellbook-codex'
+& $Godot --path $ProjectRoot -- '--capture=1920x1080' "--capture-dir=$BookCodexDirectory" '--capture-overlay=codex_book' '--capture-book=lesser_key_of_ash'
+if ($LASTEXITCODE -ne 0) { throw 'Spellbook Codex capture failed.' }
+$BookCodexCapture = Join-Path $ProjectRoot 'build\visual-qa\spellbook-codex\1920x1080.png'
+if (-not (Test-Path -LiteralPath $BookCodexCapture)) { throw "Godot did not create the expected capture: $BookCodexCapture" }
+Write-Output "Captured $BookCodexCapture"
 
 $TargetingDirectory = 'res://build/visual-qa/targeting'
 & $Godot --path $ProjectRoot -- '--capture=2400x1080' "--capture-dir=$TargetingDirectory" '--capture-target=blood_lance'

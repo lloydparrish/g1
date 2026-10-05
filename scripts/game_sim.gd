@@ -40,6 +40,8 @@ func validate_content() -> Array:
 		var ability: Dictionary = content.abilities[ability_id]
 		if String(ability.get("name", "")) == "":
 			errors.append("%s has no display name" % ability_id)
+		if String(ability.get("description", "")).strip_edges() == "":
+			errors.append("%s has no player-facing description" % ability_id)
 		var is_passive: bool = ability.get("kind", "active") == "passive"
 		if not valid_targets.has(ability.get("target", "")) or (is_passive and ability.get("target", "") != "passive") or (not is_passive and ability.get("target", "") == "passive"):
 			errors.append("%s has an invalid target type" % ability_id)
@@ -86,9 +88,13 @@ func validate_content() -> Array:
 		if item.get("type") == "scroll" and not content.get("abilities", {}).has(item.get("ability", "")):
 			errors.append("%s refers to an unknown scroll ability" % item_id)
 		if item.get("type") == "spellbook":
-			for learned_ability in item.get("learns", []):
+			var learning: Dictionary = item.get("learning", {})
+			var offered: Array = learning.get("abilities", item.get("learns", []))
+			for learned_ability in offered:
 				if not content.get("abilities", {}).has(learned_ability):
 					errors.append("%s teaches unknown ability %s" % [item_id, learned_ability])
+			if learning.get("mode", "all") == "choose" and (int(learning.get("choice_count", 0)) < 1 or int(learning.choice_count) > offered.size()):
+				errors.append("%s has an invalid spellbook choice count" % item_id)
 	for enemy_id in content.get("enemies", {}):
 		var enemy: Dictionary = content.enemies[enemy_id]
 		if not types.has(enemy.get("damage_type", "")):
@@ -203,9 +209,9 @@ func start_run(seed_value: int, character_id: String) -> bool:
 		"equipment": equipment, "inventory": inventory, "artifacts": [], "known": definition.known.duplicate(),
 		"temporary_abilities": {}, "xp": 0, "level": 1, "skill_points": 0, "kills": 0,
 		"time": 0, "turn": 0, "stage_index": 0, "encounters_completed": 0,
-		"stage_id": "", "objective": {}, "stage_completed": false, "reward_choices": [],
+		"stage_id": "", "objective": {}, "stage_completed": false, "reward_choices": [], "reward_choice_resolved": false, "reward_chosen_index": -1,
 		"route_choices": [], "route": ["ruined_village"], "outcome": "", "log": ["The March stirs beyond the gate."],
-		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "trigger_counts": {}
+		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "spellbook_resolutions": {}, "trigger_counts": {}
 	}
 	var player := {"id": "player", "name": definition.name, "kind": "player", "faction": "Adventurers", "pos": [12, 8], "hp": definition.resources.Health[0], "max_hp": definition.resources.Health[1], "resources": definition.resources.duplicate(true), "statuses": {}, "next_time": 0, "footprint": 1, "armor": 0, "alive": true, "sight": 10}
 	run.entities["player"] = player
@@ -225,6 +231,20 @@ func resume_run() -> bool:
 	run["discoveries"] = run.get("discoveries", [])
 	run["school_ranks"] = run.get("school_ranks", {})
 	run["discipline_ranks"] = run.get("discipline_ranks", {})
+	run["spellbook_resolutions"] = run.get("spellbook_resolutions", {})
+	for book_id in run.get("discovered_books", []):
+		if not run.spellbook_resolutions.has(book_id):
+			run.spellbook_resolutions[book_id] = {"abilities": [], "migrated": true}
+	var claimed_index := -1
+	for reward_index in range(run.get("reward_choices", []).size()):
+		if run.reward_choices[reward_index].get("claimed", false):
+			claimed_index = reward_index
+			break
+	run["reward_choice_resolved"] = bool(run.get("reward_choice_resolved", claimed_index >= 0))
+	run["reward_chosen_index"] = int(run.get("reward_chosen_index", claimed_index))
+	for reward_index in range(run.reward_choices.size()):
+		var reward: Dictionary = run.reward_choices[reward_index]
+		reward["available"] = not run.reward_choice_resolved or (reward_index == run.reward_chosen_index and not reward.get("claimed", false))
 	_rng.seed = int(run.get("seed", 1))
 	_rng.state = int(run.get("rng_state", "1"))
 	_recompute_armor()
@@ -271,12 +291,27 @@ func get_objective_text() -> String:
 		return "Destroy the ritual wards · %d remain" % _remaining_wards()
 	return kind
 
+func get_entity_presentation(entity_id: String) -> Dictionary:
+	var entity: Dictionary = run.get("entities", {}).get(entity_id, {})
+	if entity.is_empty():
+		return {"id": entity_id, "name": "Creature", "symbol": "?", "faction": "", "kind": "enemy", "color_key": "neutral"}
+	var creature_id := String(entity.get("enemy_id", entity_id))
+	var definition: Dictionary = content.get("summons", {}).get(creature_id, content.get("enemies", {}).get(creature_id, {}))
+	var faction := String(entity.get("faction", ""))
+	var color_key := "player" if entity_id == "player" else "ally" if faction == "Adventurers" else "hostile" if faction in ["Undead", "Demons"] else "other"
+	var symbol := String(entity.get("symbol", definition.get("symbol", "?")))
+	if entity_id == "player":
+		symbol = "@"
+	return {"id": entity_id, "name": String(entity.get("name", definition.get("name", "Creature"))), "symbol": symbol, "faction": faction, "kind": String(entity.get("kind", "enemy")), "color_key": color_key}
+
 func get_timeline(count: int = 6) -> Array:
 	var entries: Array = []
 	for entity_id in run.get("entities", {}):
 		var entity: Dictionary = run.entities[entity_id]
 		if entity.get("alive", true):
-			entries.append({"id": entity_id, "name": entity.get("name", "Creature"), "time": int(entity.get("next_time", 0)), "faction": entity.get("faction", ""), "kind": entity.get("kind", "enemy")})
+			var presentation := get_entity_presentation(String(entity_id))
+			presentation["time"] = int(entity.get("next_time", 0))
+			entries.append(presentation)
 	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if a.time == b.time:
 			return a.id < b.id
@@ -448,25 +483,137 @@ func get_progression_graph() -> Array:
 			extras.append(school)
 	extras.sort()
 	school_order.append_array(extras)
-	var school_rows: Dictionary = {}
+	var layout := _radial_progression_layout(visible_ids, school_order)
 	var result: Array = []
 	for ability_id in visible_ids:
 		var progress: Dictionary = progress_by_id[ability_id]
 		var ability: Dictionary = content.abilities[ability_id]
 		var school := String(ability.get("school", ""))
-		var school_index: int = school_order.find(school)
-		if school_index < 0:
-			school_index = school_order.size()
-		var row_index := int(school_rows.get(school, 0))
-		school_rows[school] = row_index + 1
-		var position := Vector2(float(school_index) * 190.0 + float(ability.get("web_offset_x", 0.0)), float(ability.get("web_rank", row_index)) * 116.0)
-		if ability.has("web_position"):
-			position = Vector2(float(ability.web_position[0]), float(ability.web_position[1]))
-		var parents: Array = ability.get("requires", []).duplicate()
-		parents.append_array(ability.get("prerequisites", {}).get("all_of", []))
-		parents.append_array(ability.get("prerequisites", {}).get("any_of", []))
-		result.append({"id": ability_id, "ability": ability, "school": school, "position": position, "parents": parents, "learned": progress.learned, "learnable": progress.learnable, "reason": progress.reason})
+		var position: Vector2 = layout.positions.get(ability_id, Vector2.ZERO)
+		var parents := _ability_parent_ids(ability)
+		result.append({"id": ability_id, "ability": ability, "school": school, "position": position, "parents": parents, "root_id": layout.roots.get(ability_id, ability_id), "root": bool(layout.root_nodes.get(ability_id, false)), "depth": int(layout.depths.get(ability_id, 0)), "learned": progress.learned, "learnable": progress.learnable, "reason": progress.reason})
 	return result
+
+func _ability_parent_ids(ability: Dictionary) -> Array:
+	var parents: Array = ability.get("requires", []).duplicate()
+	parents.append_array(ability.get("prerequisites", {}).get("all_of", []))
+	parents.append_array(ability.get("prerequisites", {}).get("any_of", []))
+	return parents
+
+func _radial_progression_layout(visible_ids: Array, school_order: Array) -> Dictionary:
+	var nodes_by_school: Dictionary = {}
+	var roots_by_school: Dictionary = {}
+	var depths: Dictionary = {}
+	var root_for: Dictionary = {}
+	var root_nodes: Dictionary = {}
+	var local_points: Dictionary = {}
+	var root_radii: Dictionary = {}
+	var maximum_cluster_radius := 180.0
+	for school in school_order:
+		var school_ids: Array[String] = []
+		for ability_id in visible_ids:
+			if String(content.abilities[ability_id].get("school", "")) == String(school):
+				school_ids.append(String(ability_id))
+		nodes_by_school[school] = school_ids
+		var roots: Array[String] = []
+		for ability_id in school_ids:
+			var ability: Dictionary = content.abilities[ability_id]
+			var parents := _ability_parent_ids(ability)
+			if bool(ability.get("web_root", false)) or parents.is_empty():
+				roots.append(ability_id)
+		if roots.is_empty() and not school_ids.is_empty():
+			roots.append(school_ids[0])
+		roots_by_school[school] = roots
+		root_radii[school] = 0.0 if roots.size() <= 1 else maxf(96.0, float(roots.size()) * 56.0)
+		for root_id in roots:
+			root_for[root_id] = root_id
+			depths[root_id] = 0
+			root_nodes[root_id] = true
+		var unresolved := school_ids.size()
+		while unresolved > 0:
+			var assigned_this_pass := false
+			for ability_id in school_ids:
+				if depths.has(ability_id):
+					continue
+				var ability: Dictionary = content.abilities[ability_id]
+				var candidate_parent := ""
+				var candidate_depth := 2147483647
+				for parent_id in _ability_parent_ids(ability):
+					if String(content.abilities.get(parent_id, {}).get("school", "")) != String(school) or not depths.has(parent_id):
+						continue
+					if int(depths[parent_id]) < candidate_depth:
+						candidate_parent = String(parent_id)
+						candidate_depth = int(depths[parent_id])
+				if candidate_parent != "":
+					root_for[ability_id] = root_for[candidate_parent]
+					depths[ability_id] = candidate_depth + 1
+					assigned_this_pass = true
+			if not assigned_this_pass:
+				for ability_id in school_ids:
+					if depths.has(ability_id):
+						continue
+					var root_id := String(roots[0]) if not roots.is_empty() else String(ability_id)
+					root_for[ability_id] = root_id
+					depths[ability_id] = 1
+					assigned_this_pass = true
+				break
+			if not assigned_this_pass:
+				break
+			unresolved = 0
+			for ability_id in school_ids:
+				if not depths.has(ability_id): unresolved += 1
+		var local_max_depth := 0
+		for ability_id in school_ids:
+			local_max_depth = maxi(local_max_depth, int(depths.get(ability_id, 0)))
+		maximum_cluster_radius = maxf(maximum_cluster_radius, float(root_radii[school]) + 74.0 + float(local_max_depth) * 178.0)
+		for root_index in range(roots.size()):
+			var root_id: String = roots[root_index]
+			var root_angle := TAU * float(root_index) / maxf(1.0, float(roots.size()))
+			var root_children: Dictionary = {}
+			for ability_id in school_ids:
+				if root_for.get(ability_id, "") == root_id:
+					var depth := int(depths.get(ability_id, 0))
+					if not root_children.has(depth): root_children[depth] = []
+					root_children[depth].append(String(ability_id))
+			for depth in root_children:
+				var members: Array = root_children[depth]
+				members.sort()
+				var ring_radius := float(root_radii[school]) if depth == 0 else float(root_radii[school]) + 154.0 + float(depth - 1) * 178.0
+				var sector_width := TAU / maxf(1.0, float(roots.size()))
+				for member_index in range(members.size()):
+					var angle := root_angle
+					if depth > 0 and members.size() > 1:
+						var fraction := float(member_index) / float(members.size() - 1)
+						angle += lerpf(-sector_width * 0.38, sector_width * 0.38, fraction)
+					local_points[members[member_index]] = Vector2(cos(angle), sin(angle)) * ring_radius
+	var anchor_radius := 0.0
+	if school_order.size() > 1:
+		anchor_radius = (maximum_cluster_radius * 2.0 + 260.0) / (2.0 * sin(PI / float(school_order.size())))
+	var positions: Dictionary = {}
+	for school_index in range(school_order.size()):
+		var school: String = school_order[school_index]
+		var angle := TAU * float(school_index) / float(school_order.size())
+		var anchor := Vector2(cos(angle), sin(angle)) * anchor_radius
+		for ability_id in nodes_by_school.get(school, []):
+			positions[ability_id] = anchor + local_points.get(ability_id, Vector2.ZERO)
+	return {"positions": positions, "roots": root_for, "root_nodes": root_nodes, "depths": depths}
+
+func get_progression_root_id(school: String) -> String:
+	var graph := get_progression_graph()
+	for node in graph:
+		if String(node.school) == school and bool(node.root):
+			return String(node.id)
+	for node in graph:
+		if String(node.school) == school:
+			return String(node.id)
+	return ""
+
+func get_progression_focus_id(school: String) -> String:
+	for index in range(run.get("known", []).size() - 1, -1, -1):
+		var ability_id: String = run.known[index]
+		if content.get("abilities", {}).has(ability_id) and String(content.abilities[ability_id].get("school", "")) == school:
+			return ability_id
+	return get_progression_root_id(school)
 
 func get_progression_graph_bounds(nodes: Array = []) -> Rect2:
 	var graph_nodes := nodes if not nodes.is_empty() else get_progression_graph()
@@ -491,10 +638,10 @@ func get_passive_modifier(modifier_id: String) -> float:
 	return total
 
 func claim_reward(index: int) -> bool:
-	if run.is_empty() or not run.get("stage_completed", false) or index < 0 or index >= run.reward_choices.size():
+	if run.is_empty() or not run.get("stage_completed", false) or run.get("reward_choice_resolved", false) or index < 0 or index >= run.reward_choices.size():
 		return false
 	var reward: Dictionary = run.reward_choices[index]
-	if reward.get("claimed", false):
+	if reward.get("claimed", false) or not reward.get("available", true):
 		return false
 	if reward.get("type") == "artifact":
 		_acquire_artifact(String(reward.id))
@@ -506,6 +653,13 @@ func claim_reward(index: int) -> bool:
 		run.inventory.append(String(reward.id))
 		_add_log("Packed %s." % content.items[reward.id].name)
 		reward.claimed = true
+	run.reward_choice_resolved = true
+	run.reward_chosen_index = index
+	for choice_index in range(run.reward_choices.size()):
+		var choice: Dictionary = run.reward_choices[choice_index]
+		choice["available"] = false
+		if choice_index == index:
+			choice["claimed"] = true
 	save_run()
 	return true
 
@@ -615,31 +769,90 @@ func discard_item(index: int) -> bool:
 	save_run()
 	return true
 
-func study_spellbook(index: int, ability_index: int = 0) -> bool:
+func get_spellbook_options(index: int) -> Dictionary:
+	if index < 0 or index >= run.inventory.size():
+		return {}
+	var item_id: String = run.inventory[index]
+	var book: Dictionary = content.items.get(item_id, {})
+	if book.get("type") != "spellbook":
+		return {}
+	var learning: Dictionary = book.get("learning", {})
+	var mode := String(learning.get("mode", "choose"))
+	var offered: Array = learning.get("abilities", book.get("learns", [])).duplicate()
+	var resolution: Dictionary = run.get("spellbook_resolutions", {}).get(item_id, {})
+	var options: Array = []
+	for ability_id in offered:
+		var ability: Dictionary = content.abilities.get(ability_id, {})
+		options.append({"id": ability_id, "name": ability.get("name", "Unknown ability"), "description": ability.get("description", ""), "learned": run.get("known", []).has(ability_id)})
+	return {"id": item_id, "name": book.get("name", "Spellbook"), "school": book.get("school", ""), "description": book.get("description", ""), "contents": book.get("contents", []), "mode": mode, "choice_count": int(learning.get("choice_count", offered.size() if mode == "all" else 0)), "consume_on_study": bool(learning.get("consume_on_study", false)), "unlocks_school": bool(learning.get("unlocks_school", book.get("unlocks_school", false))), "resolved": not resolution.is_empty(), "chosen_abilities": resolution.get("abilities", []), "options": options}
+
+func study_spellbook(index: int, choice_indices: Variant = null) -> bool:
 	if index < 0 or index >= run.inventory.size():
 		return false
 	var item_id: String = run.inventory[index]
 	var book: Dictionary = content.items.get(item_id, {})
-	if book.get("type") != "spellbook":
+	if book.get("type") != "spellbook" or run.get("spellbook_resolutions", {}).has(item_id):
 		return false
-	if ability_index < 0 or ability_index >= book.get("learns", []).size():
+	var learning: Dictionary = book.get("learning", {})
+	var mode := String(learning.get("mode", "choose"))
+	var offered: Array = learning.get("abilities", book.get("learns", [])).duplicate()
+	var chosen_indices: Array = []
+	if choice_indices is Array:
+		chosen_indices = choice_indices.duplicate()
+	elif choice_indices != null:
+		chosen_indices = [int(choice_indices)]
+	var granted: Array = []
+	if mode == "all":
+		if not chosen_indices.is_empty():
+			return false
+		granted = offered.duplicate()
+	elif mode == "choose":
+		var count := int(learning.get("choice_count", 0))
+		if count < 1 or chosen_indices.size() != count:
+			return false
+		for choice_index in chosen_indices:
+			var option_index := int(choice_index)
+			if option_index < 0 or option_index >= offered.size() or chosen_indices.count(choice_index) != 1:
+				return false
+			var ability_id: String = offered[option_index]
+			if run.known.has(ability_id):
+				return false
+			granted.append(ability_id)
+	elif mode != "school_only" or not chosen_indices.is_empty():
 		return false
+	for ability_id in granted:
+		if not content.abilities.has(ability_id) or run.known.has(ability_id):
+			return false
 	var school := String(book.get("school", ""))
-	if not run.schools.has(school):
+	var unlocks_school := bool(learning.get("unlocks_school", book.get("unlocks_school", false)))
+	if unlocks_school and school != "" and not run.schools.has(school):
 		run.schools.append(school)
 	var discoveries: Array = run.get("discoveries", [])
-	for discovery in ["school:" + school, "spellbook:" + item_id]:
+	var recorded_discoveries: Array = ["spellbook:" + item_id]
+	if unlocks_school and school != "":
+		recorded_discoveries.append("school:" + school)
+	for discovery in recorded_discoveries:
 		if not discoveries.has(discovery):
 			discoveries.append(discovery)
 	run.discoveries = discoveries
-	var ability_id: String = book.learns[ability_index]
-	if not run.known.has(ability_id):
+	for ability_id in granted:
 		run.known.append(ability_id)
-	run.discovered_books.append(item_id)
+	if not run.discovered_books.has(item_id):
+		run.discovered_books.append(item_id)
+	run.spellbook_resolutions[item_id] = {"abilities": granted.duplicate(), "mode": mode, "choice_count": granted.size()}
 	_record_codex("spellbooks", item_id)
-	_record_codex("schools", school)
-	_record_codex("abilities", ability_id)
-	_add_log("%s reveals %s." % [book.get("name", "The spellbook"), content.abilities[ability_id].name])
+	if unlocks_school and school != "":
+		_record_codex("schools", school)
+	for ability_id in granted:
+		_record_codex("abilities", ability_id)
+	var learned_names: Array[String] = []
+	for ability_id in granted:
+		learned_names.append(String(content.abilities[ability_id].name))
+	var result_text := "unlocks %s knowledge" % school if mode == "school_only" else "reveals %s" % ", ".join(learned_names)
+	_add_log("%s %s." % [book.get("name", "The spellbook"), result_text])
+	var consume_on_study := bool(learning.get("consume_on_study", false))
+	if consume_on_study:
+		run.inventory.remove_at(index)
 	save_run()
 	return true
 
@@ -657,7 +870,7 @@ func state_digest() -> String:
 	if run.is_empty():
 		return ""
 	var player: Dictionary = get_player()
-	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "grid": run.grid, "objects": run.objects, "known": run.known, "schools": run.get("schools", []), "disciplines": run.get("disciplines", []), "discoveries": run.get("discoveries", []), "xp": run.xp, "level": run.level, "skill_points": run.skill_points, "objective": run.objective})
+	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "grid": run.grid, "objects": run.objects, "known": run.known, "schools": run.get("schools", []), "disciplines": run.get("disciplines", []), "discoveries": run.get("discoveries", []), "spellbook_resolutions": run.get("spellbook_resolutions", {}), "reward_choice_resolved": run.get("reward_choice_resolved", false), "reward_chosen_index": run.get("reward_chosen_index", -1), "reward_choices": run.get("reward_choices", []), "xp": run.xp, "level": run.level, "skill_points": run.skill_points, "objective": run.objective})
 
 func _new_stage(stage_id: String, is_boss: bool) -> void:
 	var player: Dictionary = run.entities.get("player", {})
@@ -685,6 +898,8 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 	run.objective = {}
 	run.stage_completed = false
 	run.reward_choices = []
+	run.reward_choice_resolved = false
+	run.reward_chosen_index = -1
 	run.boss_summoned = false
 	run.turn = 0
 	var terrain: Dictionary = stage.terrain
@@ -777,6 +992,8 @@ func _make_rewards() -> void:
 		if not run.artifacts.has(artifact_id):
 			candidates.append({"type": "artifact", "id": artifact_id, "weight": 0.55, "claimed": false})
 	run.reward_choices = []
+	run.reward_choice_resolved = false
+	run.reward_chosen_index = -1
 	for choice_index in range(3):
 		if candidates.is_empty():
 			break
@@ -792,6 +1009,7 @@ func _make_rewards() -> void:
 				break
 		var selected: Dictionary = candidates.pop_at(selected_index)
 		selected.erase("weight")
+		selected["available"] = true
 		run.reward_choices.append(selected)
 
 func _spawn_enemy(enemy_id: String, cell: Vector2i, is_boss: bool) -> String:
@@ -969,8 +1187,9 @@ func _cast(ability_id: String, target: Vector2i) -> Dictionary:
 				return {"ok": false, "message": "Choose a visible hostile creature."}
 		if target_mode == "tile" and _terrain_at(target) == "wall":
 			return {"ok": false, "message": "That tile is blocked."}
-	if not _can_pay(ability.get("costs", {})):
-		return {"ok": false, "message": "You do not have the resources for %s." % ability.name}
+	var cost_status := get_cost_status(ability.get("costs", {}))
+	if not cost_status.affordable:
+		return {"ok": false, "message": "Requires %s. %s" % [get_cost_summary(ability.get("costs", {})), "; ".join(cost_status.issues)]}
 	_pay(ability.get("costs", {}))
 	var targets: Array = _targets_for_ability(ability, target)
 	for effect in ability.get("effects", []):
@@ -1122,20 +1341,34 @@ func use_item(index: int, target: Vector2i = Vector2i(-1, -1)) -> Dictionary:
 	save_run()
 	return result
 
-func _can_pay(costs: Dictionary) -> bool:
+func get_cost_summary(costs: Dictionary) -> String:
+	var parts: Array[String] = []
+	for resource_id in costs:
+		var amount := int(costs[resource_id])
+		if resource_id == "Command":
+			parts.append("%d free Command" % amount)
+		else:
+			parts.append("%d %s" % [amount, resource_id])
+	return " and ".join(parts) if not parts.is_empty() else "no resources"
+
+func get_cost_status(costs: Dictionary) -> Dictionary:
 	var player: Dictionary = get_player()
+	var issues: Array[String] = []
 	for resource_id in costs:
 		var values: Array = player.resources.get(resource_id, [0, 0])
 		var amount := int(costs[resource_id])
 		if resource_id == "Command":
 			if int(values[0]) + amount > int(values[1]):
-				return false
+				issues.append("Command capacity full — %d / %d occupied; %d free required." % [int(values[0]), int(values[1]), amount])
 		elif resource_id == "Health":
 			if int(values[0]) <= amount:
-				return false
+				issues.append("Not enough Health — %d / %d; keep at least 1." % [int(values[0]), amount + 1])
 		elif int(values[0]) < amount:
-			return false
-	return true
+			issues.append("Not enough %s — %d / %d." % [resource_id, int(values[0]), amount])
+	return {"affordable": issues.is_empty(), "issues": issues}
+
+func _can_pay(costs: Dictionary) -> bool:
+	return bool(get_cost_status(costs).affordable)
 
 func _pay(costs: Dictionary) -> void:
 	var player: Dictionary = get_player()
