@@ -1,0 +1,386 @@
+# Project Arcanist — v0.1 Design Contract
+
+## Product definition
+
+- Genre: turn-based tactical horde roguelike / buildcraft RPG.
+- Primary platform: Android landscape.
+- Secondary platform: Windows development/testing.
+- Engine: Godot 4.x.
+- Target successful-run length: approximately 45–90 minutes, with reliable suspend/resume.
+- Initial presentation: polished symbolic/tile graphics with rendering separated from game state.
+- Core inspiration: deliberate tactical combat and build planning combined with escalating synergistic builds.
+
+Core fantasy: start as a relatively understandable adventurer and end a run as a mechanical engine assembled from weapons, magic, summons, artifacts, environmental effects, passives and hybrid disciplines. Pure martial, pure magical and hybrid builds must all be legitimate.
+
+## Non-negotiable architecture
+
+### Game logic is independent of rendering
+A creature is a game entity, not an ASCII character. The initial renderer may display symbols, but rendering must be replaceable later by a Dwarf Fortress-like graphical tileset or sprites without rewriting combat.
+
+### Content is data-driven
+Avoid one bespoke script per spell, creature or item when reusable components can express the behavior. Abilities should primarily compose Costs -> Targeting -> Effects -> Conditions -> Triggers -> Modifiers.
+
+### Generic effect vocabulary
+Support reusable operations such as damage, healing, movement, teleport, knockback, pull, status application/removal, terrain creation/transformation, summoning, resource/stat modification, projectiles, areas, chaining, delays, repeats, execution, battlefield-object creation/destruction and Command modification.
+
+### Generic triggers
+The architecture should be able to support triggers including OnCast, OnHit, OnKill, OnMove, OnDamaged, OnBlock, OnDodge, OnCrit, OnDeath, OnTurn, OnSummon, OnStatusApplied, OnTerrainEntered, OnResourceSpent, OnHeal, OnEncounterStart and OnEncounterComplete.
+
+The eventual game is intended to support 500+ abilities, so ability #501 must not require architectural reinvention.
+
+## Turn system
+
+Combat is fully turn-based. There is never a real-time decision timer for the player. Nothing advances while the game is waiting for player input.
+
+Actions consume simulation time. Example conceptual costs: Quickstep 40, dagger attack 65, bow shot 90, move 100, sword attack 100, Fireball 115, Phantom Blade cast 130, greatsword attack 140, Raise Skeleton 150, major ritual 200+.
+
+After the player chooses an action, resolve scheduled actors/events until the player's next decision point, then stop. Show a readable upcoming-turn timeline. This system must support speed, haste, slow, weapon speed, casting speed and future time magic.
+
+## Battlefield
+
+- Square grid with eight-directional movement.
+- Standard encounter target approximately 25x18 tiles, but stage definitions may vary.
+- Walls/blocked tiles, line of sight, fog of war, visible/explored distinction, pathfinding, ranged/melee/area targeting, battlefield objects, corpses, terrain states and hazards.
+- Multi-tile creatures must be supported: 2x2, 3x3 and extensible footprints.
+- Hordes of roughly 50–150+ creatures must be architecturally possible without requiring expensive global reasoning for every actor each turn.
+
+## Resources
+
+Resources are generic data objects rather than a fixed Mana-only system.
+
+Baseline resources:
+- Health: survival.
+- Mana: slowly regenerating magical resource.
+- Stamina: faster-regenerating resource used by movement and martial actions.
+- Command: summon capacity.
+
+Future content may introduce Blood, Souls, Rage, Faith, Heat, Momentum, Corruption, Charges, Corpses and other resources. Abilities may consume multiple resources.
+
+## Attributes
+
+Baseline attributes:
+- Might
+- Dexterity
+- Vitality
+- Intelligence
+- Willpower
+- Perception
+
+Players do not repeatedly allocate routine +1 attribute points. Attributes emerge primarily from character identity, equipment, discipline/magic investment, artifacts, statuses and special progression. Meaningful decisions should center on abilities, disciplines, equipment and build interactions.
+
+## Damage
+
+Initial damage types:
+- Slashing
+- Piercing
+- Blunt
+- Fire
+- Cold
+- Lightning
+- Poison
+- Arcane
+- Holy
+- Shadow
+
+Damage types are registry/data-driven and expandable. Creatures may have resistance, vulnerability or immunity.
+
+## Status system
+
+Statuses may stack when their definitions permit it. Initial examples include Bleeding, Burning, Wet, Frozen, Chilled, Poisoned, Stunned, Slowed, Hasted, Cursed, Regenerating, Invisible, Rooted and Silenced. Multiple statuses may coexist where logical.
+
+## Environmental system
+
+Initial terrain/state vocabulary includes Water, Wet, Ice, Fire, Blood, Poison, Vegetation, Smoke and Oil.
+
+Interactions should be owned by reusable environment/status rules rather than exclusively by individual spells. Examples:
+- Water + Cold -> Ice.
+- Wet + Lightning -> enhanced/conductive Lightning interaction.
+- Vegetation + Fire -> burning terrain.
+- Oil + Fire -> ignition/explosion.
+- Blood + Cold -> Frozen Blood.
+- Corpses may become resources/targets for Necromancy.
+
+## Characters
+
+Characters provide starting identity and a defining aura, not permanent class restrictions.
+
+### Jim the Mundane
+- Ordinary starting equipment.
+- No starting magic.
+- No special affinity or progression bonus.
+- Trait: none.
+Jim is the benchmark proving that the build system is genuinely open.
+
+### Aldren, Exiled Battlemage
+- Starts with Swordsmanship and Arcane identity.
+- Aura: Spellsteel — casting a spell empowers the next weapon attack.
+
+### Mara, the Bloodless
+- Starts with Blood Magic access and a dagger.
+- Aura: Crimson Hunger — Blood manipulation defines her starting run identity.
+
+### Brakka, Ironbound
+- Heavy Weapons + Defense + heavy armor.
+- Aura: Immovable — rewards slow, armored positioning and retaliation.
+
+### Sylvi, Thornwalker
+- Archery + Nature.
+- Aura: Living Hunt — rewards movement, vegetation and ranged combat.
+
+### Orin, Gravekeeper
+- Necromancy + increased starting Command.
+- Aura: Keeper of the Fallen — strong corpse and undead-summon interactions.
+
+## Martial disciplines
+
+Initial framework:
+1. Swordsmanship
+2. Axes
+3. Heavy Weapons
+4. Polearms
+5. Daggers
+6. Archery
+7. Crossbows
+8. Unarmed
+9. Defense
+10. Mobility
+
+Martial disciplines are first-class build systems. A completely nonmagical build must be capable of defeating the final boss.
+
+## Magic schools
+
+Common/naturally learnable schools:
+1. Fire
+2. Frost
+3. Storm
+4. Earth
+5. Nature
+6. Arcane
+7. Holy
+8. Shadow
+
+Specialized/discoverable schools:
+9. Necromancy
+10. Summoning
+11. Spirit
+12. Blood
+13. Demonology
+
+Future expansion can add Chronomancy, Void, Dream, Chaos, Flesh, Gravity and other schools.
+
+## Knowledge acquisition
+
+Two broad forms of progression exist.
+
+### Natural development
+Known abilities reveal logical successors. Fireball may contribute toward Meteor. Swordsmanship reveals advanced sword techniques.
+
+### Discovery
+Unrelated, rare or forbidden knowledge must be found through spellbooks, shrines, events, bosses, NPCs, artifacts or secret conditions. Fireball must not spontaneously teach Demonology.
+
+## Spellbooks
+
+Spellbooks are identifiable loot with visible contents. Example:
+
+The Lesser Key of Ash — Demonology — Rare
+- Summon Imp
+- Hellfire Pact
+- Demonic Gateway
+
+Books may unlock a school, teach abilities, provide choices or use other definition-driven rules. Their contents are inspectable before learning.
+
+## Ability webs
+
+Progression is a graph rather than necessarily a tree. Abilities may require other abilities, school/discipline ranks, multiple prerequisites, character conditions, discovery flags, artifacts, resource thresholds or other extensible requirements.
+
+Examples:
+- Firebolt -> Fireball -> Greater Fireball -> Meteor, with Flame Wave branching from Fireball.
+- Swordsmanship + Fire -> Flaming Blade.
+- Necromancy + Frost -> Frozen Dead.
+- Necromancy + Fire -> Corpse Explosion.
+- Swordsmanship + Spirit/Arcane -> Phantom Blade-related development.
+
+## v0.1 ability target
+
+Target approximately 60–80 meaningful abilities/passives, roughly 72, emphasizing interconnected mechanics rather than filler.
+
+Suggested allocation:
+- ~24 martial abilities.
+- ~6 Fire.
+- ~6 Frost.
+- ~6 Storm.
+- ~5 Nature.
+- ~5 Arcane.
+- ~6 Holy/Shadow combined initially.
+- ~8 Necromancy/Blood/Demonology rare/discovered abilities.
+- ~6 hybrids.
+
+Representative martial abilities: Lunge, Cleave, Parry, Riposte, Blade Dance, Crushing Blow, Wide Swing, Brace, Earthshaker, Quick Stab, Flurry, Backstab, Aimed Shot, Piercing Arrow, Volley, Guard, Shield Bash, Hold Ground, Quickstep, Dash, Evasive Footwork.
+
+Representative magic: Firebolt, Fireball, Flame Wave, Combustion, Flame Ward, Meteor; Frostbolt, Ice Lance, Freeze, Frozen Ground, Ice Wall, Blizzard; Spark, Lightning Bolt, Chain Lightning, Static Field, Thunderstep, Stormcall; Entangling Roots, Thorn Burst, Regrowth, Overgrowth, Call Wolf; Arcane Bolt, Blink, Arcane Shield, Phantom Blade, Arcane Barrage; Raise Skeleton, Corpse Explosion, Life Drain, Blood Lance, Blood Covenant, Blood Pool, Summon Imp, Hellfire Pact.
+
+Representative hybrids: Flaming Blade, Frozen Dead, Storm Arrow, Bloodletting Strike, Arcane Riposte, Thorn Armor.
+
+## Phantom Blade architecture benchmark
+
+Phantom Blade is an architecture test. It summons an ethereal sword associated with its owner. It follows/orbits the owner conceptually, identifies valid enemies, attacks automatically through the timeline, inherits appropriate modifiers and can later be duplicated/modified by upgrades and artifacts. It should be expressed through reusable summon/follow/target/attack/trigger mechanics rather than a monolithic special-case system.
+
+## Summoning and Command
+
+Summons occupy real battlefield locations unless explicitly defined otherwise. Each summon has a Command cost; examples: Skeleton 1, Imp 1, Wolf 2, Wraith 3, Knight 4, Greater Demon 8.
+
+Command is itself modifiable by spells, artifacts, equipment and character traits. Example: Blood Covenant: -20 Maximum Health, +1 Command. There is no universal hard-coded summon-count maximum.
+
+## Equipment
+
+Slots:
+- Weapon
+- Offhand
+- Head
+- Body
+- Hands
+- Feet
+- Ring 1
+- Ring 2
+- Amulet
+
+Two-handed weapons may occupy Weapon + Offhand capacity. General inventory capacity is 30 items.
+
+Weapon types must have mechanical identity, not merely different numbers. Examples: dagger fast/cheap; sword flexible; greatsword slow/cleaving; spear reach; axe chopping/high impact; bow ranged; crossbow slow/high damage; staff magical specialization; wand faster magical attacks.
+
+## Consumables
+
+Support potions, scrolls, bombs, throwing items and temporary enchantments. Scrolls can allow a character to cast a specific spell without permanently knowing its school.
+
+## Artifacts
+
+Artifacts are persistent run modifiers and do not consume a limited artifact-slot pool. Rarity limits accumulation. They range from modest to transformative.
+
+Examples:
+- Copper Hare: +5% movement speed.
+- Iron Candle: improved sight while below half Health.
+- Heart of Command: -20 maximum Health, +1 Command.
+- Mirror of Embers: every third Fire spell repeats at reduced power.
+- Ossuary Bell: every tenth eligible living kill creates a temporary Skeleton.
+- Crimson Crown: substantially modifies Blood/healing rules.
+
+Lucky runs may accumulate several compatible artifacts and become unusually powerful.
+
+## Loot weighting
+
+Rewards are weighted toward the current build based on known schools, disciplines, equipment, tags, character and previous choices, but weighting is never exclusivity. A swordsman can discover Demonology and redirect the run.
+
+## Encounter generation
+
+Stage definitions control visual theme, terrain, enemy factions, encounter size, hazards, objective pool, rewards, special objects and possible events.
+
+Objective framework includes Eliminate, Boss, Survive, Defend, Reach Exit, Destroy Targets, Interrupt Ritual and Rescue. Objectives are selected only when contextually appropriate for the generated stage.
+
+## Initial region: The Fractured March
+
+Potential locations:
+- Ruined Village — undead/raiders/burning structures.
+- Old Graveyard — undead/corpses/necromantic events.
+- Goblin Warrens — hordes/traps.
+- Flooded Ruins — Water/Wet/Lightning interactions.
+- Thornwood — vegetation/beasts/Nature.
+- Abandoned Keep — armor/chokepoints.
+- Ash Shrine — possible Demonology discovery.
+- Forgotten Crypt — Necromancy/rare rewards.
+
+## Factions and enemies
+
+Initial factions include Undead, Goblinoids, Bandits, Wild Beasts and Demons. Relationships are data-defined; hostile factions can fight each other.
+
+Initial enemy target approximately 18:
+- Skeleton
+- Skeleton Archer
+- Zombie
+- Ghoul
+- Necromancer
+- Goblin
+- Goblin Archer
+- Goblin Shaman
+- Hobgoblin
+- Bandit
+- Bandit Archer
+- Bandit Brute
+- Wolf
+- Dire Wolf
+- Spider
+- Imp
+- Hellhound
+- Lesser Demon
+
+Enemies should differ mechanically rather than being stat reskins.
+
+## Bosses
+
+Initial bosses:
+
+### Grave Tyrant
+Large undead boss that raises corpses and manipulates death terrain.
+
+### Thornmother
+Large Nature creature that creates vegetation, roots targets and summons beasts/plants.
+
+### Ashbound Herald
+Large demon using Fire, summoned imps and battlefield transformation.
+
+Bosses obey normal mechanics wherever logical. Immunities are specific, not a global boss exemption from interesting systems.
+
+## Run structure
+
+Use a generated branching map. Node categories may include Combat, Elite, Event, Shrine, Treasure, Unknown and Boss. Nodes provide useful but incomplete information. A successful full run should eventually target approximately 45–90 minutes.
+
+## Post-encounter behavior
+
+Completing the objective does not immediately transition. A clear NEXT STAGE control appears. The player may continue exploring, looting, consuming corpses, interacting with shrines or manipulating terrain before leaving.
+
+## Death and persistent progression
+
+Death ends the run and carried equipment, artifacts and run power are lost. Do not use permanent percentage-stat grinding. Persistent progression primarily records Codex discoveries, characters, knowledge/information, possible starting options and achievements/challenges. Discovering a secret school records it but does not automatically grant it next run.
+
+## Android UX contract
+
+Landscape first. The supplied UI mockup is a visual target, adapted intelligently for phone space.
+
+During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. World map, character/abilities, inventory/equipment, Codex, spellbooks and settings can be separate full-screen interfaces.
+
+Touch model:
+- Tap: select/move/target.
+- Long press: inspect.
+- Tap ability then target: cast/use.
+- Drag/scroll: pan where appropriate.
+
+Controls must be comfortably phone-usable.
+
+## Visual direction
+
+Follow the supplied reference image's overall language: dark tactical presentation, crisp panels, strong hierarchy, high contrast, readable symbolic battlefield, restrained neon magical effects, clear targeting, lightweight particles and useful combat feedback.
+
+Avoid debug-looking UI, programmer labels, raw IDs, exposed calculations, giant text walls, inconsistent spacing and temporary default Godot controls presented as final UI.
+
+## Save behavior
+
+Android interruption is expected. Save enough state to resume an encounter exactly, including run seed, route, stage, battlefield, entities, resources, statuses, inventory, artifacts, abilities, summons, timeline and progression.
+
+## Determinism and automated simulation
+
+Given seed + game state + player actions, the simulation should be reproducible. Build a headless simulation/testing path capable of validating large numbers of generated encounters, hordes, turns, terrain interactions, reward generations, content references, stage/objective validity, boss spawning and save/reload equivalence.
+
+## Definition of playable
+
+Compilation, passing unit tests or opening a scene are not sufficient. A human must be able to:
+
+launch -> select character -> enter run -> navigate battlefield -> fight -> use abilities -> gain rewards -> equip loot -> complete encounters -> choose routes -> fight boss -> win or die -> start another run.
+
+## Three-prompt production rule
+
+There are exactly three major implementation phases before judging the baseline product:
+
+1. Prompt 1 — Playable Game: complete vertical skeleton, not merely foundations.
+2. Prompt 2 — Buildcraft & Content: expand the working game into the intended ability/school/discipline/artifact/environment ecosystem and baseline content.
+3. Prompt 3 — Ship It: Android usability, balance, QA, performance, polish and production APK.
+
+Later prompts may be content expansions, but Prompt 3 must not leave fundamental gameplay waiting for a future architecture prompt.

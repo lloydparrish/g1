@@ -1,0 +1,121 @@
+{
+  "damage_types": ["Slashing", "Piercing", "Blunt", "Fire", "Cold", "Lightning", "Poison", "Arcane", "Holy", "Shadow"],
+  "resources": ["Health", "Mana", "Stamina", "Command", "Blood"],
+  "statuses": {
+    "Burning": {"max_stacks": 3, "duration": 3, "tick_damage": 2, "damage": "Fire"},
+    "Bleeding": {"max_stacks": 4, "duration": 4, "tick_damage": 2, "damage": "Slashing"},
+    "Wet": {"max_stacks": 1, "duration": 3},
+    "Chilled": {"max_stacks": 3, "duration": 3},
+    "Frozen": {"max_stacks": 1, "duration": 1},
+    "Poisoned": {"max_stacks": 4, "duration": 4, "tick_damage": 2, "damage": "Poison"},
+    "Haste": {"max_stacks": 1, "duration": 3},
+    "Slow": {"max_stacks": 1, "duration": 3},
+    "Guard": {"max_stacks": 1, "duration": 1},
+    "Stunned": {"max_stacks": 1, "duration": 1},
+    "Empowered": {"max_stacks": 1, "duration": 3},
+    "Rooted": {"max_stacks": 1, "duration": 2}
+  },
+  "environment_rules": [
+    {"effect": "Ice", "terrain": "water", "result": "ice", "message": "The water locks into ice."},
+    {"effect": "Fire", "terrain": "vegetation", "result": "fire", "message": "Vegetation catches and spreads fire."},
+    {"effect": "Fire", "terrain": "blood", "result": "fire"},
+    {"effect": "Fire", "terrain": "floor", "result": "fire"},
+    {"effect": "Fire", "terrain": "water", "result": "water", "status": "Wet"},
+    {"effect": "Fire", "terrain": "ice", "result": "water", "status": "Wet", "message": "The ice melts beneath the flame."}
+  ],
+  "damage_rules": [
+    {"damage": "Lightning", "target_status": "Wet", "multiplier": 1.5, "message": "Wet ground conducts the lightning."}
+  ],
+  "triggers": {
+    "spellsteel": {"event": "OnCast", "owner_type": "aura", "owner_id": "Spellsteel", "condition": {"school_not": "Swordsmanship"}, "effects": [{"type": "status", "target": "player", "id": "Empowered", "stacks": 1}]},
+    "ember_echo": {"event": "OnCast", "owner_type": "artifact", "owner_id": "mirror_of_embers", "condition": {"school": "Fire", "every": 3}, "message": "The Mirror of Embers repeats the spell.", "source": "the Mirror of Embers", "effects": [{"type": "repeat_cast_damage", "multiplier": 0.5}]},
+    "ossuary_bell": {"event": "OnKill", "owner_type": "artifact", "owner_id": "ossuary_bell", "condition": {"faction_in": ["Goblinoids", "Beasts", "Bandits", "Adventurers"], "every": 10}, "message": "The Ossuary Bell calls a temporary Skeleton.", "effects": [{"type": "summon", "id": "skeleton", "target": "dead_position"}]}
+  },
+  "characters": {
+    "jim": {"name": "Jim the Mundane", "subtitle": "No school. No prophecy. Just grit.", "aura": "None", "weapon": "sword", "known": ["lunge", "guard", "quickstep"], "schools": [], "discipline": "Swordsmanship", "attributes": {"Might": 11, "Dexterity": 10, "Vitality": 11, "Intelligence": 8, "Willpower": 9, "Perception": 10}, "resources": {"Health": [52, 52], "Mana": [6, 6], "Stamina": [60, 60], "Command": [0, 2], "Blood": [0, 0]}},
+    "aldren": {"name": "Aldren, Exiled Battlemage", "subtitle": "A blade in one hand. An oath in the other.", "aura": "Spellsteel", "weapon": "sword", "known": ["arcane_bolt", "phantom_blade", "lunge", "guard"], "schools": ["Arcane"], "discipline": "Swordsmanship", "attributes": {"Might": 10, "Dexterity": 10, "Vitality": 9, "Intelligence": 13, "Willpower": 12, "Perception": 10}, "resources": {"Health": [44, 44], "Mana": [36, 36], "Stamina": [54, 54], "Command": [0, 3], "Blood": [0, 0]}},
+    "mara": {"name": "Mara, the Bloodless", "subtitle": "She learned to make a weapon of what remained.", "aura": "Crimson Hunger", "weapon": "dagger", "known": ["blood_lance", "quickstep", "raise_skeleton", "guard"], "schools": ["Blood", "Necromancy"], "discipline": "Daggers", "attributes": {"Might": 8, "Dexterity": 13, "Vitality": 9, "Intelligence": 11, "Willpower": 14, "Perception": 12}, "resources": {"Health": [40, 40], "Mana": [23, 23], "Stamina": [62, 62], "Command": [0, 3], "Blood": [14, 24]}}
+  },
+  "weapons": {
+    "dagger": {"name": "Field Dagger", "slot": "Weapon", "hands": 1, "range": 1, "time": 65, "stamina": 4, "damage": 7, "type": "Piercing", "style": "fast"},
+    "sword": {"name": "Marcher's Sword", "slot": "Weapon", "hands": 1, "range": 1, "time": 100, "stamina": 7, "damage": 11, "type": "Slashing", "style": "balanced"},
+    "greatsword": {"name": "Greatsword", "slot": "Weapon", "hands": 2, "range": 1, "time": 140, "stamina": 13, "damage": 19, "type": "Slashing", "style": "cleave"},
+    "spear": {"name": "Ashwood Spear", "slot": "Weapon", "hands": 2, "range": 2, "time": 105, "stamina": 8, "damage": 12, "type": "Piercing", "style": "reach"},
+    "bow": {"name": "Recurve Bow", "slot": "Weapon", "hands": 2, "range": 7, "time": 90, "stamina": 7, "damage": 10, "type": "Piercing", "style": "ranged"},
+    "crossbow": {"name": "Heavy Crossbow", "slot": "Weapon", "hands": 2, "range": 8, "time": 125, "stamina": 10, "damage": 17, "type": "Piercing", "style": "ranged"},
+    "staff": {"name": "Wayfarer's Staff", "slot": "Weapon", "hands": 2, "range": 2, "time": 105, "stamina": 6, "damage": 9, "type": "Blunt", "style": "arcane"},
+    "wand": {"name": "Copper Wand", "slot": "Weapon", "hands": 1, "range": 5, "time": 75, "stamina": 3, "damage": 7, "type": "Arcane", "style": "arcane_ranged"}
+  },
+  "abilities": {
+    "firebolt": {"name": "Firebolt", "school": "Fire", "time": 80, "range": 7, "target": "enemy", "costs": {"Mana": 4}, "effects": [{"type": "damage", "amount": 10, "damage": "Fire"}, {"type": "status", "id": "Burning", "stacks": 1}], "tags": ["fire", "ranged"]},
+    "fireball": {"name": "Fireball", "school": "Fire", "requires": ["firebolt"], "time": 115, "range": 6, "radius": 1, "target": "area", "costs": {"Mana": 10}, "effects": [{"type": "damage", "amount": 13, "damage": "Fire"}, {"type": "terrain", "id": "Fire"}], "tags": ["fire", "area"]},
+    "frostbolt": {"name": "Frostbolt", "school": "Frost", "time": 85, "range": 7, "target": "enemy", "costs": {"Mana": 5}, "effects": [{"type": "damage", "amount": 8, "damage": "Cold"}, {"type": "status", "id": "Chilled", "stacks": 2}], "tags": ["cold", "ranged"]},
+    "frozen_ground": {"name": "Frozen Ground", "school": "Frost", "requires": ["frostbolt"], "time": 120, "range": 6, "radius": 1, "target": "area", "costs": {"Mana": 9}, "effects": [{"type": "terrain", "id": "Ice"}, {"type": "status", "id": "Chilled", "stacks": 2}], "tags": ["cold", "area"]},
+    "lightning_bolt": {"name": "Lightning Bolt", "school": "Storm", "time": 95, "range": 8, "target": "enemy", "costs": {"Mana": 7}, "effects": [{"type": "damage", "amount": 12, "damage": "Lightning"}, {"type": "status", "id": "Stunned", "stacks": 1}], "tags": ["lightning", "ranged"]},
+    "arcane_bolt": {"name": "Arcane Bolt", "school": "Arcane", "time": 75, "range": 7, "target": "enemy", "costs": {"Mana": 5}, "effects": [{"type": "damage", "amount": 10, "damage": "Arcane"}], "tags": ["arcane", "ranged"]},
+    "blink": {"name": "Blink", "school": "Arcane", "time": 90, "range": 5, "target": "tile", "costs": {"Mana": 6}, "effects": [{"type": "teleport"}], "tags": ["arcane", "mobility"]},
+    "phantom_blade": {"name": "Phantom Blade", "school": "Arcane", "time": 130, "range": 0, "target": "self", "costs": {"Mana": 12, "Command": 1}, "effects": [{"type": "summon", "id": "phantom_blade"}], "tags": ["arcane", "summon"]},
+    "blood_lance": {"name": "Blood Lance", "school": "Blood", "time": 115, "range": 7, "target": "enemy", "costs": {"Health": 4, "Blood": 3}, "effects": [{"type": "damage", "amount": 17, "damage": "Shadow"}, {"type": "heal_on_hit", "amount": 4}], "tags": ["blood", "ranged"]},
+    "raise_skeleton": {"name": "Raise Skeleton", "school": "Necromancy", "time": 150, "range": 4, "target": "tile", "costs": {"Mana": 9, "Command": 1}, "effects": [{"type": "summon", "id": "skeleton"}], "tags": ["necromancy", "summon"]},
+    "lunge": {"name": "Lunge", "school": "Swordsmanship", "time": 85, "range": 2, "target": "enemy", "costs": {"Stamina": 8}, "effects": [{"type": "damage", "amount": 14, "damage": "Piercing"}], "tags": ["martial", "sword"]},
+    "cleave": {"name": "Cleave", "school": "Heavy Weapons", "requires": ["lunge"], "time": 125, "range": 1, "radius": 1, "target": "enemy", "costs": {"Stamina": 13}, "effects": [{"type": "damage", "amount": 15, "damage": "Slashing"}], "tags": ["martial", "area"]},
+    "guard": {"name": "Guard", "school": "Defense", "time": 60, "range": 0, "target": "self", "costs": {"Stamina": 5}, "effects": [{"type": "status", "id": "Guard", "stacks": 1}], "tags": ["martial", "defense"]},
+    "quickstep": {"name": "Quickstep", "school": "Mobility", "time": 40, "range": 3, "target": "tile", "costs": {"Stamina": 6}, "effects": [{"type": "move", "distance": 3}, {"type": "status", "id": "Haste", "stacks": 1}], "tags": ["martial", "mobility"]},
+    "aimed_shot": {"name": "Aimed Shot", "school": "Archery", "time": 120, "range": 9, "target": "enemy", "costs": {"Stamina": 10}, "effects": [{"type": "damage", "amount": 20, "damage": "Piercing"}], "tags": ["martial", "ranged"]},
+    "parry": {"name": "Parry", "school": "Defense", "time": 65, "range": 0, "target": "self", "costs": {"Stamina": 6}, "effects": [{"type": "status", "id": "Guard", "stacks": 1}, {"type": "status", "id": "Empowered", "stacks": 1}], "tags": ["martial", "defense"]},
+    "dagger_flurry": {"name": "Dagger Flurry", "school": "Daggers", "time": 70, "range": 1, "target": "enemy", "costs": {"Stamina": 9}, "effects": [{"type": "damage", "amount": 7, "damage": "Piercing", "repeats": 3}], "tags": ["martial", "dagger"]},
+    "mend": {"name": "Mend", "school": "Nature", "time": 100, "range": 0, "target": "self", "costs": {"Mana": 8}, "effects": [{"type": "heal", "amount": 15}], "tags": ["nature", "healing"]},
+    "summon_imp": {"name": "Summon Imp", "school": "Demonology", "discovery_required": true, "time": 145, "range": 3, "target": "tile", "costs": {"Mana": 10, "Command": 1}, "effects": [{"type": "summon", "id": "imp"}], "tags": ["demonology", "summon"]},
+    "hellfire_pact": {"name": "Hellfire Pact", "school": "Demonology", "discovery_required": true, "time": 150, "range": 0, "target": "self", "costs": {"Health": 6, "Mana": 8}, "effects": [{"type": "status", "id": "Empowered", "stacks": 1}, {"type": "status", "id": "Burning", "stacks": 1}], "tags": ["demonology", "fire"]},
+    "demonic_gateway": {"name": "Demonic Gateway", "school": "Demonology", "discovery_required": true, "requires": ["summon_imp"], "time": 160, "range": 4, "target": "tile", "costs": {"Mana": 18, "Command": 2}, "effects": [{"type": "summon", "id": "imp", "count": 2}], "tags": ["demonology", "summon"]}
+  },
+  "enemies": {
+    "skeleton": {"name": "Skeleton", "faction": "Undead", "hp": 24, "damage": 6, "damage_type": "Slashing", "range": 1, "time": 100, "behavior": "melee", "xp": 12, "resist": {"Poison": 0.8}, "symbol": "s"},
+    "skeleton_archer": {"name": "Skeleton Archer", "faction": "Undead", "hp": 19, "damage": 6, "damage_type": "Piercing", "range": 5, "time": 110, "behavior": "ranged", "xp": 15, "symbol": "a"},
+    "zombie": {"name": "Rotwalker", "faction": "Undead", "hp": 36, "damage": 9, "damage_type": "Blunt", "range": 1, "time": 125, "behavior": "melee", "xp": 14, "resist": {"Poison": 0.5}, "symbol": "z"},
+    "necromancer": {"name": "Grave Caller", "faction": "Undead", "hp": 26, "damage": 8, "damage_type": "Shadow", "range": 5, "time": 105, "behavior": "summoner", "xp": 24, "symbol": "n"},
+    "goblin": {"name": "Goblin", "faction": "Goblinoids", "hp": 20, "damage": 7, "damage_type": "Piercing", "range": 1, "time": 85, "behavior": "melee", "xp": 11, "symbol": "g"},
+    "goblin_archer": {"name": "Goblin Archer", "faction": "Goblinoids", "hp": 18, "damage": 7, "damage_type": "Piercing", "range": 5, "time": 95, "behavior": "ranged", "xp": 14, "symbol": "r"},
+    "goblin_shaman": {"name": "Goblin Shaman", "faction": "Goblinoids", "hp": 23, "damage": 7, "damage_type": "Fire", "range": 4, "time": 100, "behavior": "caster", "xp": 20, "symbol": "h"},
+    "bandit": {"name": "Bandit", "faction": "Bandits", "hp": 28, "damage": 9, "damage_type": "Slashing", "range": 1, "time": 95, "behavior": "melee", "xp": 15, "symbol": "b"},
+    "wolf": {"name": "Wolf", "faction": "Beasts", "hp": 22, "damage": 8, "damage_type": "Piercing", "range": 1, "time": 75, "behavior": "beast", "xp": 14, "symbol": "w"},
+    "imp": {"name": "Imp", "faction": "Demons", "hp": 21, "damage": 9, "damage_type": "Fire", "range": 4, "time": 82, "behavior": "caster", "xp": 18, "symbol": "i", "resist": {"Fire": 0.5}},
+    "grave_tyrant": {"name": "Grave Tyrant", "faction": "Undead", "hp": 180, "damage": 17, "damage_type": "Shadow", "range": 1, "time": 125, "behavior": "boss", "xp": 160, "resist": {"Poison": 0.75, "Shadow": 0.5}, "footprint": 2, "symbol": "T"}
+  },
+  "summons": {
+    "phantom_blade": {"name": "Phantom Blade", "hp": 20, "damage": 9, "damage_type": "Arcane", "range": 5, "time": 72, "summon_behavior": "orbit_assault", "command": 1, "ethereal": true, "symbol": "✦"}
+  },
+  "stages": {
+    "ruined_village": {"name": "Ruined Village", "subtitle": "Ash clings to the old stone road.", "factions": ["Undead", "Bandits"], "enemies": ["skeleton", "zombie", "bandit", "skeleton_archer"], "objectives": ["Eliminate", "Reach Exit", "Destroy Targets"], "terrain": {"water": 0.025, "fire": 0.025, "blood": 0.035, "vegetation": 0.07, "wall": 0.10}},
+    "graveyard": {"name": "Old Graveyard", "subtitle": "The earth remembers every name.", "factions": ["Undead"], "enemies": ["skeleton", "skeleton_archer", "zombie", "necromancer"], "objectives": ["Eliminate", "Survive", "Destroy Targets"], "terrain": {"water": 0.035, "fire": 0.0, "blood": 0.06, "vegetation": 0.11, "wall": 0.07}},
+    "flooded_ruins": {"name": "Flooded Ruins", "subtitle": "Black water laps at the broken stairs.", "factions": ["Goblinoids", "Undead"], "enemies": ["goblin", "goblin_shaman", "skeleton", "zombie"], "objectives": ["Eliminate", "Survive", "Reach Exit"], "terrain": {"water": 0.22, "fire": 0.0, "blood": 0.02, "vegetation": 0.03, "wall": 0.13}},
+    "goblin_warrens": {"name": "Goblin Warrens", "subtitle": "Small footprints lead into the dark.", "factions": ["Goblinoids", "Bandits"], "enemies": ["goblin", "goblin_archer", "goblin_shaman", "bandit"], "objectives": ["Eliminate", "Destroy Targets", "Reach Exit"], "terrain": {"water": 0.02, "fire": 0.03, "blood": 0.025, "vegetation": 0.02, "wall": 0.16}},
+    "thornwood": {"name": "Thornwood", "subtitle": "Branches tighten around the path.", "factions": ["Beasts", "Demons"], "enemies": ["wolf", "imp", "goblin", "goblin_archer"], "objectives": ["Eliminate", "Survive", "Reach Exit"], "terrain": {"water": 0.045, "fire": 0.01, "blood": 0.025, "vegetation": 0.25, "wall": 0.04}}
+  },
+  "items": {
+    "healing_potion": {"name": "Healing Draught", "type": "consumable", "description": "Restore 24 Health.", "effect": "heal", "amount": 24, "tags": ["healing"]},
+    "mana_potion": {"name": "Blueglass Tonic", "type": "consumable", "description": "Restore 18 Mana.", "effect": "mana", "amount": 18, "tags": ["magic"]},
+    "bomb": {"name": "Cinder Bomb", "type": "consumable", "description": "A blast of fire and iron shrapnel.", "effect": "bomb", "amount": 16, "tags": ["fire", "area"]},
+    "fireball_scroll": {"name": "Scroll of Fireball", "type": "scroll", "description": "One Fireball, without learning Fire.", "ability": "fireball", "charges": 1, "tags": ["fire"]},
+    "lesser_key_of_ash": {"name": "The Lesser Key of Ash", "type": "spellbook", "school": "Demonology", "rarity": "Rare", "contents": ["Summon Imp", "Hellfire Pact", "Demonic Gateway"], "learns": ["summon_imp", "hellfire_pact", "demonic_gateway"], "description": "A tattered tome bound in charred leather. It whispers when opened.", "tags": ["demonology"]},
+    "dagger": {"name": "Field Dagger", "type": "equipment", "slot": "Weapon", "weapon": "dagger", "description": "Fast, light and easy to recover.", "tags": ["dagger", "martial"]},
+    "sword": {"name": "Marcher's Sword", "type": "equipment", "slot": "Weapon", "weapon": "sword", "description": "A dependable one-handed blade.", "tags": ["sword", "martial"]},
+    "greatsword": {"name": "Greatsword", "type": "equipment", "slot": "Weapon", "weapon": "greatsword", "description": "Slow two-handed sweeps catch nearby foes.", "tags": ["heavy", "sword"]},
+    "spear": {"name": "Ashwood Spear", "type": "equipment", "slot": "Weapon", "weapon": "spear", "description": "Keep enemies at the end of its reach.", "tags": ["polearm", "martial"]},
+    "bow": {"name": "Recurve Bow", "type": "equipment", "slot": "Weapon", "weapon": "bow", "description": "A quick ranged attack with a clear line of sight.", "tags": ["archery", "ranged"]},
+    "crossbow": {"name": "Heavy Crossbow", "type": "equipment", "slot": "Weapon", "weapon": "crossbow", "description": "Slow to load, punishing at range.", "tags": ["crossbow", "ranged"]},
+    "staff": {"name": "Wayfarer's Staff", "type": "equipment", "slot": "Weapon", "weapon": "staff", "description": "A measured reach with a faint arcane hum.", "tags": ["staff", "arcane"]},
+    "wand": {"name": "Copper Wand", "type": "equipment", "slot": "Weapon", "weapon": "wand", "description": "A quick arcane strike at short range.", "tags": ["wand", "arcane"]},
+    "iron_shield": {"name": "Iron Shield", "type": "equipment", "slot": "Offhand", "armor": 3, "description": "A solid guard against physical blows.", "tags": ["defense"]},
+    "leather_armor": {"name": "Roadworn Leathers", "type": "equipment", "slot": "Body", "armor": 2, "description": "Light protection for the long road.", "tags": ["armor"]},
+    "copper_ring": {"name": "Copper Ring", "type": "equipment", "slot": "Ring 1", "armor": 1, "description": "Warm to the touch.", "tags": ["magic"]}
+  },
+  "artifacts": {
+    "copper_hare": {"name": "Copper Hare", "description": "Movement actions are 10% faster.", "modifiers": {"move_time_multiplier": 0.9}, "rarity": "Common"},
+    "iron_candle": {"name": "Iron Candle", "description": "See farther while below half Health.", "modifiers": {"low_health_sight_bonus": 3}, "rarity": "Common"},
+    "heart_of_command": {"name": "Heart of Command", "description": "Maximum Health -20. Command capacity +1.", "on_acquire": {"max_health": -20, "command_capacity": 1}, "rarity": "Rare"},
+    "mirror_of_embers": {"name": "Mirror of Embers", "description": "Every third Fire spell repeats at reduced power.", "rarity": "Rare"},
+    "ossuary_bell": {"name": "Ossuary Bell", "description": "Every tenth living kill calls a temporary Skeleton.", "rarity": "Rare"},
+    "crimson_crown": {"name": "Crimson Crown", "description": "Blood Lance restores more Health.", "modifiers": {"blood_lance_heal_bonus": 4}, "rarity": "Epic"}
+  }
+}

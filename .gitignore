@@ -1,0 +1,8 @@
+/.godot/
+/.godot-profile/
+/.tools/
+/build/
+/export_templates/
+/script_templates/
+/text_editor_themes/
+*.tmp
