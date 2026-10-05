@@ -14,10 +14,10 @@ func run_flow() -> void:
 	await process_frame
 	await process_frame
 	_check(main.page == "title" and not main.active_hits.is_empty(), "production scene draws the character selection screen")
-	await _mouse_tap(main, Vector2(200, 435))
+	await _mouse_action(main, "select_character", "jim")
 	_check(main.selected_character == "jim", "Windows mouse can select a character in the production UI")
 
-	await _tap(main, Vector2(710, 435))
+	await _tap_action(main, "select_character", "aldren")
 	_check(main.selected_character == "aldren", "character card is selected through the production input handler")
 	await _touch(main, Vector2(635, 725))
 	await process_frame
@@ -55,15 +55,20 @@ func run_flow() -> void:
 	_check(not main.sim.run.entities[weapon_target].alive and int(main.sim.run.kills) == 2, "production weapon target click kills an enemy and advances XP")
 	_check(main.sim.run.stage_completed and main.overlay == "rewards", "the objective opens the production reward screen after combat")
 
-	main.sim.run.reward_choices = [{"type": "item", "id": "leather_armor", "claimed": false}]
+	main.sim.run.reward_choices = [{"type": "item", "id": "scale_armor", "claimed": false}]
 	await _tap(main, Vector2(330, 466))
-	_check(main.sim.run.inventory.has("leather_armor"), "production reward control adds its item to the pack")
+	_check(main.sim.run.inventory.has("scale_armor"), "production reward control adds its item to the pack")
+	await _tap(main, Vector2(1299, 94))
+	await _tap_action(main, "overlay", "abilities")
+	await _tap_action(main, "select_web_node", "blink")
+	await _tap_action(main, "learn", "blink")
+	_check(main.sim.run.known.has("blink") and int(main.sim.run.skill_points) == 0, "production progression screen spends the first encounter point on an ability-web choice")
 	await _tap(main, Vector2(1299, 94))
 	await _tap(main, Vector2(884, 713))
 	var armor_index: int = main.sim.run.inventory.size() - 1
-	await _tap(main, Vector2(514 + (armor_index % 6) * 142, 213 + int(armor_index / 6) * 65))
+	await _tap(main, Vector2(463.5 + (armor_index % 6) * 88, 231 + int(armor_index / 6) * 90))
 	await _tap_action(main, "equip")
-	_check(main.sim.run.equipment.get("Body", "") == "leather_armor", "production inventory equips the claimed armor")
+	_check(main.sim.run.equipment.get("Body", "") == "scale_armor", "production inventory equips the claimed armor")
 	await _tap(main, Vector2(1299, 94))
 	await _tap(main, Vector2(1286, 574))
 	_check(main.overlay == "map", "NEXT STAGE opens the production route map")
@@ -144,6 +149,16 @@ func _mouse_tap(main: Control, point: Vector2) -> void:
 	release.pressed = false
 	main._gui_input(release)
 	await process_frame
+
+func _mouse_action(main: Control, action_type: String, action_id: String) -> void:
+	await process_frame
+	for hit in main.active_hits:
+		var action: Dictionary = hit.action
+		if String(action.get("type", "")) == action_type and String(action.get("id", "")) == action_id:
+			var hit_rect: Rect2 = hit.rect
+			await _mouse_tap(main, hit_rect.get_center())
+			return
+	_failures_hit("mouse action is drawn: %s %s" % [action_type, action_id])
 
 func _touch(main: Control, point: Vector2) -> void:
 	var viewport_point: Vector2 = main.draw_offset + point * main.draw_scale

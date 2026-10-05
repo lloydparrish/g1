@@ -20,6 +20,12 @@ var selected_ability := ""
 var target_mode := ""
 var selected_book_ability := 0
 var selected_ward := ""
+var selected_web_ability := ""
+var ability_filter := "All"
+var web_pan := Vector2.ZERO
+var web_zoom := 1.0
+var web_pan_active := false
+var web_last_pointer := Vector2.ZERO
 var press_position := Vector2.ZERO
 var press_current_position := Vector2.ZERO
 var press_started := 0
@@ -36,6 +42,8 @@ var capture_requested := false
 var capture_size := Vector2i.ZERO
 var capture_directory := "res://screenshots"
 var capture_overlay := ""
+var capture_target := ""
+var capture_full_web := false
 var screen_size := LOGICAL_SIZE
 var draw_scale := 1.0
 var draw_offset := Vector2.ZERO
@@ -59,6 +67,14 @@ func _ready() -> void:
 			capture_directory = arg.trim_prefix("--capture-dir=")
 		elif arg.begins_with("--capture-overlay="):
 			capture_overlay = arg.trim_prefix("--capture-overlay=")
+		elif arg.begins_with("--capture-target="):
+			capture_target = arg.trim_prefix("--capture-target=")
+		elif arg == "--capture-full-web":
+			capture_full_web = true
+		elif arg.begins_with("--capture-web-pan="):
+			var pan_parts: PackedStringArray = arg.trim_prefix("--capture-web-pan=").split(",")
+			if pan_parts.size() == 2:
+				web_pan = Vector2(float(pan_parts[0]), float(pan_parts[1]))
 	for arg in args:
 		if arg.begins_with("--capture="):
 			var dimensions: PackedStringArray = arg.trim_prefix("--capture=").split("x")
@@ -76,6 +92,18 @@ func _ready() -> void:
 					"rewards":
 						sim.run.stage_completed = true
 						sim.run.reward_choices = [{"type": "artifact", "id": "copper_hare", "claimed": false}, {"type": "item", "id": "healing_potion", "claimed": false}]
+				if capture_full_web:
+					sim.run.disciplines = sim.content.progression.disciplines.duplicate()
+					sim.run.schools = ["Fire", "Frost", "Storm", "Earth", "Nature", "Arcane", "Holy", "Shadow", "Necromancy", "Summoning", "Spirit", "Blood"]
+					sim.run.skill_points = 12
+					for ability_id in ["firebolt", "fireball", "frostbolt", "lightning_bolt", "aimed_shot", "parry", "dagger_flurry", "lunge"]:
+						if not sim.run.known.has(ability_id): sim.run.known.append(ability_id)
+					for book_id in ["cinder_primer", "storm_ledger", "lesser_key_of_ash"]:
+						sim.run.inventory.append(book_id)
+						sim.study_spellbook(sim.run.inventory.size() - 1, 0)
+					selected_web_ability = "storm_arrow"
+				if capture_target != "":
+					target_mode = capture_target
 	if not capture_requested:
 		if sim.has_saved_run():
 			page = "title"
@@ -177,27 +205,27 @@ func _draw_title() -> void:
 	_draw_label("ARCANIST", 56, 129, 48, COLORS.text)
 	_draw_label("THE FRACTURED MARCH", 58, 158, 15, COLORS.gold)
 	_draw_label("A tactical roguelike of steel, spellcraft and hard choices", 58, 187, 17, COLORS.muted)
-	_draw_panel(Rect2(47, 215, 1346, 450), "CHOOSE YOUR BEGINNING", COLORS.line)
-	var characters: Array = ["jim", "aldren", "mara"]
-	var card_x := 70.0
-	for character_id in characters:
+	_draw_panel(Rect2(47, 202, 1346, 458), "CHOOSE YOUR BEGINNING", COLORS.line)
+	var characters: Array = sim.content.characters.keys()
+	characters.sort_custom(func(a: String, b: String) -> bool: return int(sim.content.characters[a].get("selection_order", 99)) < int(sim.content.characters[b].get("selection_order", 99)))
+	for character_index in range(characters.size()):
+		var character_id: String = characters[character_index]
 		var definition: Dictionary = sim.content.characters[character_id]
-		var rect := Rect2(card_x, 270, 414, 334)
+		var col := character_index % 3
+		var row := int(character_index / 3)
+		var rect := Rect2(70 + col * 437, 230 + row * 208, 414, 196)
 		var active: bool = character_id == selected_character
 		_draw_panel(rect, "", COLORS.gold if active else COLORS.line_soft)
-		_draw_label(definition.name, rect.position.x + 25, rect.position.y + 48, 22, COLORS.text)
-		_draw_label(definition.subtitle, rect.position.x + 25, rect.position.y + 77, 14, COLORS.muted)
-		_draw_line(rect.position.x + 25, rect.position.y + 96, rect.position.x + rect.size.x - 25, rect.position.y + 96, COLORS.line_soft)
-		_draw_label("AURA", rect.position.x + 25, rect.position.y + 123, 11, COLORS.gold)
-		_draw_label(definition.aura if definition.aura != "None" else "None — open progression", rect.position.x + 25, rect.position.y + 149, 16, COLORS.cyan if active else COLORS.text)
-		_draw_label("STARTING IDENTITY", rect.position.x + 25, rect.position.y + 187, 11, COLORS.gold)
-		_draw_label("%s  ·  %s" % [definition.discipline, definition.weapon.capitalize()], rect.position.x + 25, rect.position.y + 213, 16, COLORS.text)
-		var schools: Array = definition.schools
-		_draw_label("MAGIC  ·  %s" % (", ".join(schools) if not schools.is_empty() else "None"), rect.position.x + 25, rect.position.y + 250, 14, COLORS.muted)
-		_draw_label("HEALTH  %d      MANA  %d      STAMINA  %d" % [definition.resources.Health[1], definition.resources.Mana[1], definition.resources.Stamina[1]], rect.position.x + 25, rect.position.y + 286, 12, COLORS.text)
+		_draw_label(String(definition.name), rect.position.x + 16, rect.position.y + 28, 16, COLORS.text)
+		_draw_label(String(definition.subtitle), rect.position.x + 16, rect.position.y + 49, 11, COLORS.muted)
+		_draw_label("%s  ·  %s" % [definition.discipline, sim.content.weapons[definition.weapon].name], rect.position.x + 16, rect.position.y + 80, 12, COLORS.cyan)
+		_draw_label("AURA  ·  %s" % ("Open progression" if definition.aura == "None" else definition.aura), rect.position.x + 16, rect.position.y + 105, 11, COLORS.gold)
+		var identities: Array = definition.get("schools", []).duplicate()
+		identities.append_array(definition.get("disciplines", []))
+		_draw_label(_fit_text("BUILD  ·  " + "  /  ".join(identities), rect.size.x - 30, 11), rect.position.x + 16, rect.position.y + 130, 11, COLORS.muted)
+		_draw_label("HP %d    MANA %d    STA %d" % [definition.resources.Health[1], definition.resources.Mana[1], definition.resources.Stamina[1]], rect.position.x + 16, rect.position.y + 151, 11, COLORS.text)
 		active_hits.append({"rect": rect, "action": {"type": "select_character", "id": character_id}})
-		_draw_button(Rect2(rect.position.x + 15, rect.position.y + 302, rect.size.x - 30, 23), "SELECTED" if active else "SELECT CHARACTER", {"type": "select_character", "id": character_id}, active, 10)
-		card_x += 437
+		_draw_button(Rect2(rect.position.x + 15, rect.position.y + 165, rect.size.x - 30, 25), "SELECTED" if active else "CHOOSE", {"type": "select_character", "id": character_id}, active, 10)
 	_draw_button(Rect2(481, 690, 310, 70), "BEGIN THE MARCH", {"type": "start"}, true, 18)
 	if sim.has_saved_run():
 		_draw_button(Rect2(805, 690, 235, 70), "RESUME RUN", {"type": "resume"}, false, 17)
@@ -510,97 +538,171 @@ func _draw_overlay() -> void:
 		draw_set_transform(draw_offset, 0.0, Vector2(draw_scale, draw_scale))
 
 func _draw_inventory(rect: Rect2) -> void:
-	_draw_label("PACK  /  EQUIPMENT", 131, 103, 20, COLORS.text)
-	_draw_label("Thirty field slots · two-handed arms fill both hands", 132, 127, 12, COLORS.muted)
-	_draw_panel(Rect2(124, 150, 295, 550), "WORN", COLORS.line_soft)
-	var slots: Array = ["Weapon", "Offhand", "Head", "Body", "Hands", "Feet", "Ring 1", "Ring 2", "Amulet"]
+	_draw_label("INVENTORY  /  EQUIPMENT", 131, 103, 20, COLORS.text)
+	_draw_label("Tap a slot for details · equip or use without leaving the pack", 132, 127, 12, COLORS.muted)
+	_draw_panel(Rect2(124, 150, 278, 546), "WORN GEAR", COLORS.line_soft)
+	var slots: Array = ["Head", "Body", "Hands", "Feet", "Weapon", "Offhand", "Ring 1", "Ring 2", "Amulet"]
 	for i in range(slots.size()):
 		var slot: String = slots[i]
-		var y := 207 + i * 49
-		_draw_label(slot.to_upper(), 145, y, 10, COLORS.gold)
+		var row_rect := Rect2(136, 190 + i * 54, 254, 48)
 		var equipment_id: String = sim.run.equipment.get(slot, "")
-		var item_name: String = "Empty" if equipment_id in ["", "occupied"] else String(sim.content.items.get(equipment_id, {}).get("name", equipment_id))
-		if equipment_id == "occupied":
-			item_name = "Occupied by two-handed weapon"
-		_draw_label(String(item_name).substr(0, 26), 145, y + 22, 13, COLORS.text if equipment_id != "" else COLORS.muted)
-	_draw_panel(Rect2(433, 150, 880, 385), "PACK  ·  %d / 30" % sim.run.inventory.size(), COLORS.line_soft)
-	for i in range(sim.run.inventory.size()):
-		var item_id: String = sim.run.inventory[i]
-		var item: Dictionary = sim.content.items.get(item_id, {})
+		var equipped_name := "Empty" if equipment_id == "" else "Reserved for two-hand" if equipment_id == "occupied" else String(sim.content.items.get(equipment_id, {}).get("name", equipment_id))
+		_draw_panel(row_rect, "", COLORS.line_soft if equipment_id in ["", "occupied"] else COLORS.gold)
+		_draw_label(slot.to_upper(), row_rect.position.x + 8, row_rect.position.y + 16, 9, COLORS.gold)
+		_draw_label(_fit_text(equipped_name, row_rect.size.x - 16, 11), row_rect.position.x + 8, row_rect.position.y + 36, 11, COLORS.text if equipment_id != "" else COLORS.muted)
+		if equipment_id not in ["", "occupied"]:
+			active_hits.append({"rect": _touch_hit_rect(row_rect), "action": {"type": "unequip", "slot": slot}})
+	_draw_panel(Rect2(414, 150, 542, 546), "PACK  ·  %d / 30" % sim.run.inventory.size(), COLORS.line_soft)
+	for i in range(30):
 		var col := i % 6
 		var row := int(i / 6)
-		var item_rect := Rect2(448 + col * 142, 185 + row * 65, 132, 56)
+		var item_rect := Rect2(423 + col * 88, 190 + row * 90, 81, 82)
+		if i >= sim.run.inventory.size():
+			_draw_panel(item_rect, "", Color("#18232c"))
+			continue
+		var item_id: String = sim.run.inventory[i]
+		var item: Dictionary = sim.content.items.get(item_id, {})
 		var active := selected_inventory_index == i
-		_draw_panel(item_rect, "", COLORS.gold if active else COLORS.line_soft)
-		_draw_label(String(item.get("name", item_id)).substr(0, 21), item_rect.position.x + 9, item_rect.position.y + 22, 11, COLORS.text)
-		_draw_label(String(item.get("type", "item")).to_upper(), item_rect.position.x + 9, item_rect.position.y + 42, 9, COLORS.cyan if item.get("type") == "spellbook" else COLORS.muted)
-		active_hits.append({"rect": item_rect, "action": {"type": "select_item", "index": i}})
+		var rarity := String(item.get("rarity", "Common"))
+		var rarity_color := COLORS.purple if rarity in ["Rare", "Epic", "Legendary"] else COLORS.gold if rarity == "Uncommon" else COLORS.line_soft
+		_draw_panel(item_rect, "", COLORS.gold if active else rarity_color)
+		_draw_label(_item_glyph(item_id, item), item_rect.get_center().x, item_rect.position.y + 46, 26, _item_color(String(item.get("type", "item")), rarity), HORIZONTAL_ALIGNMENT_CENTER)
+		_draw_label("%02d" % (i + 1), item_rect.position.x + 6, item_rect.position.y + 13, 8, COLORS.muted)
+		_draw_label(_fit_text(String(item.get("name", item_id)), item_rect.size.x - 8, 8), item_rect.get_center().x, item_rect.position.y + 72, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+		active_hits.append({"rect": _touch_hit_rect(item_rect), "action": {"type": "select_item", "index": i}})
+	_draw_panel(Rect2(968, 150, 345, 546), "INSPECT / ACTION", COLORS.line_soft)
 	if selected_inventory_index >= 0 and selected_inventory_index < sim.run.inventory.size():
 		var selected_id: String = sim.run.inventory[selected_inventory_index]
 		var selected: Dictionary = sim.content.items.get(selected_id, {})
-		_draw_panel(Rect2(433, 550, 880, 146), "ITEM DETAILS", COLORS.line_soft)
-		_draw_label(String(selected.name), 451, 610, 18, COLORS.text)
-		_draw_label(String(selected.get("description", "A useful object from the March.")), 451, 633, 13, COLORS.muted)
-		if selected.get("type") == "spellbook":
-			_draw_label("Contents:  %s" % ", ".join(selected.contents), 451, 657, 12, COLORS.purple)
-			_draw_label("Study: %s" % sim.content.abilities[selected.learns[selected_book_ability]].name, 451, 680, 11, COLORS.purple)
-			_draw_button(Rect2(1040, 614, 122, TOUCH_TARGET), "STUDY", {"type": "study_book"}, true, 12)
-			for book_index in range(selected.learns.size()):
-				var book_button := Rect2(738 + book_index * 94, 652, 87, 32)
-				_draw_button(book_button, String(sim.content.abilities[selected.learns[book_index]].name).substr(0, 11), {"type": "select_book_ability", "index": book_index}, selected_book_ability == book_index, 9)
-		elif selected.get("type") == "equipment":
-			_draw_button(Rect2(1040, 614, 122, TOUCH_TARGET), "EQUIP", {"type": "equip"}, true, 13)
-		elif selected.get("type") in ["consumable", "scroll"]:
-			_draw_button(Rect2(1040, 614, 122, TOUCH_TARGET), "USE ITEM", {"type": "use_item"}, true, 12)
-		_draw_button(Rect2(1172, 614, 122, TOUCH_TARGET), "DISCARD", {"type": "discard"}, false, 12)
+		_draw_label(_fit_text(String(selected.name), 320, 17), 989, 203, 17, COLORS.text)
+		_draw_label("%s  ·  %s" % [String(selected.get("type", "item")).capitalize(), String(selected.get("rarity", "Common"))], 989, 226, 11, COLORS.cyan if selected.get("type") == "spellbook" else COLORS.gold)
+		var detail_y := 260.0
+		for line in _wrap(String(selected.get("description", "A useful object from the March.")), 36):
+			_draw_label(line, 989, detail_y, 11, COLORS.muted)
+			detail_y += 19.0
+		if selected.get("type") == "equipment":
+			_draw_label("Slot  ·  %s" % selected.get("slot", ""), 989, detail_y + 7, 12, COLORS.text)
+			if selected.has("weapon"):
+				var weapon: Dictionary = sim.content.weapons.get(selected.weapon, {})
+				_draw_label("%d damage  ·  %s  ·  %d reach" % [weapon.get("damage", 0), weapon.get("type", ""), weapon.get("range", 1)], 989, detail_y + 31, 11, COLORS.text)
+				_draw_label("Action %d  ·  %d Stamina  ·  %d hand%s" % [weapon.get("time", 0), weapon.get("stamina", 0), weapon.get("hands", 1), "s" if weapon.get("hands", 1) != 1 else ""], 989, detail_y + 51, 10, COLORS.muted)
+			elif int(selected.get("armor", 0)) > 0:
+				_draw_label("Armor  ·  %d" % int(selected.armor), 989, detail_y + 31, 12, COLORS.text)
+		elif selected.get("type") == "spellbook":
+			_draw_label("CONTENTS  ·  %s" % selected.get("school", "Knowledge"), 989, detail_y + 8, 11, COLORS.purple)
+			var book_contents: Array = selected.get("contents", [])
+			for book_index in range(mini(book_contents.size(), 5)):
+				_draw_label("·  %s" % String(book_contents[book_index]), 995, detail_y + 31 + book_index * 17, 10, COLORS.text)
+			var study_y := detail_y + 42 + mini(book_contents.size(), 5) * 17
+			for choice_index in range(mini(selected.get("learns", []).size(), 3)):
+				var choice_id: String = selected.learns[choice_index]
+				_draw_button(Rect2(987, study_y + choice_index * 41, 307, 36), "LEARN  ·  " + String(sim.content.abilities[choice_id].name), {"type": "select_book_ability", "index": choice_index}, selected_book_ability == choice_index, 10, COLORS.purple)
+		_draw_button(Rect2(984, 620, 151, TOUCH_TARGET), "EQUIP" if selected.get("type") == "equipment" else "STUDY" if selected.get("type") == "spellbook" else "USE ITEM", {"type": "equip" if selected.get("type") == "equipment" else "study_book" if selected.get("type") == "spellbook" else "use_item"}, true, 12)
+		_draw_button(Rect2(1143, 620, 151, TOUCH_TARGET), "DISCARD", {"type": "discard"}, false, 11)
 	else:
-		_draw_label("Choose a pack item to see its use, details or equipment action.", 455, 615, 14, COLORS.muted)
+		var empty_inventory_lines := _wrap("Select a pack slot to inspect its use and equipment fit.", 34)
+		for line_index in range(empty_inventory_lines.size()):
+			_draw_label(empty_inventory_lines[line_index], 989, 216 + line_index * 18, 11, COLORS.muted)
+		_draw_label(_fit_text("ARTIFACTS  ·  %s" % (", ".join(_artifact_names()) if not sim.run.artifacts.is_empty() else "None carried"), 320, 11), 989, 274, 11, COLORS.gold)
 	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 11)
-	_draw_label("ARTIFACTS  ·  %s" % (", ".join(_artifact_names()) if not sim.run.artifacts.is_empty() else "None carried"), 326, 741, 10, COLORS.gold)
+	_draw_label("A two-handed weapon reserves Offhand. Artifacts remain separate from the 30-slot pack.", 326, 741, 10, COLORS.muted)
 
 func _draw_abilities(rect: Rect2) -> void:
 	_draw_label("CHARACTER  /  ABILITY WEB", 131, 103, 20, COLORS.text)
-	_draw_label("Ability points  %d  ·  XP %d  ·  Level %d" % [sim.run.skill_points, sim.run.xp, sim.run.level], 132, 128, 12, COLORS.gold)
-	_draw_panel(Rect2(124, 151, 720, 546), "KNOWN · TAP TO TARGET", COLORS.line_soft)
-	var known: Array = sim.get_available_abilities()
-	for i in range(known.size()):
-		var ability_id: String = known[i]
-		var ability: Dictionary = sim.content.abilities[ability_id]
-		var col := i % 2
-		var row := int(i / 2)
-		var item_rect := Rect2(141 + col * 350, 187 + row * 57, 328, 48)
-		_draw_panel(item_rect, "", COLORS.line_soft)
-		_draw_label(String(ability.name), item_rect.position.x + 11, item_rect.position.y + 20, 13, _school_color(ability.school))
-		_draw_label("%s  ·  %d time  ·  %s" % [ability.school, ability.time, _cost_text(ability.costs)], item_rect.position.x + 11, item_rect.position.y + 38, 10, COLORS.muted)
-		active_hits.append({"rect": _touch_hit_rect(item_rect), "action": {"type": "ability", "id": ability_id}})
-	_draw_panel(Rect2(864, 151, 449, 546), "AVAILABLE PATHS", COLORS.line_soft)
-	var candidates: Array = ["firebolt", "fireball", "frostbolt", "frozen_ground", "lightning_bolt", "blink", "cleave", "aimed_shot", "parry", "dagger_flurry", "mend"]
-	var shown := 0
-	for ability_id in candidates:
-		if sim.run.known.has(ability_id):
+	_draw_label("%d ability points  ·  Level %d    Drag to pan · zoom or center the web" % [sim.run.skill_points, sim.run.level], 132, 128, 12, COLORS.gold)
+	_draw_button(Rect2(1014, 82, 77, TOUCH_TARGET), "−", {"type": "web_zoom", "factor": 0.82}, false, 18)
+	_draw_button(Rect2(1098, 82, 77, TOUCH_TARGET), "+", {"type": "web_zoom", "factor": 1.22}, false, 18)
+	_draw_button(Rect2(1180, 82, 84, TOUCH_TARGET), "CENTER", {"type": "web_center"}, false, 10)
+	var graph := sim.get_progression_graph()
+	var filters: Array[String] = ["All"]
+	for node in graph:
+		if not filters.has(node.school):
+			filters.append(String(node.school))
+	var pill_gap := 4.0
+	var pill_width := minf(112.0, (1160.0 - pill_gap * maxf(0.0, float(filters.size() - 1))) / maxf(1.0, float(filters.size())))
+	for i in range(filters.size()):
+		var chip_rect := Rect2(131 + i * (pill_width + pill_gap), 151, pill_width, 34)
+		_draw_button(chip_rect, filters[i].to_upper(), {"type": "web_filter", "school": filters[i]}, ability_filter == filters[i], 9, _school_color(filters[i]))
+	_draw_panel(Rect2(124, 194, 810, 487), "CONNECTED PATHS", COLORS.line_soft)
+	var graph_rect := _ability_graph_rect()
+	var visible_nodes: Array = []
+	var node_rects: Dictionary = {}
+	for node in graph:
+		if ability_filter != "All" and node.school != ability_filter:
 			continue
-		var ability: Dictionary = sim.content.abilities[ability_id]
-		var prereqs: Array = ability.get("requires", [])
-		var can_meet := true
-		for required in prereqs:
-			if not sim.run.known.has(required):
-				can_meet = false
-		var school := String(ability.get("school", ""))
-		var school_ok: bool = school in ["Swordsmanship", "Defense", "Mobility", "Heavy Weapons", "Daggers", "Archery"] or sim.run.schools.has(school) or sim.run.character_id == "jim"
-		if ability.get("discovery_required", false) and not sim.run.schools.has(school):
-			school_ok = false
-		var unlocked: bool = can_meet and school_ok and int(sim.run.skill_points) > 0
-		var item_rect := Rect2(881, 187 + shown * 43, 414, 37)
-		_draw_label(String(ability.name), item_rect.position.x, item_rect.position.y + 16, 12, COLORS.text if unlocked else COLORS.muted)
-		var label := "LEARN" if unlocked else "LOCKED"
-		_draw_label(label, item_rect.end.x - 6, item_rect.position.y + 16, 9, COLORS.green if unlocked else Color("#60707a"), HORIZONTAL_ALIGNMENT_RIGHT)
-		_draw_label("%s%s" % [school, " · needs " + ", ".join(prereqs) if not can_meet else ""], item_rect.position.x, item_rect.position.y + 32, 9, COLORS.muted)
-		if unlocked:
-			active_hits.append({"rect": _touch_hit_rect(item_rect), "action": {"type": "learn", "id": ability_id}})
-		shown += 1
-		if shown >= 11:
-			break
-	_draw_button(Rect2(121, 651, 180, 43), "BACK TO BATTLE", {"type": "close"}, false, 12)
+		visible_nodes.append(node)
+		var point: Vector2 = graph_rect.position + (node.position - web_pan) * web_zoom
+		var node_rect := Rect2(point, Vector2(166, 66) * web_zoom)
+		node_rects[node.id] = node_rect
+	for node in visible_nodes:
+		var target_rect: Rect2 = node_rects[node.id]
+		for parent_id in node.parents:
+			if not node_rects.has(parent_id):
+				continue
+			var source_rect: Rect2 = node_rects[parent_id]
+			if graph_rect.has_point(source_rect.get_center()) and graph_rect.has_point(target_rect.get_center()):
+				var connected: bool = selected_web_ability == String(node.id) or selected_web_ability == String(parent_id)
+				draw_line(source_rect.get_center(), target_rect.get_center(), COLORS.gold if connected else COLORS.line, 2.0 if connected else 1.0)
+	for node in visible_nodes:
+		var node_rect: Rect2 = node_rects[node.id]
+		if not graph_rect.intersects(node_rect) or node_rect.position.x < graph_rect.position.x or node_rect.position.y < graph_rect.position.y or node_rect.end.x > graph_rect.end.x or node_rect.end.y > graph_rect.end.y:
+			continue
+		var selected_node: bool = selected_web_ability == node.id
+		var fill := Color("#19372d") if node.learned else Color("#193042") if node.learnable else Color("#17212a")
+		var accent := COLORS.gold if selected_node else COLORS.green if node.learned else COLORS.cyan if node.learnable else COLORS.line_soft
+		draw_rect(node_rect, fill, true)
+		draw_rect(node_rect, accent, false, 2.0 if selected_node else 1.0)
+		_draw_label(_fit_text(String(node.ability.name), node_rect.size.x - 14, 11), node_rect.position.x + 8, node_rect.position.y + 24, 11, _school_color(node.school))
+		var state := "LEARNED" if node.learned else "AVAILABLE · 1 PT" if node.learnable else "LOCKED"
+		_draw_label(state, node_rect.position.x + 8, node_rect.position.y + 45, 9, COLORS.green if node.learned else COLORS.gold if node.learnable else COLORS.muted)
+		active_hits.append({"rect": _touch_hit_rect(node_rect), "action": {"type": "select_web_node", "id": node.id}})
+	_draw_label("Drag to explore connected branches. Hidden discovery knowledge stays undisclosed until found.", 141, 665, 9, COLORS.muted)
+	_draw_panel(Rect2(948, 194, 365, 487), "ABILITY DETAILS", COLORS.line_soft)
+	var chosen_id := selected_web_ability
+	if chosen_id == "" or not sim.content.abilities.has(chosen_id):
+		for known_id in sim.run.known:
+			if sim.content.abilities.has(known_id):
+				chosen_id = String(known_id)
+				break
+	if chosen_id != "" and sim.content.abilities.has(chosen_id):
+		selected_web_ability = chosen_id
+		var ability: Dictionary = sim.content.abilities[chosen_id]
+		var status: Dictionary = sim.get_ability_progress(chosen_id)
+		_draw_label(String(ability.name), 972, 244, 17, COLORS.text)
+		_draw_label("%s  ·  %s" % [ability.school, "PASSIVE" if ability.get("kind", "active") == "passive" else "ACTIVE"], 972, 267, 11, _school_color(ability.school))
+		_draw_line(972, 281, 1292, 281, COLORS.line_soft)
+		var summary_y := 307.0
+		if ability.get("kind", "active") == "passive":
+			var modifier_labels: Array[String] = []
+			for modifier_id in ability.get("modifiers", {}):
+				modifier_labels.append(_passive_modifier_label(String(modifier_id), float(ability.modifiers[modifier_id])))
+			_draw_label("Always active while learned.", 972, summary_y, 11, COLORS.text)
+			for line in _wrap(", ".join(modifier_labels), 38):
+				summary_y += 20
+				_draw_label(line, 972, summary_y, 10, COLORS.cyan)
+		else:
+			_draw_label("%s  ·  %d time  ·  %s" % [ability.get("target", "enemy").capitalize(), ability.get("time", 0), _cost_text(ability.get("costs", {}))], 972, summary_y, 10, COLORS.text)
+			summary_y += 25
+			for effect in ability.get("effects", []):
+				for line in _wrap(_effect_summary(effect), 38):
+					_draw_label(line, 972, summary_y, 10, COLORS.muted)
+					summary_y += 18
+		var parents: Array = ability.get("requires", []).duplicate()
+		parents.append_array(ability.get("prerequisites", {}).get("all_of", []))
+		parents.append_array(ability.get("prerequisites", {}).get("any_of", []))
+		if not parents.is_empty():
+			summary_y += 10
+			_draw_label("CONNECTED FROM", 972, summary_y, 9, COLORS.gold)
+			for parent_id in parents.slice(0, 4):
+				summary_y += 20
+				_draw_label(String(sim.content.abilities.get(parent_id, {}).get("name", parent_id)), 972, summary_y, 10, COLORS.text)
+		summary_y += 26
+		_draw_label(_fit_text(String(status.reason), 320, 10), 972, minf(summary_y, 565), 10, COLORS.muted if not status.learnable else COLORS.green)
+		if status.learnable:
+			_draw_button(Rect2(972, 611, 320, TOUCH_TARGET), "LEARN  ·  SPEND 1 POINT", {"type": "learn", "id": chosen_id}, true, 11, COLORS.green)
+		elif status.learned and ability.get("kind", "active") != "passive":
+			_draw_button(Rect2(972, 611, 320, TOUCH_TARGET), "SELECT FOR TARGETING", {"type": "ability", "id": chosen_id}, false, 11, _school_color(ability.school))
+	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
 
 func _draw_map(rect: Rect2) -> void:
 	_draw_label("WORLD MAP  /  THE FRACTURED MARCH", 131, 103, 20, COLORS.text)
@@ -628,17 +730,17 @@ func _draw_map(rect: Rect2) -> void:
 			var stage: Dictionary = sim.content.stages[stage_id]
 			var card := Rect2(157 + i * 563, 379, 518, 205)
 			_draw_panel(card, "", COLORS.line)
-			_draw_label(stage.name, card.position.x + 20, card.position.y + 40, 21, COLORS.text)
-			_draw_label(String(stage.subtitle), card.position.x + 20, card.position.y + 68, 14, COLORS.muted)
-			_draw_label("HOSTILES", card.position.x + 20, card.position.y + 107, 10, COLORS.gold)
-			_draw_label(", ".join(stage.enemies.map(func(id: String) -> String: return String(sim.content.enemies[id].name))), card.position.x + 20, card.position.y + 132, 13, COLORS.text)
-			_draw_label("TERRAIN  ·  %s" % ", ".join(stage.terrain.keys()), card.position.x + 20, card.position.y + 158, 11, COLORS.cyan)
-			_draw_button(Rect2(card.position.x + 17, card.position.y + 170, card.size.x - 34, 25), "TRAVEL HERE", {"type": "route", "id": stage_id}, true, 10)
+			_draw_label(stage.name, card.position.x + 20, card.position.y + 34, 21, COLORS.text)
+			_draw_label(String(stage.subtitle), card.position.x + 20, card.position.y + 57, 14, COLORS.muted)
+			_draw_label("HOSTILES", card.position.x + 20, card.position.y + 84, 10, COLORS.gold)
+			_draw_label(", ".join(stage.enemies.map(func(id: String) -> String: return String(sim.content.enemies[id].name))), card.position.x + 20, card.position.y + 108, 13, COLORS.text)
+			_draw_label("TERRAIN  ·  %s" % ", ".join(stage.terrain.keys()), card.position.x + 20, card.position.y + 132, 11, COLORS.cyan)
+			_draw_button(Rect2(card.position.x + 17, card.position.y + 146, card.size.x - 34, TOUCH_TARGET), "TRAVEL HERE", {"type": "route", "id": stage_id}, true, 12)
 	else:
 		_draw_label("The final road leads to the Old Graveyard. The Grave Tyrant is waiting.", 176, 402, 17, COLORS.text)
 		_draw_label("Bring every spell, summon and weapon you have learned.", 176, 437, 14, COLORS.muted)
 		_draw_button(Rect2(175, 488, 470, 72), "ENTER THE BARROW", {"type": "boss"}, true, 17)
-	_draw_button(Rect2(129, 651, 180, 43), "BACK TO BATTLE", {"type": "close"}, false, 12)
+	_draw_button(Rect2(129, 651, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
 
 func _draw_rewards(rect: Rect2) -> void:
 	_draw_label("ENCOUNTER COMPLETE", 131, 105, 23, COLORS.text)
@@ -662,10 +764,10 @@ func _draw_rewards(rect: Rect2) -> void:
 			_draw_label("CONTENTS VISIBLE BEFORE STUDY", card.position.x + 19, card.position.y + 206, 10, COLORS.purple)
 		else:
 			_draw_label(String(entry.get("type", "item")).to_upper(), card.position.x + 19, card.position.y + 206, 10, COLORS.cyan)
-		_draw_button(Rect2(card.position.x + 19, card.position.y + 232, card.size.x - 38, 43), "CLAIMED" if reward.get("claimed", false) else "CLAIM REWARD", {"type": "claim_reward", "index": i}, not reward.get("claimed", false), 12)
+		_draw_button(Rect2(card.position.x + 19, card.position.y + 221, card.size.x - 38, TOUCH_TARGET), "CLAIMED" if reward.get("claimed", false) else "CLAIM REWARD", {"type": "claim_reward", "index": i}, not reward.get("claimed", false), 12)
 	_draw_label("%d XP  ·  %d KILLS  ·  %d / 6 ENCOUNTERS" % [sim.run.xp, sim.run.kills, sim.run.encounters_completed], 155, 616, 13, COLORS.gold)
-	_draw_button(Rect2(128, 651, 205, 43), "KEEP EXPLORING", {"type": "close"}, false, 12)
-	_draw_button(Rect2(1042, 651, 270, 43), "NEXT STAGE  →", {"type": "next_stage"}, true, 13)
+	_draw_button(Rect2(128, 640, 205, TOUCH_TARGET), "KEEP EXPLORING", {"type": "close"}, false, 12)
+	_draw_button(Rect2(1042, 640, 270, TOUCH_TARGET), "NEXT STAGE  →", {"type": "next_stage"}, true, 13)
 
 func _draw_codex(rect: Rect2) -> void:
 	_draw_label("FIELD CODEX", 131, 103, 21, COLORS.text)
@@ -684,7 +786,7 @@ func _draw_codex(rect: Rect2) -> void:
 			for j in range(mini(7, values.size())):
 				var value_name := _content_display_name(String(values[j]))
 				_draw_label("✦  %s" % value_name, x + 18, y + 66 + j * 19, 12, COLORS.text)
-	_draw_button(Rect2(128, 651, 180, 43), "BACK TO BATTLE" if page == "battle" else "RETURN", {"type": "close"}, false, 12)
+	_draw_button(Rect2(128, 651, 180, TOUCH_TARGET), "BACK TO BATTLE" if page == "battle" else "RETURN", {"type": "close"}, false, 12)
 
 func _draw_inspect(rect: Rect2) -> void:
 	var enemy: Dictionary = sim.run.entities.get(selected_enemy, {})
@@ -703,7 +805,7 @@ func _draw_inspect(rect: Rect2) -> void:
 			resistances.append("%s %d%%" % [damage_type, int(enemy.resist[damage_type] * 100)])
 		_draw_label("Resistance  ·  %s" % (", ".join(resistances) if not resistances.is_empty() else "None known"), 147, 383, 15, COLORS.cyan)
 		_draw_label("Effects  ·  %s" % (", ".join(enemy.get("statuses", {}).keys()) if not enemy.get("statuses", {}).is_empty() else "None"), 147, 416, 15, COLORS.orange)
-	_draw_button(Rect2(128, 651, 180, 43), "RETURN", {"type": "close"}, false, 12)
+	_draw_button(Rect2(128, 651, 180, TOUCH_TARGET), "RETURN", {"type": "close"}, false, 12)
 
 func _draw_pause(rect: Rect2) -> void:
 	if overlay == "exit_confirm":
@@ -879,6 +981,11 @@ func _input(event: InputEvent) -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
+		if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] and overlay == "abilities":
+			if _ability_graph_rect().has_point(_logical_position(event.position)) and event.pressed:
+				_zoom_ability_web(1.12 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 0.89, _logical_position(event.position))
+				accept_event()
+			return
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			var right_pos := _logical_position(event.position)
 			if page == "battle" and _point_in_board(right_pos):
@@ -891,6 +998,8 @@ func _gui_input(event: InputEvent) -> void:
 			mouse_press_active = true
 			press_position = _logical_position(event.position)
 			press_current_position = press_position
+			web_last_pointer = press_position
+			web_pan_active = overlay == "abilities" and _ability_graph_rect().has_point(press_position)
 			press_started = Time.get_ticks_msec()
 			press_dragged = false
 			queue_redraw()
@@ -901,7 +1010,17 @@ func _gui_input(event: InputEvent) -> void:
 			mouse_press_active = false
 			accept_event()
 	elif event is InputEventMouseMotion and mouse_press_active:
-		press_current_position = _logical_position(event.position)
+		var pointer_now := _logical_position(event.position)
+		if web_pan_active:
+			var pan_delta := pointer_now - web_last_pointer
+			web_pan -= pan_delta / maxf(0.1, web_zoom)
+			web_last_pointer = pointer_now
+			if press_position.distance_to(pointer_now) > POINTER_DRAG_SLOP:
+				press_dragged = true
+			press_current_position = pointer_now
+			queue_redraw()
+			return
+		press_current_position = pointer_now
 		if press_position.distance_to(press_current_position) > POINTER_DRAG_SLOP:
 			press_dragged = true
 		queue_redraw()
@@ -920,6 +1039,8 @@ func _handle_screen_pointer_event(event: InputEvent) -> void:
 			touch_index = event.index
 			press_position = _logical_position(event.position)
 			press_current_position = press_position
+			web_last_pointer = press_position
+			web_pan_active = overlay == "abilities" and _ability_graph_rect().has_point(press_position)
 			press_started = Time.get_ticks_msec()
 			press_dragged = false
 			queue_redraw()
@@ -927,7 +1048,17 @@ func _handle_screen_pointer_event(event: InputEvent) -> void:
 			_finish_pointer_press(_logical_position(event.position), event.canceled)
 			touch_index = -1
 	elif event is InputEventScreenDrag and event.index == touch_index:
-		press_current_position = _logical_position(event.position)
+		var pointer_now := _logical_position(event.position)
+		if web_pan_active:
+			var pan_delta := pointer_now - web_last_pointer
+			web_pan -= pan_delta / maxf(0.1, web_zoom)
+			web_last_pointer = pointer_now
+			if press_position.distance_to(pointer_now) > POINTER_DRAG_SLOP:
+				press_dragged = true
+			press_current_position = pointer_now
+			queue_redraw()
+			return
+		press_current_position = pointer_now
 		if press_position.distance_to(press_current_position) > POINTER_DRAG_SLOP:
 			press_dragged = true
 		queue_redraw()
@@ -943,6 +1074,7 @@ func _finish_pointer_press(point: Vector2, cancelled: bool) -> void:
 	press_current_position = Vector2(-1, -1)
 	press_position = Vector2(-1, -1)
 	press_dragged = false
+	web_pan_active = false
 	queue_redraw()
 
 func _handle_tap(point: Vector2) -> void:
@@ -1003,6 +1135,11 @@ func _handle_action(action: Dictionary) -> void:
 			selected_inventory_index = -1
 			selected_object_index = -1
 			selected_enemy = "" if action.id != "inspect" else selected_enemy
+			if overlay == "abilities":
+				ability_filter = "All"
+				web_pan = Vector2.ZERO
+				web_zoom = 1.0
+				selected_web_ability = String(sim.run.get("known", [""])[0]) if not sim.run.get("known", []).is_empty() else ""
 		"close":
 			overlay = "pause" if overlay == "exit_confirm" else ""
 		"pause_menu":
@@ -1043,9 +1180,10 @@ func _handle_action(action: Dictionary) -> void:
 			if selected_inventory_index >= 0:
 				var item_id: String = sim.run.inventory[selected_inventory_index]
 				var item: Dictionary = sim.content.items[item_id]
-				if item.get("effect") == "bomb":
+				if item.get("effect") == "bomb" or item.get("type") == "scroll":
 					target_mode = "item:%d" % selected_inventory_index
 					overlay = ""
+					_show_notice("Choose a visible target on the battlefield.")
 				else:
 					_commit_action(sim.use_item(selected_inventory_index))
 					overlay = "inventory"
@@ -1057,13 +1195,26 @@ func _handle_action(action: Dictionary) -> void:
 			if sim.discard_item(selected_inventory_index):
 				selected_inventory_index = -1
 				_show_notice("Item discarded.")
+		"unequip":
+			if sim.unequip_item(String(action.get("slot", ""))):
+				_show_notice("Equipment moved into the pack.")
 		"select_item":
 			selected_inventory_index = int(action.index)
+			selected_book_ability = 0
 		"study_book":
 			if sim.study_spellbook(selected_inventory_index, selected_book_ability):
 				_show_notice("%s studied. Knowledge is recorded in your Codex." % sim.content.abilities[sim.run.known.back()].name)
 		"select_book_ability":
 			selected_book_ability = int(action.index)
+		"select_web_node":
+			selected_web_ability = String(action.id)
+		"web_filter":
+			ability_filter = String(action.get("school", "All"))
+		"web_zoom":
+			_zoom_ability_web(float(action.get("factor", 1.0)), _ability_graph_rect().get_center())
+		"web_center":
+			web_pan = Vector2.ZERO
+			web_zoom = 1.0
 		"route":
 			if sim.choose_route(String(action.id)):
 				overlay = ""
@@ -1353,6 +1504,62 @@ func _school_color(school: String) -> Color:
 	if school in ["Blood", "Necromancy", "Shadow"]: return COLORS.blood
 	if school in ["Nature", "Summoning"]: return COLORS.green
 	return COLORS.gold
+
+func _item_glyph(item_id: String, item: Dictionary) -> String:
+	if item.get("type") == "spellbook": return "▣"
+	if item.get("type") == "scroll": return "▤"
+	if item.get("type") == "consumable":
+		match String(item.get("effect", "")):
+			"heal": return "✚"
+			"mana": return "◈"
+			"bomb": return "✹"
+	if item.has("weapon"):
+		var weapon: Dictionary = sim.content.weapons.get(item.weapon, {})
+		return "➶" if weapon.get("range", 1) > 2 else "⚔"
+	if item.get("slot", "") in ["Ring 1", "Ring 2", "Amulet"]: return "◇"
+	if int(item.get("armor", 0)) > 0: return "⛨"
+	return String(item.get("name", item_id)).substr(0, 1).to_upper()
+
+func _item_color(item_type: String, rarity: String) -> Color:
+	if rarity in ["Rare", "Epic", "Legendary"]: return COLORS.purple
+	match item_type:
+		"spellbook": return COLORS.purple
+		"scroll": return COLORS.cyan
+		"consumable": return COLORS.orange
+		"equipment": return COLORS.gold
+		_: return COLORS.text
+
+func _ability_graph_rect() -> Rect2:
+	return Rect2(138, 220, 782, 414)
+
+func _zoom_ability_web(factor: float, anchor: Vector2) -> void:
+	var viewport := _ability_graph_rect()
+	var world_point := web_pan + (anchor - viewport.position) / maxf(0.1, web_zoom)
+	web_zoom = clampf(web_zoom * factor, 0.65, 1.45)
+	web_pan = world_point - (anchor - viewport.position) / web_zoom
+	queue_redraw()
+
+func _effect_summary(effect: Dictionary) -> String:
+	match String(effect.get("type", "")):
+		"damage": return "%d %s damage%s" % [int(effect.get("amount", 0)), String(effect.get("damage", "Arcane")), " ×%d" % int(effect.get("repeats", 1)) if int(effect.get("repeats", 1)) > 1 else ""]
+		"heal": return "Restore %d Health" % int(effect.get("amount", 0))
+		"heal_on_hit": return "Recover %d Health on hit" % int(effect.get("amount", 0))
+		"status": return "Apply %s" % String(effect.get("id", "an effect"))
+		"summon": return "Summon %s" % String(sim.content.get("summons", {}).get(effect.get("id", ""), sim.content.get("enemies", {}).get(effect.get("id", ""), {})).get("name", "an ally"))
+		"terrain": return "Shape the ground as %s" % String(effect.get("id", "terrain"))
+		"move": return "Move up to %d tiles" % int(effect.get("distance", 1))
+		"teleport": return "Teleport to a visible tile"
+		"resource": return "%+d %s" % [int(effect.get("amount", 0)), String(effect.get("id", "resource"))]
+		_: return "A tactical effect"
+
+func _passive_modifier_label(modifier_id: String, value: float) -> String:
+	match modifier_id:
+		"armor_bonus": return "+%d armor" % int(round(value))
+		"damage_reduction": return "%d%% damage reduction" % int(round(value * 100.0))
+		"weapon_damage_bonus": return "+%d weapon damage" % int(round(value))
+		"move_time_reduction": return "%d%% faster movement" % int(round(value * 100.0))
+		"stamina_regen_bonus": return "+%d Stamina regeneration" % int(round(value))
+		_: return "Improves %s" % modifier_id.replace("_", " ")
 
 func _cost_text(costs: Dictionary) -> String:
 	var values: Array = []

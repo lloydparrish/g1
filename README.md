@@ -1,6 +1,6 @@
 # Project Arcanist
 
-A deterministic, touch first tactical roguelike vertical slice built with Godot 4.7.2. The game runs from character selection through branching encounters and rewards to the Grave Tyrant, victory, or death. The authoritative design brief and supplied UI reference are preserved in [`docs/`](docs/).
+A deterministic, touch-first tactical roguelike built with Godot 4.7.2. The game runs from character selection through branching encounters and rewards to the Grave Tyrant, victory, or death. The authoritative design brief and supplied UI reference are preserved in [`docs/`](docs/).
 
 ## Run it
 
@@ -11,7 +11,7 @@ From PowerShell at the project root:
 ```powershell
 scripts\arcanist.ps1 Editor  # Open the Godot editor
 scripts\arcanist.ps1 Run     # Launch the game
-scripts\arcanist.ps1 Test         # Run simulation, production-flow and mobile acceptance suites
+scripts\arcanist.ps1 Test         # Run simulation, production-flow, mobile, progression/inventory and balance suites
 scripts\arcanist.ps1 Build        # Export a Windows x86-64 development build
 scripts\arcanist.ps1 SetupAndroid # Install project-local Android export requirements
 scripts\arcanist.ps1 Android      # Export and inspect the installable Android APK
@@ -27,10 +27,11 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - Seeded, serializable simulation with a deterministic initiative timeline and no real time player decision clock.
 - Data defined actors, factions, weapons, abilities, resources, status effects, stage definitions, objectives, rewards, artifacts and spellbooks in `data/content.json`.
 - Square battlefield generation, eight direction movement, walk/path checks, line of sight, visible/explored fog and multi tile occupancy.
-- Six character definitions, ten enemy types, an extensible damage/status registry and reusable terrain rules.
+- Six selectable character definitions, eleven enemies, stage-aware enemy threat bands, an extensible damage/status registry and reusable terrain rules.
 - Weapons with different range, time and stamina behavior; target based spells; skeleton and owner bound phantom blade summons; the 2x2 Grave Tyrant encounter.
-- Inventory and nine equipment slots, 30 item inventory limit, rewards, equipment, consumables, branching routes, codex discoveries, pause/resume save and death/victory screens.
-- Custom symbolic battlefield and touch sized overlay screens styled for the supplied dark tactical reference.
+- 32 currently playable abilities and passives (29 active, 3 passive) span martial, magical, hybrid and discovery paths. The prerequisite graph is data-driven and larger than the visible UI; its interface pans, filters and zooms, with no viewport-based node cap.
+- A compact 6×5 inventory grid, contextual item inspection, all nine equipment slots, two-handed hand reservation, 30 item capacity, rewards, consumables, branching routes, codex discoveries, pause/resume save and death/victory screens.
+- Custom symbolic battlefield and touch-sized contextual screens guided by the supplied dark tactical reference.
 
 ## Project structure
 
@@ -38,7 +39,7 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - `data/content.json` defines the starter content and effect/trigger rules.
 - `scripts/main.gd` renders the simulation and maps touch, mouse and keyboard input to game commands.
 - `scenes/main.tscn` is the normal game entry point.
-- `tests/test_runner.gd` runs the simulation checks headlessly; `tests/production_path_runner.gd` feeds clicks through the actual main scene's input path from character selection through boss victory and player death.
+- `tests/test_runner.gd`, `tests/progression_inventory_runner.gd` and `tests/balance_runner.gd` cover the headless rules; `tests/production_path_runner.gd` and `tests/mobile_acceptance_runner.gd` exercise mouse and touch through the production scene.
 - `docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md` and `docs/Project_Arcanist_UI_Reference.png` retain the source design materials.
 - [`DESIGN_RULES.md`](DESIGN_RULES.md) keeps the non negotiable architecture and product rules visible for later work.
 
@@ -60,11 +61,11 @@ The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Andro
 
 ## Verification and visual QA
 
-`scripts\arcanist.ps1 Test` runs 55 deterministic simulation checks, 17 production-flow checks, and 17 mobile acceptance checks. The last suite compares identical mouse/touch movement state, checks Android Back and lifecycle save/resume behavior, checks viewport/safe-area calculations and ensures interactive targets remain at least 54 logical pixels.
+`scripts\arcanist.ps1 Test` runs 55 simulation checks, 18 production-flow checks, 17 mobile acceptance checks, 44 progression/inventory checks, and 6 balance checks (140 total). The balance suite samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Mobile checks compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum 54-logical-pixel touch regions.
 
-`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, route, reward and pause overlays. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
+`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, scrolled web, targeting, route, reward and pause views. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
 
-Automated and desktop-render verification do not establish acceptance on a physical Android device. First install, touch feel, physical text size, heat/performance, system Back navigation, suspend/resume and the specific phone's cutout behavior still need phone testing.
+The Prompt 2 build was physically tested by the user. This updated Prompt 3 APK has not been installed on a physical phone by Codex; verify touch feel, physical text size, performance/heat, system Back, suspend/resume and the specific device's cutout behavior after installing this build.
 
 ## Content editing
 
@@ -72,6 +73,6 @@ Automated and desktop-render verification do not establish acceptance on a physi
 
 ## Design boundaries
 
-This is Prompt 1's playable vertical slice. The starter roster, spell and item library are intentionally smaller than the design contract's later 60–80 ability baseline. Art, audio, production balance, broader enemy/boss roster and native Android device testing are follow up production scope; the combat and content model needed to expand them is already exercised by this slice.
+The playable content remains intentionally smaller than the design contract's later 60–80 ability target. This milestone establishes the progression graph, early-run pacing, inventory and responsive presentation; broader content and final balance remain later production scope.
 
-Windows and Android are supported from the same deterministic simulation. Android landscape is the primary mobile layout, with touch and mouse mapped to shared actions, safe-area-aware drawing and an expandable wide-phone side panel. Continue cross-platform QA for future UI and gameplay work.
+Windows and Android are supported from the same deterministic simulation. Android landscape is the primary mobile layout, with touch and mouse mapped to shared actions, safe-area-aware drawing and contextual inventory/build screens. Continue cross-platform QA for future UI and gameplay work; never cap progression to fit a viewport.

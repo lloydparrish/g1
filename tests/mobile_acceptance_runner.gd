@@ -14,7 +14,7 @@ func run_suite() -> void:
 	root.add_child(mobile)
 	await process_frame
 	await process_frame
-	await _touch(mobile, Vector2(710, 435))
+	await _touch_action(mobile, "select_character", "aldren")
 	_check(mobile.selected_character == "aldren", "touch selects a character on the production title screen")
 	await _touch(mobile, Vector2(635, 725))
 	_check(mobile.page == "battle" and mobile.sim.run.character_id == "aldren", "touch begins a run from character selection")

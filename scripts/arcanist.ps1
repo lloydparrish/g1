@@ -43,6 +43,10 @@ switch ($Mode) {
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/production_path_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/mobile_acceptance_runner.gd'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/progression_inventory_runner.gd'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/balance_runner.gd'
         exit $LASTEXITCODE
     }
     'Android' {
@@ -58,6 +62,10 @@ switch ($Mode) {
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/production_path_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/mobile_acceptance_runner.gd'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/progression_inventory_runner.gd'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/balance_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         $env:APPDATA = Join-Path $Profile 'Roaming'
         $env:LOCALAPPDATA = Join-Path $Profile 'Local'

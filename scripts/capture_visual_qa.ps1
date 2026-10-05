@@ -20,6 +20,7 @@ foreach ($CaptureCase in @(
 	@{ Size = '2400x1080'; Overlay = 'inventory' },
 	@{ Size = '1280x720'; Overlay = 'map' },
 	@{ Size = '1920x1080'; Overlay = 'rewards' },
+	@{ Size = '2400x1080'; Overlay = 'abilities' },
 	@{ Size = '2400x1080'; Overlay = 'pause' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Overlay)"
@@ -29,3 +30,17 @@ foreach ($CaptureCase in @(
 	if (-not (Test-Path -LiteralPath $Capture)) { throw "Godot did not create the expected overlay capture: $Capture" }
 	Write-Output "Captured $Capture"
 }
+
+$ScrolledWebDirectory = 'res://build/visual-qa/web-scrolled'
+& $Godot --path $ProjectRoot -- '--capture=2400x1080' "--capture-dir=$ScrolledWebDirectory" '--capture-overlay=abilities' '--capture-full-web' '--capture-web-pan=1700,0'
+if ($LASTEXITCODE -ne 0) { throw 'Scrolled ability-web capture failed.' }
+$ScrolledWebCapture = Join-Path $ProjectRoot 'build\visual-qa\web-scrolled\2400x1080.png'
+if (-not (Test-Path -LiteralPath $ScrolledWebCapture)) { throw "Godot did not create the expected capture: $ScrolledWebCapture" }
+Write-Output "Captured $ScrolledWebCapture"
+
+$TargetingDirectory = 'res://build/visual-qa/targeting'
+& $Godot --path $ProjectRoot -- '--capture=2400x1080' "--capture-dir=$TargetingDirectory" '--capture-target=blood_lance'
+if ($LASTEXITCODE -ne 0) { throw 'Targeting capture failed.' }
+$TargetingCapture = Join-Path $ProjectRoot 'build\visual-qa\targeting\2400x1080.png'
+if (-not (Test-Path -LiteralPath $TargetingCapture)) { throw "Godot did not create the expected capture: $TargetingCapture" }
+Write-Output "Captured $TargetingCapture"

@@ -23,7 +23,7 @@ func validate_content() -> Array:
 	var errors: Array = []
 	var types: Array = content.get("damage_types", [])
 	var valid_slots := ["Weapon", "Offhand", "Head", "Body", "Hands", "Feet", "Ring 1", "Ring 2", "Amulet"]
-	var valid_targets := ["self", "enemy", "area", "tile"]
+	var valid_targets := ["self", "enemy", "area", "tile", "passive"]
 	var valid_effects := ["damage", "heal", "heal_on_hit", "move", "status", "summon", "teleport", "terrain", "resource"]
 	var valid_objectives := ["Eliminate", "Survive", "Reach Exit", "Destroy Targets"]
 	var valid_terrain := ["floor", "wall", "water", "ice", "fire", "blood", "vegetation", "poison", "smoke", "oil"]
@@ -40,9 +40,10 @@ func validate_content() -> Array:
 		var ability: Dictionary = content.abilities[ability_id]
 		if String(ability.get("name", "")) == "":
 			errors.append("%s has no display name" % ability_id)
-		if not valid_targets.has(ability.get("target", "")):
+		var is_passive: bool = ability.get("kind", "active") == "passive"
+		if not valid_targets.has(ability.get("target", "")) or (is_passive and ability.get("target", "") != "passive") or (not is_passive and ability.get("target", "") == "passive"):
 			errors.append("%s has an invalid target type" % ability_id)
-		if int(ability.get("range", -1)) < 0 or int(ability.get("time", 0)) <= 0:
+		if (not is_passive and int(ability.get("range", -1)) < 0) or int(ability.get("time", 0)) < 0 or (not is_passive and int(ability.get("time", 0)) == 0):
 			errors.append("%s has an invalid range or action time" % ability_id)
 		for effect in ability.get("effects", []):
 			if not valid_effects.has(effect.get("type", "")):
@@ -58,9 +59,15 @@ func validate_content() -> Array:
 		for resource in ability.get("costs", {}):
 			if not content.get("resources", []).has(resource):
 				errors.append("%s uses unknown resource %s" % [ability_id, resource])
-		for prerequisite in ability.get("requires", []):
+		var all_prerequisites: Array = ability.get("requires", []).duplicate()
+		all_prerequisites.append_array(ability.get("prerequisites", {}).get("all_of", []))
+		all_prerequisites.append_array(ability.get("prerequisites", {}).get("any_of", []))
+		for prerequisite in all_prerequisites:
 			if not content.get("abilities", {}).has(prerequisite):
 				errors.append("%s requires unknown ability %s" % [ability_id, prerequisite])
+		for modifier_id in ability.get("modifiers", {}):
+			if not (ability.modifiers[modifier_id] is int or ability.modifiers[modifier_id] is float):
+				errors.append("%s has a non-numeric passive modifier %s" % [ability_id, modifier_id])
 	for weapon_id in content.get("weapons", {}):
 		var weapon: Dictionary = content.weapons[weapon_id]
 		if not valid_slots.has(weapon.get("slot", "")) or not types.has(weapon.get("type", "")):
@@ -182,15 +189,16 @@ func start_run(seed_value: int, character_id: String) -> bool:
 	_rng.seed = seed_value
 	var definition: Dictionary = content.characters[character_id]
 	var equipment := {"Weapon": definition.weapon, "Offhand": "", "Head": "", "Body": "", "Hands": "", "Feet": "", "Ring 1": "", "Ring 2": "", "Amulet": ""}
-	var inventory: Array = ["healing_potion", "mana_potion", "bomb", "fireball_scroll", "leather_armor"]
-	if character_id == "jim":
-		inventory.append("iron_shield")
+	for slot in definition.get("starting_equipment", {}):
+		equipment[slot] = definition.starting_equipment[slot]
+	var inventory: Array = ["healing_potion", "mana_potion", "bomb", "fireball_scroll"]
 	if content.weapons[definition.weapon].hands == 2:
 		equipment["Offhand"] = "occupied"
 	run = {
 		"version": 1, "seed": seed_value, "rng_state": str(_rng.state), "character_id": character_id,
 		"character": definition.name, "aura": definition.aura, "discipline": definition.discipline,
-		"schools": definition.schools.duplicate(), "attributes": definition.attributes.duplicate(true),
+		"schools": definition.schools.duplicate(), "disciplines": definition.get("disciplines", [definition.get("discipline", "")]).duplicate(),
+		"discoveries": [], "school_ranks": {}, "discipline_ranks": {}, "attributes": definition.attributes.duplicate(true),
 		"entities": {}, "grid": [], "visible": [], "explored": [], "objects": [], "corpses": [],
 		"equipment": equipment, "inventory": inventory, "artifacts": [], "known": definition.known.duplicate(),
 		"temporary_abilities": {}, "xp": 0, "level": 1, "skill_points": 0, "kills": 0,
@@ -202,6 +210,7 @@ func start_run(seed_value: int, character_id: String) -> bool:
 	var player := {"id": "player", "name": definition.name, "kind": "player", "faction": "Adventurers", "pos": [12, 8], "hp": definition.resources.Health[0], "max_hp": definition.resources.Health[1], "resources": definition.resources.duplicate(true), "statuses": {}, "next_time": 0, "footprint": 1, "armor": 0, "alive": true, "sight": 10}
 	run.entities["player"] = player
 	_new_stage("ruined_village", false)
+	_recompute_armor()
 	_save_codex()
 	return true
 
@@ -212,8 +221,13 @@ func resume_run() -> bool:
 	if not (parsed is Dictionary) or int(parsed.get("version", 0)) != 1:
 		return false
 	run = _canonicalize(parsed)
+	run["disciplines"] = run.get("disciplines", [run.get("discipline", "")])
+	run["discoveries"] = run.get("discoveries", [])
+	run["school_ranks"] = run.get("school_ranks", {})
+	run["discipline_ranks"] = run.get("discipline_ranks", {})
 	_rng.seed = int(run.get("seed", 1))
 	_rng.state = int(run.get("rng_state", "1"))
+	_recompute_armor()
 	return true
 
 func save_run() -> bool:
@@ -304,22 +318,177 @@ func act(command: Dictionary) -> Dictionary:
 	return result
 
 func learn_ability(ability_id: String) -> bool:
-	if run.is_empty() or not content.abilities.has(ability_id) or run.known.has(ability_id) or int(run.skill_points) <= 0:
+	if run.is_empty() or not content.abilities.has(ability_id) or int(run.skill_points) <= 0:
+		return false
+	var progression: Dictionary = get_ability_progress(ability_id)
+	if not progression.get("learnable", false):
 		return false
 	var definition: Dictionary = content.abilities[ability_id]
-	if definition.get("discovery_required", false) and not run.schools.has(definition.get("school", "")):
-		return false
-	for requirement in definition.get("requires", []):
-		if not run.known.has(requirement):
-			return false
-	if definition.get("school", "") in ["Fire", "Frost", "Storm", "Nature", "Arcane", "Holy", "Shadow"] and not run.schools.has(definition.school) and run.get("character_id") != "jim":
-		return false
 	run.known.append(ability_id)
 	run.skill_points -= 1
+	_recompute_armor()
 	_record_codex("abilities", ability_id)
 	_add_log("Learned %s." % definition.name)
 	save_run()
 	return true
+
+func get_school_rank(school: String) -> int:
+	var rank := int(run.get("school_ranks", {}).get(school, 0))
+	if run.get("schools", []).has(school):
+		rank = maxi(rank, 1)
+	for ability_id in run.get("known", []):
+		if content.get("abilities", {}).has(ability_id) and content.abilities[ability_id].get("school", "") == school:
+			rank += 1
+	return rank
+
+func get_discipline_rank(discipline: String) -> int:
+	var rank := int(run.get("discipline_ranks", {}).get(discipline, 0))
+	if run.get("disciplines", [run.get("discipline", "")]).has(discipline):
+		rank = maxi(rank, 1)
+	for ability_id in run.get("known", []):
+		if content.get("abilities", {}).has(ability_id) and content.abilities[ability_id].get("school", "") == discipline:
+			rank += 1
+	return rank
+
+func get_ability_progress(ability_id: String) -> Dictionary:
+	if not content.get("abilities", {}).has(ability_id):
+		return {"visible": false, "learned": false, "learnable": false, "reason": "Unknown ability."}
+	var ability: Dictionary = content.abilities[ability_id]
+	var school := String(ability.get("school", ""))
+	var prerequisites: Dictionary = ability.get("prerequisites", {})
+	var all_of: Array = ability.get("requires", []).duplicate()
+	all_of.append_array(prerequisites.get("all_of", []))
+	var any_of: Array = prerequisites.get("any_of", [])
+	var learned: bool = run.get("known", []).has(ability_id)
+	var missing: Array[String] = []
+	var discoveries: Array = run.get("discoveries", [])
+	for discovery in prerequisites.get("discoveries", []):
+		if not discoveries.has(discovery):
+			return {"visible": false, "learned": learned, "learnable": false, "reason": "Undiscovered knowledge."}
+	var is_discovered_school: bool = run.get("schools", []).has(school)
+	var learned_parent := false
+	for prerequisite in all_of:
+		if run.get("known", []).has(prerequisite):
+			learned_parent = true
+		else:
+			missing.append(String(content.abilities.get(prerequisite, {}).get("name", prerequisite)))
+	var any_parent := any_of.is_empty()
+	if not any_of.is_empty():
+		for prerequisite in any_of:
+			if run.get("known", []).has(prerequisite):
+				any_parent = true
+				learned_parent = true
+				break
+		if not any_parent:
+			missing.append("one of %s" % ", ".join(any_of.map(func(value: String) -> String: return String(content.abilities.get(value, {}).get("name", value)))))
+	var identity_known: bool = run.get("disciplines", [run.get("discipline", "")]).has(school) or is_discovered_school
+	var visible: bool = learned or (identity_known or learned_parent) and not (ability.get("discovery_required", false) and not is_discovered_school)
+	for required_school in prerequisites.get("schools", []):
+		if not run.get("schools", []).has(required_school):
+			visible = learned
+	if ability.get("discovery_required", false) and not is_discovered_school:
+		visible = learned
+	for required_school in prerequisites.get("schools", []):
+		if not run.get("schools", []).has(required_school):
+			missing.append("%s knowledge" % required_school)
+	for required_discipline in prerequisites.get("disciplines", []):
+		if not run.get("disciplines", [run.get("discipline", "")]).has(required_discipline):
+			missing.append("%s training" % required_discipline)
+	for rank_school in prerequisites.get("school_ranks", {}):
+		if get_school_rank(rank_school) < int(prerequisites.school_ranks[rank_school]):
+			missing.append("%s rank %d" % [rank_school, int(prerequisites.school_ranks[rank_school])])
+	for rank_discipline in prerequisites.get("discipline_ranks", {}):
+		if get_discipline_rank(rank_discipline) < int(prerequisites.discipline_ranks[rank_discipline]):
+			missing.append("%s rank %d" % [rank_discipline, int(prerequisites.discipline_ranks[rank_discipline])])
+	for required_character in prerequisites.get("characters", []):
+		if run.get("character_id", "") != required_character:
+			missing.append("a different character")
+	if int(run.get("level", 1)) < int(prerequisites.get("minimum_level", 1)):
+		missing.append("level %d" % int(prerequisites.minimum_level))
+	for artifact in prerequisites.get("artifacts", []):
+		if not run.get("artifacts", []).has(artifact):
+			missing.append("%s artifact" % content.get("artifacts", {}).get(artifact, {}).get("name", artifact))
+	for resource_name in prerequisites.get("resources", {}):
+		var resource: Array = get_player().get("resources", {}).get(resource_name, [0, 0])
+		if int(resource[0]) < int(prerequisites.resources[resource_name]):
+			missing.append("%d %s" % [int(prerequisites.resources[resource_name]), resource_name])
+	if not visible:
+		return {"visible": false, "learned": learned, "learnable": false, "reason": "Knowledge has not been discovered."}
+	if learned:
+		return {"visible": true, "learned": true, "learnable": false, "reason": "Learned."}
+	if not identity_known and not learned_parent:
+		missing.append("%s knowledge" % school)
+	if int(run.get("skill_points", 0)) <= 0:
+		missing.append("an ability point")
+	var learnable: bool = missing.is_empty()
+	return {"visible": true, "learned": false, "learnable": learnable, "reason": "Ready to learn." if learnable else "Requires " + ", ".join(missing) + "."}
+
+func get_progression_graph() -> Array:
+	var ids: Array = content.get("abilities", {}).keys()
+	ids.sort()
+	var visible_ids: Array[String] = []
+	var visible_schools: Array[String] = []
+	var progress_by_id: Dictionary = {}
+	for ability_id in ids:
+		var progress: Dictionary = get_ability_progress(ability_id)
+		if not progress.visible:
+			continue
+		visible_ids.append(String(ability_id))
+		progress_by_id[ability_id] = progress
+		var school := String(content.abilities[ability_id].get("school", ""))
+		if school != "" and not visible_schools.has(school):
+			visible_schools.append(school)
+	var school_order: Array = []
+	for school in content.get("progression", {}).get("disciplines", []) + content.get("progression", {}).get("schools", []):
+		if visible_schools.has(school):
+			school_order.append(school)
+	var extras: Array[String] = []
+	for school in visible_schools:
+		if not school_order.has(school):
+			extras.append(school)
+	extras.sort()
+	school_order.append_array(extras)
+	var school_rows: Dictionary = {}
+	var result: Array = []
+	for ability_id in visible_ids:
+		var progress: Dictionary = progress_by_id[ability_id]
+		var ability: Dictionary = content.abilities[ability_id]
+		var school := String(ability.get("school", ""))
+		var school_index: int = school_order.find(school)
+		if school_index < 0:
+			school_index = school_order.size()
+		var row_index := int(school_rows.get(school, 0))
+		school_rows[school] = row_index + 1
+		var position := Vector2(float(school_index) * 190.0 + float(ability.get("web_offset_x", 0.0)), float(ability.get("web_rank", row_index)) * 116.0)
+		if ability.has("web_position"):
+			position = Vector2(float(ability.web_position[0]), float(ability.web_position[1]))
+		var parents: Array = ability.get("requires", []).duplicate()
+		parents.append_array(ability.get("prerequisites", {}).get("all_of", []))
+		parents.append_array(ability.get("prerequisites", {}).get("any_of", []))
+		result.append({"id": ability_id, "ability": ability, "school": school, "position": position, "parents": parents, "learned": progress.learned, "learnable": progress.learnable, "reason": progress.reason})
+	return result
+
+func get_progression_graph_bounds(nodes: Array = []) -> Rect2:
+	var graph_nodes := nodes if not nodes.is_empty() else get_progression_graph()
+	if graph_nodes.is_empty():
+		return Rect2()
+	var minimum := Vector2(INF, INF)
+	var maximum := Vector2(-INF, -INF)
+	for node in graph_nodes:
+		var position: Vector2 = node.position
+		minimum.x = minf(minimum.x, position.x)
+		minimum.y = minf(minimum.y, position.y)
+		maximum.x = maxf(maximum.x, position.x + 176.0)
+		maximum.y = maxf(maximum.y, position.y + 78.0)
+	return Rect2(minimum, maximum - minimum)
+
+func get_passive_modifier(modifier_id: String) -> float:
+	var total := 0.0
+	for ability_id in run.get("known", []):
+		var ability: Dictionary = content.get("abilities", {}).get(ability_id, {})
+		if ability.get("kind", "active") == "passive":
+			total += float(ability.get("modifiers", {}).get(modifier_id, 0.0))
+	return total
 
 func claim_reward(index: int) -> bool:
 	if run.is_empty() or not run.get("stage_completed", false) or index < 0 or index >= run.reward_choices.size():
@@ -392,6 +561,9 @@ func equip_item(index: int) -> bool:
 			index = run.inventory.size() - 2
 		elif run.equipment.get("Offhand", "") == "occupied":
 			run.equipment.Offhand = ""
+		var learned_discipline := _weapon_discipline(String(item.get("weapon", "")))
+		if learned_discipline != "" and not run.get("disciplines", []).has(learned_discipline):
+			run.disciplines.append(learned_discipline)
 	elif not run.equipment.has(slot):
 		return false
 	var displaced: String = run.equipment.get(slot, "")
@@ -411,6 +583,31 @@ func equip_item(index: int) -> bool:
 	save_run()
 	return true
 
+func unequip_item(slot: String) -> bool:
+	if not run.get("equipment", {}).has(slot) or run.inventory.size() >= 30:
+		return false
+	var item_id: String = run.equipment.get(slot, "")
+	if item_id in ["", "occupied"]:
+		return false
+	run.inventory.append(item_id)
+	run.equipment[slot] = ""
+	if slot == "Weapon" and run.equipment.get("Offhand", "") == "occupied":
+		run.equipment["Offhand"] = ""
+	_recompute_armor()
+	_add_log("Unequipped %s." % content.items.get(item_id, {}).get("name", item_id))
+	save_run()
+	return true
+
+func _weapon_discipline(weapon_id: String) -> String:
+	match weapon_id:
+		"sword": return "Swordsmanship"
+		"greatsword": return "Heavy Weapons"
+		"spear": return "Polearms"
+		"dagger": return "Daggers"
+		"bow": return "Archery"
+		"crossbow": return "Crossbows"
+		_: return ""
+
 func discard_item(index: int) -> bool:
 	if index < 0 or index >= run.inventory.size():
 		return false
@@ -427,23 +624,29 @@ func study_spellbook(index: int, ability_index: int = 0) -> bool:
 		return false
 	if ability_index < 0 or ability_index >= book.get("learns", []).size():
 		return false
-	if not run.schools.has(book.school):
-		run.schools.append(book.school)
+	var school := String(book.get("school", ""))
+	if not run.schools.has(school):
+		run.schools.append(school)
+	var discoveries: Array = run.get("discoveries", [])
+	for discovery in ["school:" + school, "spellbook:" + item_id]:
+		if not discoveries.has(discovery):
+			discoveries.append(discovery)
+	run.discoveries = discoveries
 	var ability_id: String = book.learns[ability_index]
 	if not run.known.has(ability_id):
 		run.known.append(ability_id)
 	run.discovered_books.append(item_id)
 	_record_codex("spellbooks", item_id)
-	_record_codex("schools", book.school)
+	_record_codex("schools", school)
 	_record_codex("abilities", ability_id)
-	_add_log("The Lesser Key reveals %s." % content.abilities[ability_id].name)
+	_add_log("%s reveals %s." % [book.get("name", "The spellbook"), content.abilities[ability_id].name])
 	save_run()
 	return true
 
 func get_available_abilities() -> Array:
 	var result: Array = []
 	for ability_id in run.get("known", []):
-		if content.abilities.has(ability_id):
+		if content.abilities.has(ability_id) and content.abilities[ability_id].get("kind", "active") != "passive":
 			result.append(ability_id)
 	return result
 
@@ -454,7 +657,7 @@ func state_digest() -> String:
 	if run.is_empty():
 		return ""
 	var player: Dictionary = get_player()
-	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "grid": run.grid, "objects": run.objects, "known": run.known, "xp": run.xp, "level": run.level, "objective": run.objective})
+	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "grid": run.grid, "objects": run.objects, "known": run.known, "schools": run.get("schools", []), "disciplines": run.get("disciplines", []), "discoveries": run.get("discoveries", []), "xp": run.xp, "level": run.level, "skill_points": run.skill_points, "objective": run.objective})
 
 func _new_stage(stage_id: String, is_boss: bool) -> void:
 	var player: Dictionary = run.entities.get("player", {})
@@ -527,9 +730,16 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 		if objective_kind == "Destroy Targets":
 			run.objects.append({"id": "ward_a", "kind": "ward", "name": "Ritual Ward", "pos": [17, 5], "hp": 15, "max_hp": 15})
 			run.objects.append({"id": "ward_b", "kind": "ward", "name": "Ritual Ward", "pos": [18, 11], "hp": 15, "max_hp": 15})
-		var enemy_count := 3 + mini(int(run.stage_index), 2)
+		var enemy_curve: Array = stage.get("enemy_count_curve", [2, 3, 4, 5, 5])
+		var enemy_count: int = int(enemy_curve[clampi(int(run.stage_index), 0, enemy_curve.size() - 1)])
+		var maximum_tier := 0 if int(run.stage_index) == 0 else 1 if int(run.stage_index) <= 2 else 2
+		var enemy_pool: Array = []
+		for candidate_id in stage.enemies:
+			if int(content.enemies.get(candidate_id, {}).get("tier", 0)) <= maximum_tier:
+				enemy_pool.append(candidate_id)
+		if enemy_pool.is_empty():
+			enemy_pool = stage.enemies.duplicate()
 		for i in range(enemy_count):
-			var enemy_pool: Array = stage.enemies
 			var enemy_id: String = enemy_pool[_rng.randi_range(0, enemy_pool.size() - 1)]
 			var position := _find_spawn(Vector2i(15 + (i % 3) * 2, 5 + int(i / 3) * 5))
 			_spawn_enemy(enemy_id, position, false)
@@ -555,7 +765,7 @@ func _make_rewards() -> void:
 	var candidates: Array = []
 	for item_id in content.items:
 		var item: Dictionary = content.items[item_id]
-		if item_id in ["healing_potion", "mana_potion", "bomb", "fireball_scroll", "lesser_key_of_ash", "sword", "dagger", "greatsword", "spear", "bow", "crossbow", "staff", "wand", "iron_shield", "copper_ring"]:
+		if item_id in ["healing_potion", "mana_potion", "bomb", "fireball_scroll", "lesser_key_of_ash", "cinder_primer", "storm_ledger", "sword", "dagger", "greatsword", "spear", "bow", "crossbow", "staff", "wand", "iron_shield", "leather_armor", "scale_armor", "copper_ring"]:
 			var weight := 1.0
 			var tags: Array = item.get("tags", [])
 			if tags.has("martial") and run.discipline == "Swordsmanship":
@@ -676,7 +886,8 @@ func _player_move(target: Vector2i) -> Dictionary:
 		_damage("player", 5, "Fire", "the burning ground")
 	_add_log("%s steps across the field." % player.name)
 	_check_objective_at_player()
-	var move_time := maxi(1, int(round(100.0 * float(_artifact_modifier("move_time_multiplier", 1.0)))))
+	var passive_move := maxf(0.4, 1.0 - get_passive_modifier("move_time_reduction"))
+	var move_time := maxi(1, int(round(100.0 * passive_move * float(_artifact_modifier("move_time_multiplier", 1.0)))))
 	return _spend_player_time(move_time, "")
 
 func _player_attack(target: Vector2i) -> Dictionary:
@@ -697,7 +908,7 @@ func _player_attack(target: Vector2i) -> Dictionary:
 		return {"ok": false, "message": "You need more Stamina for that attack."}
 	stamina[0] = int(stamina[0]) - int(weapon.stamina)
 	player.resources.Stamina = stamina
-	var damage := int(weapon.damage) + int(run.attributes.get("Might", 10)) / 4
+	var damage := int(weapon.damage) + int(run.attributes.get("Might", 10)) / 4 + int(round(get_passive_modifier("weapon_damage_bonus")))
 	if _has_status("player", "Empowered"):
 		damage += 8
 		run.entities.player.statuses.erase("Empowered")
@@ -735,12 +946,14 @@ func _cast(ability_id: String, target: Vector2i) -> Dictionary:
 	if not content.abilities.has(ability_id):
 		return {"ok": false, "message": "That ability is unknown."}
 	var ability: Dictionary = content.abilities[ability_id]
+	if ability.get("kind", "active") == "passive":
+		return {"ok": false, "message": "That is a passive ability."}
 	var player: Dictionary = get_player()
 	var temporary := int(run.temporary_abilities.get(ability_id, 0)) > 0
 	if not run.known.has(ability_id) and not temporary:
 		return {"ok": false, "message": "You have not learned %s." % ability.name}
-	if ability.get("school", "") == "Demonology" and not run.schools.has("Demonology"):
-		return {"ok": false, "message": "You have not discovered Demonology."}
+	if ability.get("discovery_required", false) and not run.schools.has(ability.get("school", "")):
+		return {"ok": false, "message": "You have not discovered %s." % ability.get("school", "that school")}
 	var target_mode: String = ability.get("target", "enemy")
 	var origin := _pos(player)
 	if target_mode == "self":
@@ -1126,6 +1339,8 @@ func _damage(target_id: String, raw_amount: int, damage_type: String, source: St
 		amount = maxi(0, int(round(float(amount) * (1.0 - resistance + vulnerability))))
 	if int(target.get("armor", 0)) > 0 and damage_type in ["Slashing", "Piercing", "Blunt"]:
 		amount = maxi(1, amount - int(target.armor))
+	if target_id == "player" and amount > 0:
+		amount = maxi(1, int(round(float(amount) * (1.0 - clampf(get_passive_modifier("damage_reduction"), 0.0, 0.6)))))
 	if _has_status(target_id, "Guard"):
 		amount = int(ceil(float(amount) * 0.5))
 		target.statuses.erase("Guard")
@@ -1231,7 +1446,7 @@ func _regenerate(elapsed: int) -> void:
 	var mana: Array = player.resources.Mana
 	var stamina: Array = player.resources.Stamina
 	mana[0] = mini(int(mana[1]), int(mana[0]) + int(elapsed / 180))
-	stamina[0] = mini(int(stamina[1]), int(stamina[0]) + int(elapsed / 55) * 2)
+	stamina[0] = mini(int(stamina[1]), int(stamina[0]) + int(elapsed / 55) * (2 + int(round(get_passive_modifier("stamina_regen_bonus")))))
 	player.resources.Mana = mana
 	player.resources.Stamina = stamina
 	var blood: Array = player.resources.get("Blood", [0, 0])
@@ -1270,6 +1485,9 @@ func _complete_stage() -> void:
 		return
 	run.stage_completed = true
 	run.encounters_completed = int(run.encounters_completed) + 1
+	var clear_xp := 15 + mini(int(run.stage_index), 4) * 3
+	_award_xp(clear_xp)
+	_add_log("The route rewards %d experience." % clear_xp)
 	_add_log("Objective complete. You can keep exploring before you leave.")
 	_make_rewards()
 	_emit_trigger("OnEncounterComplete", {"stage_id": run.stage_id, "objective": run.objective.get("kind", "")})
@@ -1334,7 +1552,7 @@ func _recompute_armor() -> void:
 		if item_id == "" or item_id == "occupied":
 			continue
 		total += int(content.items.get(item_id, {}).get("armor", 0))
-	get_player().armor = total
+	get_player().armor = total + int(round(get_passive_modifier("armor_bonus")))
 
 func _find_spawn(preferred: Vector2i) -> Vector2i:
 	var candidates := [preferred]

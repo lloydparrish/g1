@@ -123,8 +123,10 @@ func run_suite() -> void:
 	var command_capacity_before := int(heart.get_player().resources.Command[1])
 	heart._acquire_artifact("heart_of_command")
 	_check(int(heart.get_player().max_hp) == max_health_before - 20 and int(heart.get_player().resources.Command[1]) == command_capacity_before + 1, "artifact acquisition applies its data-defined run changes")
-	var weapon_index: int = sim.run.inventory.find("leather_armor")
-	_check(sim.equip_item(weapon_index) and int(sim.get_player().armor) == 2, "inventory equipment modifies armor")
+	var armor_before_equip: int = int(sim.get_player().armor)
+	sim.run.inventory.append("scale_armor")
+	var weapon_index: int = sim.run.inventory.find("scale_armor")
+	_check(sim.equip_item(weapon_index) and int(sim.get_player().armor) == armor_before_equip - int(sim.content.items.leather_armor.armor) + int(sim.content.items.scale_armor.armor), "inventory equipment replaces armor and recalculates protection")
 	_check(sim.run.inventory.size() <= 30, "inventory stays within its thirty item capacity")
 
 	var objective = SimScript.new()

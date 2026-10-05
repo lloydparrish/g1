@@ -19,6 +19,10 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Summons occupy real battlefield cells when appropriate and consume their defined Command. Do not add a global summon-count cap.
 - Artifacts are persistent run modifiers and do not consume a fixed artifact-slot allowance.
 - Equipment supports the defined nine slots; two-handed weapons reserve both hand slots. Keep ordinary inventory at 30 items.
+- Keep ordinary inventory as a compact 6×5 item grid with selected-item details and contextual actions; equipment belongs in the same inventory view. Do not reserve battlefield space for a closed pack.
+- The ability model is an extensible prerequisite graph. A viewport, screen size or current content count must never impose a logical node limit; the web UI must pan/scroll to reach every revealed branch.
+- Keep natural progression distinct from discovery. Schoolbooks and other authored sources record discovery flags and show their contents before study; unrelated knowledge remains hidden until found.
+- Treat martial disciplines as complete build paths with active techniques and meaningful passives. A viable build must not require magic.
 
 ## Player-facing design
 
@@ -32,6 +36,15 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Give the battlefield the greatest practical space. Keep health/resources, available actions, turn order and important statuses visible; put extended inspection and build screens in contextual overlays.
 - Keep text, targets and controls readable and comfortably tappable. Do not expose internal IDs, calculations, test controls, raw data, temporary copy or engine defaults in normal play.
 - Completing an objective does not force a transition. Let the player explore and collect rewards, then choose the next location.
+- Use [`docs/Project_Arcanist_UI_Reference.png`](docs/Project_Arcanist_UI_Reference.png) as the production visual direction: resource/status information, a large battlefield, turn order, contextual inspection, action costs, and compact inventory/build panels.
+- Make inventory and build screens contextual. Opening them may reorganize available space; closing them should return the battlefield to its largest practical layout.
+
+## Opening difficulty and progression pacing
+
+- Treat the first encounters as the run's on-ramp. Keep early enemy counts, enemy tiers and simultaneous complications inside stage-aware bands so players have room to learn combat and make an initial build choice.
+- Escalate encounter count and composition with run stage. Preserve tactical enemy turns and dangerous decisions; do not flatten difficulty by disabling AI, removing costs or granting automatic invulnerability.
+- Keep stage clear rewards and ordinary combat experience deterministic. Use seeded encounter batches to flag pathological openings, then inspect representative combat rather than balancing solely to an automated player.
+- Keep progression metadata data-driven: ability links, AND/OR prerequisites, school and discipline ranks, character/resource/artifact conditions and discovery flags belong in definitions and shared progression rules, never per-node UI exceptions.
 
 ## Verification bar
 
