@@ -6,3 +6,10 @@
 /script_templates/
 /text_editor_themes/
 *.tmp
+*.keystore
+*.jks
+/.gradle/
+/.android/
+/local.properties
+/android/.gradle/
+/android/build/

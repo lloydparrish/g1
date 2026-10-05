@@ -1,0 +1,179 @@
+extends SceneTree
+
+const MainScene = preload("res://scenes/main.tscn")
+const SimScript = preload("res://scripts/game_sim.gd")
+
+var checks := 0
+var failures: Array[String] = []
+
+func _initialize() -> void:
+	call_deferred("run_suite")
+
+func run_suite() -> void:
+	var mobile = MainScene.instantiate()
+	root.add_child(mobile)
+	await process_frame
+	await process_frame
+	await _touch(mobile, Vector2(710, 435))
+	_check(mobile.selected_character == "aldren", "touch selects a character on the production title screen")
+	await _touch(mobile, Vector2(635, 725))
+	_check(mobile.page == "battle" and mobile.sim.run.character_id == "aldren", "touch begins a run from character selection")
+
+	var desktop = MainScene.instantiate()
+	root.add_child(desktop)
+	await process_frame
+	desktop.sim.start_run(20261005, "jim")
+	desktop.page = "battle"
+	mobile.sim.start_run(20261005, "jim")
+	mobile.page = "battle"
+	desktop.queue_redraw()
+	mobile.queue_redraw()
+	await process_frame
+	await process_frame
+	var start: Vector2i = mobile.sim._pos(mobile.sim.get_player())
+	var destination := _open_neighbor(mobile.sim, start)
+	await _mouse_tap(desktop, desktop._cell_center(destination))
+	await _touch(mobile, mobile._cell_center(destination))
+	_check(mobile.sim._pos(mobile.sim.get_player()) == destination, "a direct screen touch moves through the normal tile action")
+	_check(JSON.stringify(mobile.sim.run) == JSON.stringify(desktop.sim.run), "equivalent mouse and touch movement produce identical deterministic run state")
+
+	var time_before_cancel := int(mobile.sim.run.time)
+	if not mobile.sim.run.known.has("arcane_bolt"):
+		mobile.sim.run.known.append("arcane_bolt")
+	mobile.queue_redraw()
+	await process_frame
+	await _touch_action(mobile, "ability", "arcane_bolt")
+	_check(mobile.target_mode == "arcane_bolt", "touching an ability enters explicit target mode")
+	await _touch_action(mobile, "cancel_target")
+	_check(mobile.target_mode == "" and int(mobile.sim.run.time) == time_before_cancel, "visible touch cancel exits targeting without advancing simulation")
+
+	for entity_id in mobile.sim.run.entities.keys():
+		if entity_id != "player":
+			mobile.sim.run.entities[entity_id].alive = false
+	var player: Dictionary = mobile.sim.get_player()
+	player.hp = maxi(1, int(player.max_hp) - 1)
+	var health_before := int(player.hp)
+	mobile.queue_redraw()
+	await process_frame
+	await _touch_action(mobile, "quick_item")
+	_check(not mobile.sim.run.inventory.has("healing_potion") and int(mobile.sim.get_player().hp) > health_before, "touch quick-slot input uses a healing consumable through the existing rule")
+
+	var saved_time := int(mobile.sim.run.time)
+	mobile._notification(NOTIFICATION_APPLICATION_PAUSED)
+	mobile._notification(NOTIFICATION_APPLICATION_RESUMED)
+	_check(int(mobile.sim.run.time) == saved_time and FileAccess.file_exists("user://run_save.json"), "application pause saves the active run without advancing turns")
+	var resumed = SimScript.new()
+	_check(resumed.resume_run() and JSON.stringify(resumed.run) == JSON.stringify(mobile.sim.run), "the lifecycle save resumes to the same deterministic run state")
+
+	mobile.target_mode = "arcane_bolt"
+	mobile._handle_back_request()
+	_check(mobile.target_mode == "" and mobile.page == "battle" and mobile.overlay == "", "the first Android Back cancels targeting without opening a menu")
+	mobile.overlay = "inventory"
+	mobile._handle_back_request()
+	_check(mobile.overlay == "", "Android Back closes the inventory overlay before gameplay")
+	mobile._handle_back_request()
+	_check(mobile.overlay == "pause", "Android Back opens pause instead of exiting from gameplay")
+	mobile._handle_back_request()
+	_check(mobile.overlay == "exit_confirm", "a second Back from pause asks before exiting")
+	mobile._handle_action({"type": "close"})
+	_check(mobile.overlay == "pause", "the exit confirmation returns to pause safely")
+
+	var target_layouts := [
+		Vector2(1920, 1080), Vector2(2560, 1440), Vector2(2400, 1080),
+		Vector2(2340, 1080), Vector2(1280, 720)
+	]
+	var layout_ok := true
+	for viewport_size in target_layouts:
+		var viewport_rect := Rect2(Vector2.ZERO, viewport_size)
+		var layout: Dictionary = mobile._calculate_layout(viewport_size, viewport_rect)
+		var logical_size: Vector2 = layout.size
+		var content_bounds := Rect2(layout.offset, logical_size * float(layout.scale))
+		if logical_size.x < 1440.0 or logical_size.y < 810.0:
+			layout_ok = false
+		if content_bounds.position.x < viewport_rect.position.x or content_bounds.position.y < viewport_rect.position.y or content_bounds.end.x > viewport_rect.end.x or content_bounds.end.y > viewport_rect.end.y:
+			layout_ok = false
+		mobile.screen_size = logical_size
+		if logical_size.x > 1550.0 and mobile._board_rect().end.x > 1150.0:
+			layout_ok = false
+	var inset_layout: Dictionary = mobile._calculate_layout(Vector2(2400, 1080), Rect2(90, 0, 2220, 1080))
+	if not is_equal_approx(float(inset_layout.offset.x), 98.0) or inset_layout.size.x < 1440.0:
+		layout_ok = false
+	_check(layout_ok, "desktop, wide-phone and smaller viewports preserve the 16:9 playfield with no wide-panel overlap")
+	var fitted_name: String = mobile._fit_text("Aldren, Exiled Battlemage", 150.0, 15)
+	_check(ThemeDB.fallback_font.get_string_size(fitted_name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x <= 150.0, "long character names fit beside the level label on compact screens")
+
+	mobile.page = "battle"
+	mobile.overlay = "inventory"
+	mobile.queue_redraw()
+	await process_frame
+	await process_frame
+	var target_sizes_ok := true
+	for hit in mobile.active_hits:
+		var hit_rect: Rect2 = hit.rect
+		if hit_rect.size.x < 54.0 or hit_rect.size.y < 54.0:
+			target_sizes_ok = false
+	_check(target_sizes_ok, "visible inventory and action hit regions have at least 54 logical pixels per dimension")
+
+	mobile.queue_free()
+	desktop.queue_free()
+	print("MOBILE ACCEPTANCE %d · FAILURES %d" % [checks, failures.size()])
+	for failure in failures:
+		printerr("FAIL: " + failure)
+	quit(1 if not failures.is_empty() else 0)
+
+func _open_neighbor(sim, origin: Vector2i) -> Vector2i:
+	for direction in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]:
+		var cell: Vector2i = origin + direction
+		if not sim._inside(cell) or sim._terrain_at(cell) == "wall":
+			continue
+		if not sim.get_enemy_at(cell).is_empty() or sim._object_index_at(cell) >= 0:
+			continue
+		if sim._cell_visible(cell):
+			return cell
+	return origin + Vector2i(1, 0)
+
+func _touch_action(main: Control, action_type: String, action_id: String = "") -> void:
+	await process_frame
+	for hit in main.active_hits:
+		var action: Dictionary = hit.action
+		if String(action.get("type", "")) != action_type:
+			continue
+		if action_id != "" and String(action.get("id", action.get("mode", ""))) != action_id:
+			continue
+		var rect: Rect2 = hit.rect
+		await _touch(main, rect.get_center())
+		return
+	_check(false, "touch action is drawn: %s %s" % [action_type, action_id])
+
+func _touch(main: Control, point: Vector2) -> void:
+	var viewport_point: Vector2 = main.draw_offset + point * main.draw_scale
+	var press := InputEventScreenTouch.new()
+	press.index = 0
+	press.position = viewport_point
+	press.pressed = true
+	main._input(press)
+	var release := InputEventScreenTouch.new()
+	release.index = 0
+	release.position = viewport_point
+	release.pressed = false
+	main._input(release)
+	await process_frame
+
+func _mouse_tap(main: Control, point: Vector2) -> void:
+	var viewport_point: Vector2 = main.draw_offset + point * main.draw_scale
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.position = viewport_point
+	press.pressed = true
+	main._gui_input(press)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.position = viewport_point
+	release.pressed = false
+	main._gui_input(release)
+	await process_frame
+
+func _check(condition: bool, description: String) -> void:
+	checks += 1
+	if not condition:
+		failures.append(description)

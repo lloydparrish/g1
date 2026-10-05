@@ -2,9 +2,12 @@ extends Control
 
 const SimScript = preload("res://scripts/game_sim.gd")
 const LOGICAL_SIZE := Vector2(1440, 810)
-const BOARD_ORIGIN := Vector2(250, 62)
-const TILE := 35.0
-const BOARD_RECT := Rect2(BOARD_ORIGIN, Vector2(875, 560))
+const BASE_BOARD_ORIGIN := Vector2(250, 62)
+const BASE_TILE := 35.0
+const WIDE_TILE := 35.0
+const WIDE_LAYOUT_MIN_WIDTH := 1550.0
+const TOUCH_TARGET := 54.0
+const POINTER_DRAG_SLOP := 18.0
 
 var sim: ArcanistSim
 var page := "title"
@@ -12,20 +15,30 @@ var overlay := ""
 var selected_character := "jim"
 var selected_enemy := ""
 var selected_inventory_index := -1
+var selected_object_index := -1
 var selected_ability := ""
 var target_mode := ""
 var selected_book_ability := 0
 var selected_ward := ""
 var press_position := Vector2.ZERO
+var press_current_position := Vector2.ZERO
 var press_started := 0
-var is_touch_press := false
+var touch_index := -1
+var mouse_press_active := false
+var press_dragged := false
 var active_hits: Array = []
 var overlay_hit_start := 0
+var last_android_back_msec := -500
 var notice := ""
 var notice_until := 0
 var capture_path := ""
 var capture_requested := false
 var capture_size := Vector2i.ZERO
+var capture_directory := "res://screenshots"
+var capture_overlay := ""
+var screen_size := LOGICAL_SIZE
+var draw_scale := 1.0
+var draw_offset := Vector2.ZERO
 
 const COLORS := {
 	"ink": Color("#071018"), "panel": Color("#0d1722"), "panel_2": Color("#111f2c"),
@@ -37,38 +50,104 @@ const COLORS := {
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	set_process(false)
+	get_tree().quit_on_go_back = false
 	sim = SimScript.new()
 	var args := OS.get_cmdline_user_args()
+	for arg in args:
+		if arg.begins_with("--capture-dir="):
+			capture_directory = arg.trim_prefix("--capture-dir=")
+		elif arg.begins_with("--capture-overlay="):
+			capture_overlay = arg.trim_prefix("--capture-overlay=")
 	for arg in args:
 		if arg.begins_with("--capture="):
 			var dimensions: PackedStringArray = arg.trim_prefix("--capture=").split("x")
 			if dimensions.size() == 2:
 				capture_size = Vector2i(int(dimensions[0]), int(dimensions[1]))
-				capture_path = "res://screenshots/%dx%d.png" % [capture_size.x, capture_size.y]
+				capture_path = capture_directory.path_join("%dx%d.png" % [capture_size.x, capture_size.y])
 				capture_requested = true
 				page = "battle"
 				sim.start_run(912041, "mara")
 				sim.save_run()
+				overlay = capture_overlay
+				match capture_overlay:
+					"inventory": selected_inventory_index = 0
+					"map": sim.run.route_choices = ["graveyard", "flooded_ruins"]
+					"rewards":
+						sim.run.stage_completed = true
+						sim.run.reward_choices = [{"type": "artifact", "id": "copper_hare", "claimed": false}, {"type": "item", "id": "healing_potion", "claimed": false}]
 	if not capture_requested:
 		if sim.has_saved_run():
 			page = "title"
 	if capture_requested:
+		OS.low_processor_usage_mode = false
 		call_deferred("_capture_after_draw")
+	queue_redraw()
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_CLOSE_REQUEST]:
+		mouse_press_active = false
+		touch_index = -1
+		press_position = Vector2(-1, -1)
+		press_current_position = Vector2(-1, -1)
+		_save_active_run()
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		queue_redraw()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_handle_back_request()
+	elif what == NOTIFICATION_RESIZED:
+		queue_redraw()
+
+func _save_active_run() -> void:
+	if sim != null and not sim.run.is_empty():
+		sim.save_run()
+
+func _handle_back_request() -> void:
+	if OS.get_name() == "Android":
+		var now := Time.get_ticks_msec()
+		if now - last_android_back_msec < 400:
+			return
+		last_android_back_msec = now
+	if target_mode != "":
+		target_mode = ""
+		selected_object_index = -1
+	elif overlay == "exit_confirm":
+		overlay = "pause"
+	elif overlay == "pause":
+		overlay = "exit_confirm"
+	elif overlay != "":
+		overlay = ""
+		selected_inventory_index = -1
+	elif page == "battle":
+		overlay = "pause"
+	elif page == "outcome":
+		page = "title"
+	else:
+		get_tree().quit()
 	queue_redraw()
 
 func _process(_delta: float) -> void:
 	if notice != "" and Time.get_ticks_msec() > notice_until:
 		notice = ""
+		set_process(false)
 		queue_redraw()
 
 func _draw() -> void:
 	active_hits.clear()
 	var viewport := get_viewport_rect().size
-	var scale_factor := minf(viewport.x / LOGICAL_SIZE.x, viewport.y / LOGICAL_SIZE.y)
-	var offset := (viewport - LOGICAL_SIZE * scale_factor) * 0.5
-	draw_set_transform(offset, 0.0, Vector2(scale_factor, scale_factor))
-	draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), COLORS.ink)
+	var layout := _calculate_layout(viewport, _safe_area_for_viewport(viewport))
+	screen_size = layout.size
+	draw_scale = layout.scale
+	draw_offset = layout.offset
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	draw_rect(Rect2(Vector2.ZERO, viewport), COLORS.ink)
+	draw_set_transform(draw_offset, 0.0, Vector2(draw_scale, draw_scale))
+	draw_rect(Rect2(Vector2.ZERO, screen_size), COLORS.ink)
 	_draw_backdrop()
+	var hits_start := active_hits.size()
+	var centered_content := page != "battle" and screen_size.x > LOGICAL_SIZE.x
+	if centered_content:
+		draw_set_transform(draw_offset + Vector2((screen_size.x - LOGICAL_SIZE.x) * 0.5 * draw_scale, 0.0), 0.0, Vector2(draw_scale, draw_scale))
 	if page == "title":
 		_draw_title()
 		if overlay != "":
@@ -79,16 +158,19 @@ func _draw() -> void:
 			_draw_overlay()
 	elif page == "outcome":
 		_draw_outcome()
+	if centered_content:
+		_shift_active_hits(hits_start, (screen_size.x - LOGICAL_SIZE.x) * 0.5)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_backdrop() -> void:
-	for i in range(9):
-		var alpha := 0.035 - float(i) * 0.003
-		draw_rect(Rect2(Vector2(0, i * 101), Vector2(1440, 102)), Color(0.08, 0.17, 0.23, alpha))
-	for x in range(0, 1440, 80):
-		draw_line(Vector2(x, 0), Vector2(x, 810), Color(0.22, 0.39, 0.48, 0.035), 1.0)
-	for y in range(0, 810, 80):
-		draw_line(Vector2(0, y), Vector2(1440, y), Color(0.22, 0.39, 0.48, 0.035), 1.0)
+	var bands := int(ceil(screen_size.y / 101.0))
+	for i in range(bands):
+		var alpha := 0.035 - float(i % 9) * 0.003
+		draw_rect(Rect2(Vector2(0, i * 101), Vector2(screen_size.x, 102)), Color(0.08, 0.17, 0.23, alpha))
+	for x in range(0, int(screen_size.x), 80):
+		draw_line(Vector2(x, 0), Vector2(x, screen_size.y), Color(0.22, 0.39, 0.48, 0.035), 1.0)
+	for y in range(0, int(screen_size.y), 80):
+		draw_line(Vector2(0, y), Vector2(screen_size.x, y), Color(0.22, 0.39, 0.48, 0.035), 1.0)
 
 func _draw_title() -> void:
 	_draw_label("PROJECT", 56, 72, 18, COLORS.cyan)
@@ -140,8 +222,11 @@ func _draw_player_card() -> void:
 	var player: Dictionary = sim.get_player()
 	var rect := Rect2(18, 18, 216, 444)
 	_draw_panel(rect, "", COLORS.line)
-	_draw_label(String(player.get("name", "Adventurer")), 31, 47, 15, COLORS.text)
-	_draw_label("LV %d" % sim.run.get("level", 1), 221, 47, 13, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
+	var level_label := "LV %d" % sim.run.get("level", 1)
+	var level_width := ThemeDB.fallback_font.get_string_size(level_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13).x
+	var name_width := 190.0 - level_width - 10.0
+	_draw_label(_fit_text(String(player.get("name", "Adventurer")), name_width, 15), 31, 47, 15, COLORS.text)
+	_draw_label(level_label, 221, 47, 13, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
 	_draw_label("%s  ·  %d / %d" % [sim.get_stage_name(), sim.run.get("stage_index", 0) + 1, 6], 31, 70, 10, COLORS.muted)
 	_draw_bar(Rect2(31, 84, 190, 22), "HP", player.hp, player.max_hp, COLORS.red)
 	var mana: Array = player.resources.Mana
@@ -173,14 +258,18 @@ func _draw_player_card() -> void:
 		_draw_label("No active effects", 34, 446, 12, COLORS.muted)
 
 func _draw_board() -> void:
-	_draw_panel(Rect2(242, 52, 892, 580), "", COLORS.line)
+	var origin := _board_origin()
+	var tile := _tile_size()
+	var board_panel_width := ArcanistSim.WIDTH * tile + 17.0
+	var board_panel_height := ArcanistSim.HEIGHT * tile + 20.0
+	_draw_panel(Rect2(origin.x - 8.0, 52, board_panel_width, board_panel_height), "", COLORS.line)
 	var grid: Array = sim.run.grid
 	var visible: Array = sim.run.visible
 	var explored: Array = sim.run.explored
 	for y in range(ArcanistSim.HEIGHT):
 		for x in range(ArcanistSim.WIDTH):
 			var cell := Vector2i(x, y)
-			var rect := Rect2(BOARD_ORIGIN + Vector2(x * TILE, y * TILE), Vector2(TILE - 1, TILE - 1))
+			var rect := Rect2(origin + Vector2(x * tile, y * tile), Vector2(tile - 1, tile - 1))
 			var seen := bool(explored[y][x])
 			var lit := bool(visible[y][x])
 			var terrain: String = grid[y][x]
@@ -219,9 +308,10 @@ func _draw_board() -> void:
 						glyph_color = Color("#354653")
 			draw_rect(rect, fill)
 			if glyph != "" and (lit or terrain == "wall"):
-				_draw_label(glyph, rect.position.x + TILE * 0.5, rect.position.y + 24, 15, glyph_color, HORIZONTAL_ALIGNMENT_CENTER)
+				_draw_label(glyph, rect.position.x + tile * 0.5, rect.position.y + tile * 0.68, 15 if tile <= BASE_TILE else 17, glyph_color, HORIZONTAL_ALIGNMENT_CENTER)
 			if not lit:
 				draw_rect(rect, Color(0.015, 0.025, 0.035, 0.28 if seen else 0.78))
+	_draw_targetable_cells(origin, tile)
 	for object in sim.run.objects:
 		if int(object.get("hp", 1)) <= 0:
 			continue
@@ -242,14 +332,14 @@ func _draw_board() -> void:
 	for entity in sim.get_visible_entities():
 		var cell: Vector2i = sim._pos(entity)
 		var size := int(entity.get("footprint", 1))
-		var entity_rect := Rect2(BOARD_ORIGIN + Vector2(cell.x * TILE + 3, cell.y * TILE + 3), Vector2(TILE * size - 7, TILE * size - 7))
+		var entity_rect := Rect2(origin + Vector2(cell.x * tile + 3, cell.y * tile + 3), Vector2(tile * size - 7, tile * size - 7))
 		var faction: String = entity.get("faction", "")
 		var entity_color := COLORS.cyan if entity.id == "player" else COLORS.green if faction == "Adventurers" else COLORS.red if faction in ["Undead", "Demons"] else COLORS.gold
 		if entity.id == selected_enemy:
 			draw_rect(entity_rect.grow(2), COLORS.gold, false, 2)
-		if target_mode != "" and entity.id != "player" and sim._is_hostile("player", entity.id):
+		if target_mode != "" and entity.id != "player" and sim._is_hostile("player", entity.id) and _entity_is_legal_target(entity):
 			draw_rect(entity_rect.grow(1), Color(0.9, 0.24, 0.3, 0.22), true)
-			draw_rect(entity_rect.grow(1), COLORS.red, false, 2)
+			draw_rect(entity_rect.grow(1), COLORS.green, false, 2)
 		var glyph: String = "@" if entity.id == "player" else String(entity.get("symbol", "?"))
 		if entity.get("kind") == "summon":
 			glyph = "✦" if entity.get("enemy_id") == "phantom_blade" else "s"
@@ -260,71 +350,99 @@ func _draw_board() -> void:
 			draw_rect(Rect2(entity_rect.position.x, entity_rect.end.y + 1, entity_rect.size.x, 3), Color("#151c22"))
 			draw_rect(Rect2(entity_rect.position.x, entity_rect.end.y + 1, entity_rect.size.x * hp_fraction, 3), COLORS.red if entity.kind != "summon" else COLORS.cyan)
 	if target_mode != "":
-		_draw_label("TARGETING  ·  tap a valid tile  ·  Esc to cancel", 260, 45, 12, COLORS.gold)
+		_draw_label("TARGETING  ·  tap a highlighted target  ·  Back or Cancel to stop", 260, 45, 12, COLORS.gold)
 	else:
 		_draw_label("%s  ·  %s" % [sim.get_stage_name().to_upper(), sim.get_objective_text()], 260, 45, 12, COLORS.text)
-	if capture_requested and Time.get_ticks_msec() < 1200:
-		_draw_label("", 0, 0, 1, COLORS.text)
+	if target_mode != "" and _point_in_board(press_current_position):
+		var preview_cell := _cell_from_point(press_current_position)
+		if sim._inside(preview_cell):
+			var preview_center := _cell_center(preview_cell)
+			draw_rect(Rect2(preview_center - Vector2(tile * 0.44, tile * 0.44), Vector2(tile * 0.88, tile * 0.88)), COLORS.gold, false, 2.5)
+			var radius := _target_preview_radius()
+			if radius > 0:
+				for y in range(maxi(0, preview_cell.y - radius), mini(ArcanistSim.HEIGHT, preview_cell.y + radius + 1)):
+					for x in range(maxi(0, preview_cell.x - radius), mini(ArcanistSim.WIDTH, preview_cell.x + radius + 1)):
+						var area_cell := Vector2i(x, y)
+						if sim._dist(preview_cell, area_cell) <= radius:
+							var area_rect := Rect2(origin + Vector2(x * tile, y * tile), Vector2(tile - 1, tile - 1))
+							draw_rect(area_rect, Color(0.92, 0.76, 0.28, 0.11), true)
+							draw_rect(area_rect, Color(0.92, 0.76, 0.28, 0.6), false, 1.0)
 
 func _draw_timeline() -> void:
-	_draw_panel(Rect2(1150, 18, 272, 227), "TURN TIMELINE", COLORS.line)
+	var panel_x := 1150.0
+	var panel_width := screen_size.x - panel_x - 18.0
+	var panel_rect := Rect2(panel_x, 18, panel_width, 227)
+	_draw_panel(panel_rect, "TURN TIMELINE", COLORS.line)
 	var entries: Array = sim.get_timeline(6)
+	var label_x := panel_x + 16.0
+	var time_x := panel_rect.end.x - 15.0
 	for i in range(entries.size()):
 		var entry: Dictionary = entries[i]
 		var y := 61 + i * 27
 		var color := COLORS.cyan if entry.id == "player" else COLORS.green if entry.faction == "Adventurers" else COLORS.red if entry.faction in ["Undead", "Demons"] else COLORS.gold
-		_draw_label("@" if entry.id == "player" else "✦" if entry.kind == "summon" else String(entry.name.substr(0, 1)), 1166, y, 14, color)
-		_draw_label(String(entry.name).substr(0, 19), 1190, y, 12, COLORS.text)
-		_draw_label("NOW" if entry.id == "player" else str(int(entry.time) - int(sim.get_player().next_time)), 1407, y, 11, COLORS.gold if entry.id == "player" else COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
-	_draw_line(1165, 223, 1407, 223, COLORS.line_soft)
-	_draw_label("NO REAL-TIME TIMER", 1166, 239, 10, COLORS.muted)
+		_draw_label("@" if entry.id == "player" else "✦" if entry.kind == "summon" else String(entry.name.substr(0, 1)), label_x, y, 14, color)
+		_draw_label(String(entry.name).substr(0, 28 if _is_wide_layout() else 19), label_x + 24, y, 12, COLORS.text)
+		_draw_label("NOW" if entry.id == "player" else str(int(entry.time) - int(sim.get_player().next_time)), time_x, y, 11, COLORS.gold if entry.id == "player" else COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
+	_draw_line(label_x, 223, time_x, 223, COLORS.line_soft)
+	_draw_label("NO REAL-TIME TIMER", label_x, 239, 10, COLORS.muted)
 
 func _draw_inspection_card() -> void:
-	var rect := Rect2(1150, 258, 272, 360)
+	var panel_x := 1150.0
+	var panel_width := screen_size.x - panel_x - 18.0
+	var rect := Rect2(panel_x, 258, panel_width, 360)
+	var content_x := panel_x + 16.0
+	var content_width := panel_width - 32.0
 	_draw_panel(rect, "FIELD INTELLIGENCE", COLORS.line)
 	var enemy: Dictionary = sim.run.entities.get(selected_enemy, {})
-	if enemy.is_empty() or not enemy.get("alive", true) or not sim._cell_visible(sim._pos(enemy)):
-		_draw_label("OBJECTIVE", 1166, 300, 11, COLORS.gold)
+	var object: Dictionary = _selected_object()
+	if not object.is_empty():
+		_draw_label(String(object.get("name", "Field object")), content_x, 300, 18, COLORS.cyan if object.get("kind") == "exit" else COLORS.gold)
+		_draw_label("%s  ·  %d / %d HP" % [String(object.get("kind", "object")).capitalize(), int(object.get("hp", 1)), int(object.get("max_hp", 1))], content_x, 334, 13, COLORS.text)
+		var object_cell := Vector2i(int(object.pos[0]), int(object.pos[1]))
+		_draw_label("Distance  ·  %d tiles" % sim._dist(sim._pos(sim.get_player()), object_cell), content_x, 364, 13, COLORS.muted)
+		var object_action := {"type": "interact"} if object.get("kind") == "exit" else {"type": "target_object"}
+		var object_label := "INTERACT" if object.get("kind") == "exit" else "TARGET WARD"
+		_draw_button(Rect2(content_x, 408, content_width, TOUCH_TARGET), object_label, object_action, false, 13)
+	elif enemy.is_empty() or not enemy.get("alive", true) or not sim._cell_visible(sim._pos(enemy)):
+		_draw_label("OBJECTIVE", content_x, 300, 11, COLORS.gold)
 		var objective_lines := _wrap(sim.get_objective_text(), 31)
 		for i in range(objective_lines.size()):
-			_draw_label(objective_lines[i], 1166, 328 + i * 19, 14, COLORS.text)
-		_draw_label("ENCOUNTER", 1166, 389, 11, COLORS.gold)
-		_draw_label("%d / 6" % [int(sim.run.stage_index) + 1], 1166, 415, 14, COLORS.text)
-		_draw_label("%d hostiles remain" % sim._hostile_count(), 1166, 439, 13, COLORS.muted)
-		_draw_label("%d XP  ·  level %d" % [sim.run.xp, sim.run.level], 1166, 464, 13, COLORS.muted)
-		_draw_label("RECENT EVENTS", 1166, 502, 11, COLORS.gold)
+			_draw_label(objective_lines[i], content_x, 328 + i * 19, 14, COLORS.text)
+		_draw_label("ENCOUNTER", content_x, 389, 11, COLORS.gold)
+		_draw_label("%d / 6" % [int(sim.run.stage_index) + 1], content_x, 415, 14, COLORS.text)
+		_draw_label("%d hostiles remain" % sim._hostile_count(), content_x, 439, 13, COLORS.muted)
+		_draw_label("%d XP  ·  level %d" % [sim.run.xp, sim.run.level], content_x, 464, 13, COLORS.muted)
+		_draw_label("RECENT EVENTS", content_x, 502, 11, COLORS.gold)
 		var logs: Array = sim.run.get("log", [])
 		for i in range(mini(4, logs.size())):
-			_draw_label(String(logs[logs.size() - 1 - i]).substr(0, 32), 1166, 526 + i * 20, 10, COLORS.muted)
+			_draw_label(String(logs[logs.size() - 1 - i]).substr(0, 32 if not _is_wide_layout() else 64), content_x, 526 + i * 20, 10, COLORS.muted)
 	else:
-		_draw_label(String(enemy.get("name", "Creature")), 1166, 300, 18, COLORS.red if enemy.faction in ["Undead", "Demons"] else COLORS.gold)
-		_draw_label("HP  %d / %d" % [enemy.hp, enemy.max_hp], 1166, 333, 14, COLORS.text)
-		draw_rect(Rect2(1166, 345, 240, 8), Color("#202a30"))
-		draw_rect(Rect2(1166, 345, 240 * clampf(float(enemy.hp) / maxf(1.0, float(enemy.max_hp)), 0.0, 1.0), 8), COLORS.red)
-		_draw_label("%s  ·  %s" % ["Large 2×2" if int(enemy.footprint) > 1 else "Standard", String(enemy.faction)], 1166, 379, 13, COLORS.muted)
-		_draw_label("Attack  %d  ·  %s" % [enemy.damage, enemy.damage_type], 1166, 404, 13, COLORS.text)
+		_draw_label(String(enemy.get("name", "Creature")), content_x, 300, 18, COLORS.red if enemy.faction in ["Undead", "Demons"] else COLORS.gold)
+		_draw_label("HP  %d / %d" % [enemy.hp, enemy.max_hp], content_x, 333, 14, COLORS.text)
+		draw_rect(Rect2(content_x, 345, content_width, 8), Color("#202a30"))
+		draw_rect(Rect2(content_x, 345, content_width * clampf(float(enemy.hp) / maxf(1.0, float(enemy.max_hp)), 0.0, 1.0), 8), COLORS.red)
+		_draw_label("%s  ·  %s" % ["Large 2×2" if int(enemy.footprint) > 1 else "Standard", String(enemy.faction)], content_x, 379, 13, COLORS.muted)
+		_draw_label("Attack  %d  ·  %s" % [enemy.damage, enemy.damage_type], content_x, 404, 13, COLORS.text)
 		for damage_type in enemy.get("resist", {}):
-			_draw_label("Resist  %s  %d%%" % [damage_type, int(float(enemy.resist[damage_type]) * 100)], 1166, 431, 12, COLORS.cyan)
+			_draw_label("Resist  %s  %d%%" % [damage_type, int(float(enemy.resist[damage_type]) * 100)], content_x, 431, 12, COLORS.cyan)
 		if enemy.get("resist", {}).is_empty():
-			_draw_label("No known resistances", 1166, 431, 12, COLORS.muted)
+			_draw_label("No known resistances", content_x, 431, 12, COLORS.muted)
 		var status_line := "Clear"
 		if not enemy.get("statuses", {}).is_empty():
 			status_line = ", ".join(enemy.statuses.keys())
-		_draw_label("Effects  %s" % status_line, 1166, 458, 12, COLORS.orange if status_line != "Clear" else COLORS.muted)
-		_draw_button(Rect2(1166, 478, 240, 45), "INSPECT CREATURE", {"type": "inspect", "id": selected_enemy}, false, 13)
+		_draw_label("Effects  %s" % status_line, content_x, 458, 12, COLORS.orange if status_line != "Clear" else COLORS.muted)
+		_draw_button(Rect2(content_x, 478, content_width, TOUCH_TARGET), "INSPECT CREATURE", {"type": "inspect", "id": selected_enemy}, false, 13)
 	var transition_ready: bool = sim.run.get("stage_completed", false)
 	var transition_action := {"type": "next_stage"} if transition_ready else {"type": "overlay", "id": "map"}
-	_draw_button(Rect2(1166, 550, 240, 49), "%s" % ("NEXT STAGE" if transition_ready and sim.run.get("stage_index", 0) < 5 else "VICTORY" if sim.run.get("outcome") == "victory" else "ROUTE MAP"), transition_action, transition_ready, 15)
+	_draw_button(Rect2(content_x, 550, content_width, TOUCH_TARGET), "%s" % ("NEXT STAGE" if transition_ready and sim.run.get("stage_index", 0) < 5 else "VICTORY" if sim.run.get("outcome") == "victory" else "ROUTE MAP"), transition_action, transition_ready, 15)
 
 func _draw_side_controls() -> void:
 	_draw_label("GOAL  ·  REACH THE TYRANT", 22, 484, 11, COLORS.gold)
-	_draw_label("PATH  %d / 5 ENCOUNTERS" % mini(int(sim.run.get("stage_index", 0)), 5), 22, 505, 11, COLORS.muted)
-	var dpad_center := Vector2(125, 560)
-	_draw_dpad_button(Rect2(dpad_center.x - 18, dpad_center.y - 48, 36, 31), "▲", Vector2i(0, -1))
-	_draw_dpad_button(Rect2(dpad_center.x - 57, dpad_center.y - 10, 36, 31), "◀", Vector2i(-1, 0))
-	_draw_dpad_button(Rect2(dpad_center.x + 21, dpad_center.y - 10, 36, 31), "▶", Vector2i(1, 0))
-	_draw_dpad_button(Rect2(dpad_center.x - 18, dpad_center.y + 28, 36, 31), "▼", Vector2i(0, 1))
-	_draw_label("TAP A TILE OR USE ARROWS", 23, 630, 9, COLORS.muted)
+	_draw_label("PATH  %d / 5 ENCOUNTERS" % mini(int(sim.run.get("stage_index", 0)), 5), 22, 504, 10, COLORS.muted)
+	_draw_dpad_button(Rect2(98, 510, TOUCH_TARGET, TOUCH_TARGET), "▲", Vector2i(0, -1))
+	_draw_dpad_button(Rect2(38, 570, TOUCH_TARGET, TOUCH_TARGET), "◀", Vector2i(-1, 0))
+	_draw_dpad_button(Rect2(98, 570, TOUCH_TARGET, TOUCH_TARGET), "▼", Vector2i(0, 1))
+	_draw_dpad_button(Rect2(158, 570, TOUCH_TARGET, TOUCH_TARGET), "▶", Vector2i(1, 0))
 
 func _draw_action_bar() -> void:
 	_draw_panel(Rect2(18, 644, 1404, 148), "", COLORS.line)
@@ -356,11 +474,18 @@ func _draw_action_bar() -> void:
 	_draw_button(Rect2(937, y, 91, h), "ABILITY\nWEB", {"type": "overlay", "id": "abilities"}, false, 11)
 	_draw_button(Rect2(1035, y, 91, h), "WORLD\nMAP", {"type": "overlay", "id": "map"}, false, 11)
 	_draw_button(Rect2(1133, y, 91, h), "FIELD\nCODEX", {"type": "overlay", "id": "codex"}, false, 11)
-	_draw_button(Rect2(1232, y, 178, h), "END TURN\n(100)", {"type": "wait"}, true, 16)
-	_draw_label("E / END TURN WAITS  ·  ESC CANCELS TARGETING  ·  NUMBER KEYS USE ABILITIES  ·  RIGHT CLICK INSPECTS", 242, 784, 9, COLORS.muted)
+	if target_mode != "":
+		_draw_button(Rect2(1232, y, 178, h), "CANCEL\nTARGETING", {"type": "cancel_target"}, true, 16, COLORS.gold)
+	else:
+		_draw_button(Rect2(1232, y, 178, h), "END TURN\n(100)", {"type": "wait"}, true, 16)
+	_draw_label("TAP A TILE TO MOVE  ·  HOLD TO INSPECT  ·  BACK CANCELS TARGETING", 242, 784, 9, COLORS.muted)
 
 func _draw_overlay() -> void:
-	draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), Color(0.005, 0.012, 0.02, 0.74))
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color(0.005, 0.012, 0.02, 0.74))
+	var overlay_hit_start_local := active_hits.size()
+	var overlay_offset_x := (screen_size.x - LOGICAL_SIZE.x) * 0.5 if page == "battle" and screen_size.x > LOGICAL_SIZE.x else 0.0
+	if not is_zero_approx(overlay_offset_x):
+		draw_set_transform(draw_offset + Vector2(overlay_offset_x * draw_scale, 0.0), 0.0, Vector2(draw_scale, draw_scale))
 	var rect := Rect2(100, 61, 1240, 690)
 	_draw_panel(rect, "", COLORS.gold)
 	overlay_hit_start = active_hits.size()
@@ -378,8 +503,11 @@ func _draw_overlay() -> void:
 		_draw_inspect(rect)
 	elif overlay == "pause":
 		_draw_pause(rect)
-	_draw_button(Rect2(1277, 72, 44, 43), "×", {"type": "close"}, false, 21)
+	_draw_button(Rect2(1272, 67, TOUCH_TARGET, TOUCH_TARGET), "×", {"type": "close"}, false, 21)
 	_draw_corner_marks(rect)
+	if not is_zero_approx(overlay_offset_x):
+		_shift_active_hits(overlay_hit_start_local, overlay_offset_x)
+		draw_set_transform(draw_offset, 0.0, Vector2(draw_scale, draw_scale))
 
 func _draw_inventory(rect: Rect2) -> void:
 	_draw_label("PACK  /  EQUIPMENT", 131, 103, 20, COLORS.text)
@@ -388,7 +516,7 @@ func _draw_inventory(rect: Rect2) -> void:
 	var slots: Array = ["Weapon", "Offhand", "Head", "Body", "Hands", "Feet", "Ring 1", "Ring 2", "Amulet"]
 	for i in range(slots.size()):
 		var slot: String = slots[i]
-		var y := 189 + i * 49
+		var y := 207 + i * 49
 		_draw_label(slot.to_upper(), 145, y, 10, COLORS.gold)
 		var equipment_id: String = sim.run.equipment.get(slot, "")
 		var item_name: String = "Empty" if equipment_id in ["", "occupied"] else String(sim.content.items.get(equipment_id, {}).get("name", equipment_id))
@@ -411,24 +539,24 @@ func _draw_inventory(rect: Rect2) -> void:
 		var selected_id: String = sim.run.inventory[selected_inventory_index]
 		var selected: Dictionary = sim.content.items.get(selected_id, {})
 		_draw_panel(Rect2(433, 550, 880, 146), "ITEM DETAILS", COLORS.line_soft)
-		_draw_label(String(selected.name), 451, 586, 18, COLORS.text)
-		_draw_label(String(selected.get("description", "A useful object from the March.")), 451, 612, 13, COLORS.muted)
+		_draw_label(String(selected.name), 451, 610, 18, COLORS.text)
+		_draw_label(String(selected.get("description", "A useful object from the March.")), 451, 633, 13, COLORS.muted)
 		if selected.get("type") == "spellbook":
-			_draw_label("Contents:  %s" % ", ".join(selected.contents), 451, 638, 12, COLORS.purple)
-			_draw_label("Study: %s" % sim.content.abilities[selected.learns[selected_book_ability]].name, 451, 664, 11, COLORS.purple)
-			_draw_button(Rect2(1040, 568, 122, 48), "STUDY", {"type": "study_book"}, true, 12)
+			_draw_label("Contents:  %s" % ", ".join(selected.contents), 451, 657, 12, COLORS.purple)
+			_draw_label("Study: %s" % sim.content.abilities[selected.learns[selected_book_ability]].name, 451, 680, 11, COLORS.purple)
+			_draw_button(Rect2(1040, 614, 122, TOUCH_TARGET), "STUDY", {"type": "study_book"}, true, 12)
 			for book_index in range(selected.learns.size()):
 				var book_button := Rect2(738 + book_index * 94, 652, 87, 32)
 				_draw_button(book_button, String(sim.content.abilities[selected.learns[book_index]].name).substr(0, 11), {"type": "select_book_ability", "index": book_index}, selected_book_ability == book_index, 9)
 		elif selected.get("type") == "equipment":
-			_draw_button(Rect2(1040, 568, 122, 48), "EQUIP", {"type": "equip"}, true, 13)
+			_draw_button(Rect2(1040, 614, 122, TOUCH_TARGET), "EQUIP", {"type": "equip"}, true, 13)
 		elif selected.get("type") in ["consumable", "scroll"]:
-			_draw_button(Rect2(1040, 568, 122, 48), "USE ITEM", {"type": "use_item"}, true, 12)
-		_draw_button(Rect2(1172, 568, 122, 48), "DISCARD", {"type": "discard"}, false, 12)
+			_draw_button(Rect2(1040, 614, 122, TOUCH_TARGET), "USE ITEM", {"type": "use_item"}, true, 12)
+		_draw_button(Rect2(1172, 614, 122, TOUCH_TARGET), "DISCARD", {"type": "discard"}, false, 12)
 	else:
 		_draw_label("Choose a pack item to see its use, details or equipment action.", 455, 615, 14, COLORS.muted)
-	_draw_button(Rect2(121, 710, 180, 30), "BACK TO BATTLE", {"type": "close"}, false, 10)
-	_draw_label("ARTIFACTS  ·  %s" % (", ".join(_artifact_names()) if not sim.run.artifacts.is_empty() else "None carried"), 326, 732, 10, COLORS.gold)
+	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 11)
+	_draw_label("ARTIFACTS  ·  %s" % (", ".join(_artifact_names()) if not sim.run.artifacts.is_empty() else "None carried"), 326, 741, 10, COLORS.gold)
 
 func _draw_abilities(rect: Rect2) -> void:
 	_draw_label("CHARACTER  /  ABILITY WEB", 131, 103, 20, COLORS.text)
@@ -444,7 +572,7 @@ func _draw_abilities(rect: Rect2) -> void:
 		_draw_panel(item_rect, "", COLORS.line_soft)
 		_draw_label(String(ability.name), item_rect.position.x + 11, item_rect.position.y + 20, 13, _school_color(ability.school))
 		_draw_label("%s  ·  %d time  ·  %s" % [ability.school, ability.time, _cost_text(ability.costs)], item_rect.position.x + 11, item_rect.position.y + 38, 10, COLORS.muted)
-		active_hits.append({"rect": item_rect, "action": {"type": "ability", "id": ability_id}})
+		active_hits.append({"rect": _touch_hit_rect(item_rect), "action": {"type": "ability", "id": ability_id}})
 	_draw_panel(Rect2(864, 151, 449, 546), "AVAILABLE PATHS", COLORS.line_soft)
 	var candidates: Array = ["firebolt", "fireball", "frostbolt", "frozen_ground", "lightning_bolt", "blink", "cleave", "aimed_shot", "parry", "dagger_flurry", "mend"]
 	var shown := 0
@@ -468,7 +596,7 @@ func _draw_abilities(rect: Rect2) -> void:
 		_draw_label(label, item_rect.end.x - 6, item_rect.position.y + 16, 9, COLORS.green if unlocked else Color("#60707a"), HORIZONTAL_ALIGNMENT_RIGHT)
 		_draw_label("%s%s" % [school, " · needs " + ", ".join(prereqs) if not can_meet else ""], item_rect.position.x, item_rect.position.y + 32, 9, COLORS.muted)
 		if unlocked:
-			active_hits.append({"rect": item_rect, "action": {"type": "learn", "id": ability_id}})
+			active_hits.append({"rect": _touch_hit_rect(item_rect), "action": {"type": "learn", "id": ability_id}})
 		shown += 1
 		if shown >= 11:
 			break
@@ -578,6 +706,12 @@ func _draw_inspect(rect: Rect2) -> void:
 	_draw_button(Rect2(128, 651, 180, 43), "RETURN", {"type": "close"}, false, 12)
 
 func _draw_pause(rect: Rect2) -> void:
+	if overlay == "exit_confirm":
+		_draw_label("LEAVE THE MARCH?", 131, 104, 24, COLORS.text)
+		_draw_label("Your current run is saved. You can resume from the title screen.", 132, 133, 14, COLORS.muted)
+		_draw_button(Rect2(160, 205, 330, 70), "RETURN TO PAUSE MENU", {"type": "pause_menu"}, true, 15)
+		_draw_button(Rect2(160, 296, 330, 70), "EXIT PROJECT ARCANIST", {"type": "quit_app"}, false, 14, COLORS.red)
+		return
 	_draw_label("PAUSED", 131, 104, 24, COLORS.text)
 	_draw_label("The battlefield is waiting. Nothing advances until you choose an action.", 132, 133, 14, COLORS.muted)
 	_draw_button(Rect2(160, 205, 330, 70), "RETURN TO BATTLE", {"type": "close"}, true, 16)
@@ -640,13 +774,69 @@ func _draw_button(rect: Rect2, label: String, action: Dictionary, active: bool =
 	else:
 		_draw_label(lines[0], rect.get_center().x, rect.get_center().y - 1, font_size, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
 		_draw_label(lines[1], rect.get_center().x, rect.get_center().y + 21, maxi(9, font_size - 1), COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	active_hits.append({"rect": rect, "action": action})
+	active_hits.append({"rect": _touch_hit_rect(rect), "action": action})
+
+func _touch_hit_rect(rect: Rect2) -> Rect2:
+	var target_size := Vector2(maxf(rect.size.x, TOUCH_TARGET), maxf(rect.size.y, TOUCH_TARGET))
+	return Rect2(rect.get_center() - target_size * 0.5, target_size)
 
 func _draw_dpad_button(rect: Rect2, glyph: String, direction: Vector2i) -> void:
 	draw_rect(rect, COLORS.panel_2)
 	draw_rect(rect, COLORS.line, false, 1)
 	_draw_label(glyph, rect.get_center().x, rect.get_center().y + 5, 14, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
-	active_hits.append({"rect": rect, "action": {"type": "dpad", "direction": [direction.x, direction.y]}})
+	active_hits.append({"rect": _touch_hit_rect(rect), "action": {"type": "dpad", "direction": [direction.x, direction.y]}})
+
+static func _calculate_layout(viewport_size: Vector2, safe_area: Rect2) -> Dictionary:
+	var bounds := Rect2(Vector2.ZERO, viewport_size)
+	var safe := safe_area.intersection(bounds)
+	if safe.size.x <= 0.0 or safe.size.y <= 0.0:
+		safe = bounds
+	safe = safe.grow_individual(-8.0, -8.0, -8.0, -8.0)
+	if safe.size.x <= 0.0 or safe.size.y <= 0.0:
+		safe = bounds
+	var scale_factor := minf(safe.size.x / LOGICAL_SIZE.x, safe.size.y / LOGICAL_SIZE.y)
+	if scale_factor <= 0.0:
+		return {"size": LOGICAL_SIZE, "scale": 1.0, "offset": Vector2.ZERO}
+	return {
+		"size": safe.size / scale_factor,
+		"scale": scale_factor,
+		"offset": safe.position
+	}
+
+func _safe_area_for_viewport(viewport_size: Vector2) -> Rect2:
+	var bounds := Rect2(Vector2.ZERO, viewport_size)
+	if OS.get_name() != "Android":
+		return bounds
+	var physical_size := Vector2(DisplayServer.screen_get_size())
+	var physical_safe := DisplayServer.get_display_safe_area()
+	if physical_size.x <= 0.0 or physical_size.y <= 0.0 or physical_safe.size.x <= 0 or physical_safe.size.y <= 0:
+		return bounds
+	var scale_to_viewport := viewport_size / physical_size
+	var mapped_safe := Rect2(Vector2(physical_safe.position) * scale_to_viewport, Vector2(physical_safe.size) * scale_to_viewport)
+	return mapped_safe.intersection(bounds)
+
+func _is_wide_layout() -> bool:
+	return screen_size.x >= WIDE_LAYOUT_MIN_WIDTH
+
+func _board_origin() -> Vector2:
+	return BASE_BOARD_ORIGIN
+
+func _tile_size() -> float:
+	return WIDE_TILE if _is_wide_layout() else BASE_TILE
+
+func _board_rect() -> Rect2:
+	var origin := _board_origin()
+	return Rect2(origin, Vector2(ArcanistSim.WIDTH * _tile_size(), ArcanistSim.HEIGHT * _tile_size()))
+
+func _shift_active_hits(first_index: int, horizontal_delta: float) -> void:
+	if is_zero_approx(horizontal_delta):
+		return
+	for index in range(first_index, active_hits.size()):
+		var hit: Dictionary = active_hits[index]
+		var hit_rect: Rect2 = hit.rect
+		hit_rect.position.x += horizontal_delta
+		hit.rect = hit_rect
+		active_hits[index] = hit
 
 func _draw_label(text: String, x: float, y: float, size: int, color: Color, alignment: int = HORIZONTAL_ALIGNMENT_LEFT) -> void:
 	var draw_x := x
@@ -658,17 +848,34 @@ func _draw_label(text: String, x: float, y: float, size: int, color: Color, alig
 			draw_x -= measured.x
 	draw_string(ThemeDB.fallback_font, Vector2(draw_x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, color)
 
+func _fit_text(text: String, max_width: float, size: int) -> String:
+	if ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x <= max_width:
+		return text
+	var shortened := text
+	while not shortened.is_empty():
+		shortened = shortened.substr(0, shortened.length() - 1).strip_edges()
+		var candidate := shortened + "…"
+		if ThemeDB.fallback_font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x <= max_width:
+			return candidate
+	return "…"
+
 func _draw_line(x1: float, y1: float, x2: float, y2: float, color: Color) -> void:
 	draw_line(Vector2(x1, y1), Vector2(x2, y2), color, 1.0)
 
 func _cell_center(cell: Vector2i) -> Vector2:
-	return BOARD_ORIGIN + Vector2(cell.x * TILE + TILE * 0.5, cell.y * TILE + TILE * 0.5)
+	var tile := _tile_size()
+	return _board_origin() + Vector2(cell.x * tile + tile * 0.5, cell.y * tile + tile * 0.5)
 
 func _logical_position(point: Vector2) -> Vector2:
-	var viewport := get_viewport_rect().size
-	var scale_factor := minf(viewport.x / LOGICAL_SIZE.x, viewport.y / LOGICAL_SIZE.y)
-	var offset := (viewport - LOGICAL_SIZE * scale_factor) * 0.5
-	return (point - offset) / scale_factor
+	return (point - draw_offset) / draw_scale
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		_handle_key(event)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenTouch or event is InputEventScreenDrag:
+		_handle_screen_pointer_event(event)
+		get_viewport().set_input_as_handled()
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -678,35 +885,65 @@ func _gui_input(event: InputEvent) -> void:
 				_inspect_cell(_cell_from_point(right_pos), true)
 				accept_event()
 			return
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				press_position = _logical_position(event.position)
-				press_started = Time.get_ticks_msec()
-				is_touch_press = false
-			else:
-				var point := _logical_position(event.position)
-				if Time.get_ticks_msec() - press_started >= 500:
-					if page == "battle" and _point_in_board(point):
-						_inspect_cell(_cell_from_point(point), true)
-				else:
-					_handle_tap(point)
-				accept_event()
-	elif event is InputEventScreenTouch:
+		if event.button_index != MOUSE_BUTTON_LEFT:
+			return
 		if event.pressed:
+			mouse_press_active = true
 			press_position = _logical_position(event.position)
+			press_current_position = press_position
 			press_started = Time.get_ticks_msec()
-			is_touch_press = true
+			press_dragged = false
+			queue_redraw()
 		else:
-			var point := _logical_position(event.position)
-			if Time.get_ticks_msec() - press_started >= 500:
-				if page == "battle" and _point_in_board(point):
-					_inspect_cell(_cell_from_point(point), true)
-			else:
-				_handle_tap(point)
+			if not mouse_press_active:
+				return
+			_finish_pointer_press(_logical_position(event.position), false)
+			mouse_press_active = false
 			accept_event()
-	elif event is InputEventKey and event.pressed and not event.echo:
-		_handle_key(event)
+	elif event is InputEventMouseMotion and mouse_press_active:
+		press_current_position = _logical_position(event.position)
+		if press_position.distance_to(press_current_position) > POINTER_DRAG_SLOP:
+			press_dragged = true
+		queue_redraw()
+	elif event is InputEventScreenTouch:
+		_handle_screen_pointer_event(event)
 		accept_event()
+	elif event is InputEventScreenDrag:
+		_handle_screen_pointer_event(event)
+		accept_event()
+
+func _handle_screen_pointer_event(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			if touch_index >= 0 and event.index != touch_index:
+				return
+			touch_index = event.index
+			press_position = _logical_position(event.position)
+			press_current_position = press_position
+			press_started = Time.get_ticks_msec()
+			press_dragged = false
+			queue_redraw()
+		elif event.index == touch_index:
+			_finish_pointer_press(_logical_position(event.position), event.canceled)
+			touch_index = -1
+	elif event is InputEventScreenDrag and event.index == touch_index:
+		press_current_position = _logical_position(event.position)
+		if press_position.distance_to(press_current_position) > POINTER_DRAG_SLOP:
+			press_dragged = true
+		queue_redraw()
+
+func _finish_pointer_press(point: Vector2, cancelled: bool) -> void:
+	var duration := Time.get_ticks_msec() - press_started
+	var valid_tap := not cancelled and not press_dragged and press_position.distance_to(point) <= POINTER_DRAG_SLOP
+	if valid_tap and duration >= 500:
+		if page == "battle" and _point_in_board(point):
+			_inspect_cell(_cell_from_point(point), true)
+	elif valid_tap:
+		_handle_tap(point)
+	press_current_position = Vector2(-1, -1)
+	press_position = Vector2(-1, -1)
+	press_dragged = false
+	queue_redraw()
 
 func _handle_tap(point: Vector2) -> void:
 	if overlay != "":
@@ -747,10 +984,14 @@ func _handle_action(action: Dictionary) -> void:
 			page = "battle"
 			overlay = ""
 			selected_enemy = ""
+			selected_object_index = -1
+			target_mode = ""
 		"resume":
 			if sim.resume_run():
 				page = "battle" if sim.run.get("outcome", "") == "" else "outcome"
 				overlay = ""
+				target_mode = ""
+				selected_object_index = -1
 			else:
 				_show_notice("The saved expedition could not be opened.")
 		"title_codex":
@@ -760,12 +1001,19 @@ func _handle_action(action: Dictionary) -> void:
 		"overlay":
 			overlay = String(action.id)
 			selected_inventory_index = -1
+			selected_object_index = -1
 			selected_enemy = "" if action.id != "inspect" else selected_enemy
 		"close":
-			overlay = ""
+			overlay = "pause" if overlay == "exit_confirm" else ""
+		"pause_menu":
+			overlay = "pause"
+		"cancel_target":
+			target_mode = ""
+			selected_object_index = -1
 		"target_mode":
 			target_mode = String(action.mode)
 			selected_enemy = ""
+			selected_object_index = -1
 		"ability":
 			var ability_id: String = action.id
 			var ability: Dictionary = sim.content.abilities[ability_id]
@@ -776,6 +1024,7 @@ func _handle_action(action: Dictionary) -> void:
 				overlay = ""
 		"inspect":
 			selected_enemy = String(action.id)
+			selected_object_index = -1
 			overlay = "inspect"
 		"dpad":
 			var pos: Vector2i = sim._pos(sim.get_player()) + Vector2i(int(action.direction[0]), int(action.direction[1]))
@@ -819,10 +1068,12 @@ func _handle_action(action: Dictionary) -> void:
 			if sim.choose_route(String(action.id)):
 				overlay = ""
 				selected_enemy = ""
+				selected_object_index = -1
 		"boss":
 			if sim.start_boss():
 				overlay = ""
 				selected_enemy = ""
+				selected_object_index = -1
 		"next_stage":
 			if sim.run.get("outcome", "") == "victory":
 				page = "outcome"
@@ -838,10 +1089,27 @@ func _handle_action(action: Dictionary) -> void:
 		"save":
 			sim.save_run()
 			_show_notice("Run saved.")
+		"interact":
+			if selected_object_index >= 0 and selected_object_index < sim.run.objects.size():
+				var object_pos: Array = sim.run.objects[selected_object_index].pos
+				var result: Dictionary = sim.act({"type": "interact", "target": object_pos})
+				if result.ok:
+					selected_object_index = -1
+					_commit_action(result)
+				else:
+					_show_notice(String(result.message))
+		"target_object":
+			target_mode = "attack"
+			selected_enemy = ""
+			selected_object_index = -1
+		"quit_app":
+			_save_active_run()
+			get_tree().quit()
 		"title":
 			page = "title"
 			overlay = ""
 			selected_enemy = ""
+			selected_object_index = -1
 	queue_redraw()
 
 func _battlefield_tap(cell: Vector2i) -> void:
@@ -873,10 +1141,18 @@ func _battlefield_tap(cell: Vector2i) -> void:
 	var entity: Dictionary = sim.get_enemy_at(cell)
 	if not entity.is_empty():
 		selected_enemy = String(entity.id)
+		selected_object_index = -1
 		_show_notice("%s · tap Weapon Attack or an ability to act." % entity.name)
 		return
 	if not sim._cell_visible(cell):
 		_show_notice("That tile is still hidden by fog of war.")
+		return
+	var object_index := sim._object_index_at(cell)
+	if object_index >= 0:
+		selected_object_index = object_index
+		selected_enemy = ""
+		_show_notice("%s · choose an available field action." % sim.run.objects[object_index].get("name", "Field object"))
+		queue_redraw()
 		return
 	var move_result: Dictionary = sim.act({"type": "move", "target": [cell.x, cell.y]})
 	_commit_action(move_result)
@@ -891,17 +1167,41 @@ func _inspect_cell(cell: Vector2i, detailed: bool) -> void:
 		else:
 			_show_notice("%s · %d / %d HP" % [entity.name, entity.hp, entity.max_hp])
 	else:
-		_show_notice("%s tile  ·  %s" % [sim.get_stage_name(), sim._terrain_at(cell)])
+		var object_index := sim._object_index_at(cell)
+		if object_index >= 0:
+			selected_object_index = object_index
+			selected_enemy = ""
+			var object: Dictionary = sim.run.objects[object_index]
+			_show_notice("%s · %s" % [String(object.get("name", "Field object")), String(object.get("kind", "object")).capitalize()])
+		else:
+			selected_object_index = -1
+			_show_notice("%s tile  ·  %s" % [sim.get_stage_name(), sim._terrain_at(cell)])
 	queue_redraw()
+
+func _selected_object() -> Dictionary:
+	if selected_object_index < 0 or selected_object_index >= sim.run.get("objects", []).size():
+		return {}
+	var object: Dictionary = sim.run.objects[selected_object_index]
+	return object if int(object.get("hp", 1)) > 0 else {}
 
 func _handle_key(event: InputEventKey) -> void:
 	if event.keycode == KEY_ESCAPE:
+		# Android also delivers Back through NOTIFICATION_WM_GO_BACK_REQUEST.
+		# Ignore its Escape key alias so one physical Back cannot dismiss a
+		# context and then continue into the pause menu as a second action.
+		if OS.get_name() == "Android":
+			return
 		if target_mode != "":
 			target_mode = ""
+			selected_object_index = -1
+		elif overlay == "exit_confirm":
+			overlay = "pause"
 		elif overlay != "":
 			overlay = ""
-		else:
+		elif page == "battle":
 			overlay = "pause"
+		elif page == "outcome":
+			page = "title"
 		queue_redraw()
 		return
 	if page != "battle" or overlay != "":
@@ -941,14 +1241,110 @@ func _commit_action(result: Dictionary) -> void:
 	queue_redraw()
 
 func _cell_from_point(point: Vector2) -> Vector2i:
-	return Vector2i(int(floor((point.x - BOARD_ORIGIN.x) / TILE)), int(floor((point.y - BOARD_ORIGIN.y) / TILE)))
+	var origin := _board_origin()
+	var tile := _tile_size()
+	return Vector2i(int(floor((point.x - origin.x) / tile)), int(floor((point.y - origin.y) / tile)))
 
 func _point_in_board(point: Vector2) -> bool:
-	return BOARD_RECT.has_point(point)
+	return _board_rect().has_point(point)
+
+func _target_ability() -> Dictionary:
+	if target_mode.begins_with("item:"):
+		var item_index := int(target_mode.trim_prefix("item:"))
+		if item_index < 0 or item_index >= sim.run.get("inventory", []).size():
+			return {}
+		var item_id: String = sim.run.inventory[item_index]
+		var item: Dictionary = sim.content.items.get(item_id, {})
+		if item.get("type") == "scroll":
+			return sim.content.abilities.get(item.get("ability", ""), {})
+		return {}
+	return sim.content.abilities.get(target_mode, {})
+
+func _entity_is_legal_target(entity: Dictionary) -> bool:
+	var origin := sim._pos(sim.get_player())
+	if target_mode == "attack":
+		var weapon_id: String = sim.run.equipment.get("Weapon", "sword")
+		var weapon: Dictionary = sim.content.weapons.get(weapon_id, sim.content.weapons.sword)
+		return sim._distance_to_entity(origin, entity) <= int(weapon.range) and sim._line_of_sight(origin, sim._pos(entity))
+	if target_mode.begins_with("item:"):
+		var item_index := int(target_mode.trim_prefix("item:"))
+		if item_index >= 0 and item_index < sim.run.inventory.size():
+			var item: Dictionary = sim.content.items.get(sim.run.inventory[item_index], {})
+			if item.get("effect") == "bomb":
+				return sim._dist(origin, sim._pos(entity)) <= 5 and sim._cell_visible(sim._pos(entity))
+	var ability := _target_ability()
+	if ability.is_empty() or ability.get("target", "enemy") != "enemy" or not sim._can_pay(ability.get("costs", {})):
+		return false
+	return sim._dist(origin, sim._pos(entity)) <= int(ability.get("range", 0)) and sim._cell_visible(sim._pos(entity)) and sim._line_of_sight(origin, sim._pos(entity))
+
+func _cell_is_legal_target(cell: Vector2i) -> bool:
+	if not sim._inside(cell):
+		return false
+	var origin := sim._pos(sim.get_player())
+	if target_mode == "attack":
+		var entity := sim.get_enemy_at(cell)
+		if not entity.is_empty():
+			return _entity_is_legal_target(entity)
+		var object_index := sim._object_index_at(cell)
+		return object_index >= 0 and sim.run.objects[object_index].get("kind") == "ward" and sim._dist(origin, cell) <= 1
+	if target_mode == "move":
+		return sim._terrain_at(cell) != "wall" and sim._next_step(origin, cell, "player") != origin
+	if target_mode.begins_with("item:"):
+		var item_index := int(target_mode.trim_prefix("item:"))
+		if item_index >= 0 and item_index < sim.run.inventory.size():
+			var item: Dictionary = sim.content.items.get(sim.run.inventory[item_index], {})
+			if item.get("effect") == "bomb":
+				return sim._dist(origin, cell) <= 5 and sim._cell_visible(cell)
+	var ability := _target_ability()
+	if ability.is_empty() or not sim._can_pay(ability.get("costs", {})):
+		return false
+	if ability.get("target", "enemy") == "self":
+		return false
+	if sim._dist(origin, cell) > int(ability.get("range", 0)) or not sim._cell_visible(cell) or not sim._line_of_sight(origin, cell):
+		return false
+	if ability.get("target", "enemy") == "enemy":
+		return not sim.get_enemy_at(cell).is_empty()
+	if ability.get("target", "enemy") == "tile":
+		return sim._terrain_at(cell) != "wall"
+	return true
+
+func _draw_targetable_cells(origin: Vector2, tile: float) -> void:
+	if target_mode == "":
+		return
+	var ability := _target_ability()
+	var target_kind := String(ability.get("target", ""))
+	var show_cell_candidates := target_mode == "move" or target_mode.begins_with("item:") or target_kind in ["area", "tile"]
+	if not show_cell_candidates:
+		return
+	if target_mode == "move" and _point_in_board(press_current_position):
+		var move_cell := _cell_from_point(press_current_position)
+		if _cell_is_legal_target(move_cell):
+			var move_rect := Rect2(origin + Vector2(move_cell.x * tile, move_cell.y * tile), Vector2(tile - 1, tile - 1))
+			draw_rect(move_rect, Color(0.33, 0.9, 0.53, 0.24), true)
+			draw_rect(move_rect, COLORS.green, false, 2.0)
+		return
+	for y in range(ArcanistSim.HEIGHT):
+		for x in range(ArcanistSim.WIDTH):
+			var cell := Vector2i(x, y)
+			if not _cell_is_legal_target(cell):
+				continue
+			var rect := Rect2(origin + Vector2(x * tile, y * tile), Vector2(tile - 1, tile - 1))
+			draw_rect(rect, Color(0.35, 0.83, 0.93, 0.12), true)
+			draw_rect(rect, Color(0.35, 0.83, 0.93, 0.55), false, 1.0)
+
+func _target_preview_radius() -> int:
+	if target_mode.begins_with("item:"):
+		var item_index := int(target_mode.trim_prefix("item:"))
+		if item_index >= 0 and item_index < sim.run.inventory.size():
+			if sim.content.items.get(sim.run.inventory[item_index], {}).get("effect") == "bomb":
+				return 1
+	var ability := _target_ability()
+	return int(ability.get("radius", 0)) if ability.get("target", "") == "area" else 0
 
 func _show_notice(message: String) -> void:
 	notice = message
 	notice_until = Time.get_ticks_msec() + 2800
+	set_process(true)
 	queue_redraw()
 
 func _school_color(school: String) -> Color:

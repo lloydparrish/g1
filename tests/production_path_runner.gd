@@ -14,12 +14,20 @@ func run_flow() -> void:
 	await process_frame
 	await process_frame
 	_check(main.page == "title" and not main.active_hits.is_empty(), "production scene draws the character selection screen")
+	await _mouse_tap(main, Vector2(200, 435))
+	_check(main.selected_character == "jim", "Windows mouse can select a character in the production UI")
 
 	await _tap(main, Vector2(710, 435))
 	_check(main.selected_character == "aldren", "character card is selected through the production input handler")
 	await _touch(main, Vector2(635, 725))
 	await process_frame
 	_check(main.page == "battle" and main.sim.run.character_id == "aldren", "production start control enters a generated run")
+	if not main.sim.run.has("entities"):
+		print("TOUCH START DIAGNOSTIC page=%s overlay=%s selected=%s hits=%d" % [main.page, main.overlay, main.selected_character, main.active_hits.size()])
+		for failure in failures:
+			printerr("FAIL: " + failure)
+		quit(1)
+		return
 
 	var start: Vector2i = main.sim._pos(main.sim.get_player())
 	await _tap(main, Vector2(73, 713))
@@ -54,7 +62,7 @@ func run_flow() -> void:
 	await _tap(main, Vector2(884, 713))
 	var armor_index: int = main.sim.run.inventory.size() - 1
 	await _tap(main, Vector2(514 + (armor_index % 6) * 142, 213 + int(armor_index / 6) * 65))
-	await _tap(main, Vector2(1100, 592))
+	await _tap_action(main, "equip")
 	_check(main.sim.run.equipment.get("Body", "") == "leather_armor", "production inventory equips the claimed armor")
 	await _tap(main, Vector2(1299, 94))
 	await _tap(main, Vector2(1286, 574))
@@ -121,29 +129,34 @@ func _tap_action(main: Control, action_type: String, action_id: String = "") -> 
 	_failures_hit("production control is drawn: %s %s" % [action_type, action_id])
 
 func _tap(main: Control, point: Vector2) -> void:
+	await _touch(main, point)
+
+func _mouse_tap(main: Control, point: Vector2) -> void:
+	var viewport_point: Vector2 = main.draw_offset + point * main.draw_scale
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
-	press.position = point
+	press.position = viewport_point
 	press.pressed = true
 	main._gui_input(press)
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
-	release.position = point
+	release.position = viewport_point
 	release.pressed = false
 	main._gui_input(release)
 	await process_frame
 
 func _touch(main: Control, point: Vector2) -> void:
+	var viewport_point: Vector2 = main.draw_offset + point * main.draw_scale
 	var press := InputEventScreenTouch.new()
 	press.index = 0
-	press.position = point
+	press.position = viewport_point
 	press.pressed = true
-	main._gui_input(press)
+	main._input(press)
 	var release := InputEventScreenTouch.new()
 	release.index = 0
-	release.position = point
+	release.position = viewport_point
 	release.pressed = false
-	main._gui_input(release)
+	main._input(release)
 	await process_frame
 
 func _cell_center(cell: Vector2i) -> Vector2:

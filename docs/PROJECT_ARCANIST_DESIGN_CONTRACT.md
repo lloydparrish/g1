@@ -345,6 +345,8 @@ Death ends the run and carried equipment, artifacts and run power are lost. Do n
 
 Landscape first. The supplied UI mockup is a visual target, adapted intelligently for phone space.
 
+Windows and Android are both supported. Android landscape is the primary mobile presentation; Windows remains a first-class desktop build.
+
 During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. World map, character/abilities, inventory/equipment, Codex, spellbooks and settings can be separate full-screen interfaces.
 
 Touch model:
@@ -354,6 +356,10 @@ Touch model:
 - Drag/scroll: pan where appropriate.
 
 Controls must be comfortably phone-usable.
+
+Mouse and touchscreen are first-class input methods. Platform input must resolve into the same explicit game commands. No required action or information may depend only on hover, a secondary mouse button, wheel input or a keyboard shortcut. Touch must provide a way to inspect, cancel targeting and reach every required screen. Keep touch targets comfortably sized and avoid overlapping hit regions.
+
+Use Godot user-data paths for saves on both platforms. Respect Android safe areas and landscape aspect ratios while keeping the battlefield prominent. Future gameplay and UI changes must be checked on Windows and Android at desktop, wide-phone and smaller effective resolutions.
 
 ## Visual direction
 
@@ -380,7 +386,7 @@ launch -> select character -> enter run -> navigate battlefield -> fight -> use 
 There are exactly three major implementation phases before judging the baseline product:
 
 1. Prompt 1 — Playable Game: complete vertical skeleton, not merely foundations.
-2. Prompt 2 — Buildcraft & Content: expand the working game into the intended ability/school/discipline/artifact/environment ecosystem and baseline content.
-3. Prompt 3 — Ship It: Android usability, balance, QA, performance, polish and production APK.
+2. Prompt 2 — Platform Acceptance: Android landscape and touch compatibility, Windows preservation, lifecycle/save handling, build pipeline, APK creation and cross-platform verification.
+3. Prompt 3 — Buildcraft & Content: expand the working game into the intended ability/school/discipline/artifact/environment ecosystem, then balance and polish it for both supported platforms.
 
-Later prompts may be content expansions, but Prompt 3 must not leave fundamental gameplay waiting for a future architecture prompt.
+Later prompts may expand content, but must preserve the shared deterministic simulation and continue checking both platforms.

@@ -22,7 +22,13 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 
 ## Player-facing design
 
-- Design for landscape Android displays first. Touch and mouse share clear tap-to-move, tap-ability-then-target and cancel behavior.
+- Windows and Android are supported platforms; landscape Android is the primary mobile presentation.
+- Touch and mouse are first-class. Both resolve through the same UI actions and explicit simulation commands.
+- No required action or information may depend only on hover, right-click, middle-click, wheel input or keyboard. Make inspection available by touch (for example, long press or an Inspect control).
+- Keep required touch targets comfortably tappable and separated enough to avoid accidental input. A visible cancel action must accompany an active targeting state.
+- Respect Android safe areas and modern landscape aspect ratios without wasting battlefield space. Preserve safe-area behavior in future UI changes.
+- Store data in Godot user-data paths such as `user://`; do not use writable project directories, drive letters or machine-specific paths for saves.
+- Test every future production feature with Windows mouse and Android-style touch, including representative desktop, wide-phone and small effective resolutions.
 - Give the battlefield the greatest practical space. Keep health/resources, available actions, turn order and important statuses visible; put extended inspection and build screens in contextual overlays.
 - Keep text, targets and controls readable and comfortably tappable. Do not expose internal IDs, calculations, test controls, raw data, temporary copy or engine defaults in normal play.
 - Completing an objective does not force a transition. Let the player explore and collect rewards, then choose the next location.

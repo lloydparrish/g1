@@ -11,13 +11,16 @@ From PowerShell at the project root:
 ```powershell
 scripts\arcanist.ps1 Editor  # Open the Godot editor
 scripts\arcanist.ps1 Run     # Launch the game
-scripts\arcanist.ps1 Test    # Run the headless deterministic suite
-scripts\arcanist.ps1 Build   # Export a Windows x86-64 development build
+scripts\arcanist.ps1 Test         # Run simulation, production-flow and mobile acceptance suites
+scripts\arcanist.ps1 Build        # Export a Windows x86-64 development build
+scripts\arcanist.ps1 SetupAndroid # Install project-local Android export requirements
+scripts\arcanist.ps1 Android      # Export and inspect the installable Android APK
+scripts\arcanist.ps1 BuildAll     # Tests, Windows export and Android APK export
 ```
 
 For a fresh checkout, run `scripts\arcanist.ps1 Setup`. It downloads the official editor, console runner and, when needed, the Godot 4.7.2 Windows and Android export templates. The full template archive is about 1.2 GB; the setup script installs only the platform files used here. Godot user settings and saves are redirected to the local `.godot-profile` folder when these scripts run.
 
-The game also accepts arrow keys or WASD, Escape to pause/cancel, I for inventory, K for abilities, M for the route map, E/Space to wait and 1–6 for known abilities. Mouse and touch use the same tap/target actions.
+The game accepts mouse or touchscreen taps for selection, movement, abilities, targeting and menus. Long press inspects battlefield creatures; the on-screen Cancel control and Android Back cancel targeting. Mouse right-click and keyboard shortcuts (WASD/arrows, Escape, I/K/M, E/Space and 1–6) remain optional desktop conveniences. Waiting for the player never advances simulation time.
 
 ## What is implemented
 
@@ -41,18 +44,27 @@ The game also accepts arrow keys or WASD, Escape to pause/cancel, I for inventor
 
 ## Windows build
 
-`scripts\arcanist.ps1 Build` writes `build/windows/ProjectArcanist.exe` as a self contained debug export. Run it after setup; the command checks both the matching Godot templates and the resulting file. `export_presets.cfg` also has a release template configuration for a release export from Godot's export dialog.
+`scripts\arcanist.ps1 Build` writes `build/windows/ProjectArcanist.exe` as a self-contained debug export. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly.
 
 ## Android setup and export
 
-The project is landscape first and uses the OpenGL compatibility renderer. Its Android preset targets arm64 and an APK. To export on Windows:
+The Android export is a signed debug APK for ARM64, locked to landscape, named **Project Arcanist**, with package ID `com.projectarcanist.game`. Godot's compatibility renderer is shared with Windows. Touch enters the same game command path as mouse input; `user://` saves work in each platform's app data location.
 
-1. Install OpenJDK 17 or newer and the Android SDK.
-2. Install Android SDK Platform Tools 35 or newer, Build Tools 35.0.1, Android Platform 35, CMake 3.10.2.4988404 and NDK 28.1.13356709 (r28b).
-3. Set `JAVA_HOME` and `ANDROID_HOME` (or `ANDROID_SDK_ROOT`), then in Godot Editor Settings set the matching Java SDK and Android SDK paths.
-4. Run `scripts\export_android.ps1` to create `build/android/ProjectArcanist.apk`.
+For a fresh Windows checkout:
 
-Godot 4.7's Windows Android export requirements and package versions are recorded in the [official Android export guide](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_android.html). This machine currently has Java 11 and no Android SDK tools, so Android export and device acceptance remain pending; the APK command reports the missing prerequisites instead of producing an unverified build. Windows export is available and verified.
+1. Run `scripts\arcanist.ps1 Setup` to install the project-local Godot 4.7.2 executable and export templates.
+2. Run `scripts\arcanist.ps1 SetupAndroid`. This downloads Temurin JDK 17 and Google's command-line tools, installs the SDK packages required by Godot 4.7, accepts those SDK package licenses, creates the local debug key, and configures the ignored project-local Godot profile. It does not configure machine-global Java or Android settings.
+3. Run `scripts\arcanist.ps1 Android` to export `build/android/ProjectArcanist.apk`, inspect the package name and app label, and verify its debug signature.
+
+The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Android Platform 35, command-line tools, CMake 3.10.2.4988404 and NDK 28.1.13356709. Godot's current requirements are listed in its [Android export guide](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_android.html). `BuildAll` runs all test suites, exports Windows, then exports and inspects the Android APK. Generated SDK, JDK, keystore, Godot profile and build files stay ignored by Git.
+
+## Verification and visual QA
+
+`scripts\arcanist.ps1 Test` runs 55 deterministic simulation checks, 17 production-flow checks, and 17 mobile acceptance checks. The last suite compares identical mouse/touch movement state, checks Android Back and lifecycle save/resume behavior, checks viewport/safe-area calculations and ensures interactive targets remain at least 54 logical pixels.
+
+`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, route, reward and pause overlays. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
+
+Automated and desktop-render verification do not establish acceptance on a physical Android device. First install, touch feel, physical text size, heat/performance, system Back navigation, suspend/resume and the specific phone's cutout behavior still need phone testing.
 
 ## Content editing
 
@@ -62,4 +74,4 @@ Godot 4.7's Windows Android export requirements and package versions are recorde
 
 This is Prompt 1's playable vertical slice. The starter roster, spell and item library are intentionally smaller than the design contract's later 60–80 ability baseline. Art, audio, production balance, broader enemy/boss roster and native Android device testing are follow up production scope; the combat and content model needed to expand them is already exercised by this slice.
 
-On ultra wide 20:9 displays, the interface keeps its 16:9 composition and square battlefield tiles centered with dark side margins. A full width safe area layout and native Android device review remain production polish work.
+Windows and Android are supported from the same deterministic simulation. Android landscape is the primary mobile layout, with touch and mouse mapped to shared actions, safe-area-aware drawing and an expandable wide-phone side panel. Continue cross-platform QA for future UI and gameplay work.
