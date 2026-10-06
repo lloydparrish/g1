@@ -11,7 +11,7 @@ From PowerShell at the project root:
 ```powershell
 scripts\arcanist.ps1 Editor  # Open the Godot editor
 scripts\arcanist.ps1 Run     # Launch the game
-scripts\arcanist.ps1 Test         # Run simulation, production-flow, mobile, progression/inventory and balance suites
+scripts\arcanist.ps1 Test         # Run simulation, production-flow, mobile, progression/inventory, balance and presentation suites
 scripts\arcanist.ps1 Build        # Export a Windows x86-64 development build
 scripts\arcanist.ps1 SetupAndroid # Install project-local Android export requirements
 scripts\arcanist.ps1 Android      # Export and inspect the installable Android APK
@@ -31,6 +31,8 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - Weapons with different range, time and stamina behavior; target based spells; skeleton and owner bound phantom blade summons; the 2x2 Grave Tyrant encounter.
 - 32 currently playable abilities and passives (29 active, 3 passive) span martial, magical, hybrid and discovery paths. The prerequisite graph is data-driven and larger than the visible UI; its interface pans, filters and zooms, with no viewport-based node cap.
 - A compact 6×5 inventory grid, contextual item inspection, all nine equipment slots, two-handed hand reservation, 30 item capacity, rewards, consumables, branching routes, codex discoveries, pause/resume save and death/victory screens.
+- Sequential combat-event playback with Normal, Fast and Instant presentation speeds, visibility-safe floating feedback, a six-entry Recent Events panel and a paged 100-record encounter history, full/assist/no-participation XP credit, and character-profile growth.
+- Eight configurable quickbar slots store stable ability/item IDs, preserve empty consumable assignments and save across resume; gameplay input is blocked until event playback finishes or is skipped.
 - Custom symbolic battlefield and touch-sized contextual screens guided by the supplied dark tactical reference.
 
 ## Project structure
@@ -39,13 +41,13 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - `data/content.json` defines the starter content and effect/trigger rules.
 - `scripts/main.gd` renders the simulation and maps touch, mouse and keyboard input to game commands.
 - `scenes/main.tscn` is the normal game entry point.
-- `tests/test_runner.gd`, `tests/progression_inventory_runner.gd` and `tests/balance_runner.gd` cover the headless rules; `tests/production_path_runner.gd` and `tests/mobile_acceptance_runner.gd` exercise mouse and touch through the production scene.
+- `tests/test_runner.gd`, `tests/progression_inventory_runner.gd`, `tests/balance_runner.gd` and `tests/combat_presentation_runner.gd` cover headless rules; `tests/production_path_runner.gd` and `tests/mobile_acceptance_runner.gd` exercise mouse and touch through the production scene.
 - `docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md` and `docs/Project_Arcanist_UI_Reference.png` retain the source design materials.
 - [`DESIGN_RULES.md`](DESIGN_RULES.md) keeps the non negotiable architecture and product rules visible for later work.
 
 ## Windows build
 
-`scripts\arcanist.ps1 Build` writes `build/windows-p4/ProjectArcanist.exe` as a self-contained debug export. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly. The Prompt 4 output folder allows a fresh build while another game session still holds the earlier `build/windows/ProjectArcanist.exe` open.
+`scripts\arcanist.ps1 Build` writes `build/windows-p5/ProjectArcanist.exe` as a self-contained debug export. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly. The Prompt 5 output folder allows a fresh build while another game session still holds the earlier version open.
 
 ## Android setup and export
 
@@ -61,11 +63,11 @@ The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Andro
 
 ## Verification and visual QA
 
-`scripts\arcanist.ps1 Test` runs 55 simulation checks, 18 production-flow checks, 17 mobile acceptance checks, 44 progression/inventory checks, 40 playtest regression checks, and 6 balance checks (180 total). The balance suite samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Playtest regressions cover one-choice rewards, generic spellbooks, Command feedback, canonical creature glyphs and targeting cancellation.
+`scripts\arcanist.ps1 Test` runs 55 simulation checks, 20 production-flow checks, 22 mobile acceptance checks, 44 progression/inventory checks, 40 playtest regression checks, 6 balance checks, and 36 combat-presentation checks (223 total). The combat suite checks deterministic transcripts, hidden-event filtering, XP participation credit, growth milestones, stable quickbar persistence and identical authoritative outcomes across playback speeds. Balance samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Playtest regressions cover one-choice rewards, generic spellbooks, Command feedback, canonical creature glyphs and targeting cancellation.
 
-`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, a panned ability branch, action palette, spellbook inventory and Codex, targeting, route, reward and pause views. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel and action tray while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
+`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, a panned ability branch, action palette, spellbook inventory and Codex, targeting, route, reward, pause, encounter-history, sequential enemy/damage/summon/level-up playback, all three speed modes, customized/unavailable quickbars, and selected/full inventory states. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel and action tray while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
 
-The Prompt 2 build was physically tested by the user. The current Prompt 4 APK was installed and launched in the Android emulator; a touchscreen tap entered a run, weapon targeting was activated, and Android Back cancelled targeting before opening Pause. Codex did not use a physical handset for this build. Verify physical touch feel, text size, performance/heat, suspend/resume and the specific device's cutout behavior after installing it.
+The Prompt 2 build was physically tested by the user. The Prompt 5 APK was installed and launched in an accelerated Android 36 emulator at 2400×1080 landscape. Touch-style ADB input started a run, committed movement and a Lunge attack, changed presentation speed, opened the expanded ability palette, inventory and encounter history, and used Android Back to cancel targeting. Background/resume returned to the same turn state. The existing user-profile AVD could not create its snapshot lock under this workspace's permissions, so verification used a separate workspace-local emulator profile. Codex did not use a physical handset for Prompt 5; recheck touch feel, text size, performance/heat, suspend/resume and the device's cutout behavior on the intended phone.
 
 ## Content editing
 

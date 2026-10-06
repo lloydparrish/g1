@@ -10,6 +10,7 @@ func _initialize() -> void:
 
 func run_flow() -> void:
 	var main = MainScene.instantiate()
+	main.playback_mode = "Instant"
 	root.add_child(main)
 	await process_frame
 	await process_frame
@@ -33,6 +34,11 @@ func run_flow() -> void:
 	await _tap(main, Vector2(73, 713))
 	await _touch(main, _cell_center(Vector2i(13, 8)))
 	_check(main.sim._pos(main.sim.get_player()) == Vector2i(13, 8) and start != main.sim._pos(main.sim.get_player()), "production Move control and battlefield tap move one legal tile")
+	var history_digest: String = main.sim.state_digest()
+	await _mouse_action(main, "open_combat_history", "")
+	_check(main.overlay == "combat_history" and not main.sim.run.combat_history.is_empty(), "Windows mouse opens the structured encounter history")
+	await _mouse_action(main, "close", "")
+	_check(main.overlay == "" and main.sim.state_digest() == history_digest, "closing combat history does not alter the simulation")
 
 	for entity_id in main.sim.run.entities.keys():
 		if entity_id != "player":
@@ -128,6 +134,11 @@ func _tap_action(main: Control, action_type: String, action_id: String = "") -> 
 	main.queue_redraw()
 	await process_frame
 	await process_frame
+	if action_type == "ability":
+		for slot_index in range(main.sim.run.get("quickbar", []).size()):
+			if main.sim.run.quickbar[slot_index].get("type") == "ability" and main.sim.run.quickbar[slot_index].get("id") == action_id:
+				await _tap_index_action(main, "quickbar_slot", slot_index)
+				return
 	for hit in main.active_hits:
 		var action: Dictionary = hit.action
 		if String(action.get("type", "")) != action_type:

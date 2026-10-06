@@ -115,6 +115,7 @@ func run_suite() -> void:
 	_check(mouse_reward.sim.run.get("reward_chosen_index", -1) == 0 and not _has_action(mouse_reward, "claim_reward"), "reward UI disables all options immediately after the single choice")
 
 	var main = MainScene.instantiate()
+	main.playback_mode = "Instant"
 	root.add_child(main)
 	await process_frame
 	await process_frame
@@ -195,6 +196,11 @@ func _ui_action(main: Control, action_type: String, property_name: String, value
 	main.queue_redraw()
 	await process_frame
 	await process_frame
+	if action_type == "ability":
+		for slot_index in range(main.sim.run.get("quickbar", []).size()):
+			if main.sim.run.quickbar[slot_index].get("type") == "ability" and main.sim.run.quickbar[slot_index].get("id") == str(value):
+				await _ui_action(main, "quickbar_slot", "index", slot_index, use_touch)
+				return
 	for hit in main.active_hits:
 		var action: Dictionary = hit.action
 		if String(action.get("type", "")) != action_type:

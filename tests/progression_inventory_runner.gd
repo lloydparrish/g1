@@ -113,6 +113,7 @@ func run_suite() -> void:
 	_check(not inventory.unequip_item("Body"), "full pack cannot silently overfill when unequipping gear")
 
 	var main = MainScene.instantiate()
+	main.playback_mode = "Instant"
 	root.add_child(main)
 	await process_frame
 	await process_frame

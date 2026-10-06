@@ -22,10 +22,13 @@ foreach ($CaptureCase in @(
 	@{ Size = '1920x1080'; Overlay = 'rewards' },
 	@{ Size = '2400x1080'; Overlay = 'abilities' },
 	@{ Size = '2340x1080'; Overlay = 'action_palette' },
-	@{ Size = '2400x1080'; Overlay = 'pause' }
+	@{ Size = '2400x1080'; Overlay = 'pause' },
+	@{ Size = '1920x1080'; Overlay = 'combat_history'; Scenario = 'combat_history' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Overlay)"
-	& $Godot --path $ProjectRoot -- "--capture=$($CaptureCase.Size)" "--capture-dir=$CaseDirectory" "--capture-overlay=$($CaptureCase.Overlay)"
+	$ExtraArguments = @("--capture=$($CaptureCase.Size)", "--capture-dir=$CaseDirectory", "--capture-overlay=$($CaptureCase.Overlay)")
+	if ($CaptureCase.ContainsKey('Scenario')) { $ExtraArguments += "--capture-scenario=$($CaptureCase.Scenario)" }
+	& $Godot --path $ProjectRoot -- @ExtraArguments
 	if ($LASTEXITCODE -ne 0) { throw "Overlay capture failed: $($CaptureCase.Overlay) at $($CaptureCase.Size)." }
 	$Capture = Join-Path $ProjectRoot "build\visual-qa\$($CaptureCase.Overlay)\$($CaptureCase.Size).png"
 	if (-not (Test-Path -LiteralPath $Capture)) { throw "Godot did not create the expected overlay capture: $Capture" }
@@ -38,6 +41,31 @@ if ($LASTEXITCODE -ne 0) { throw 'Scrolled ability-web capture failed.' }
 $ScrolledWebCapture = Join-Path $ProjectRoot 'build\visual-qa\web-scrolled\2400x1080.png'
 if (-not (Test-Path -LiteralPath $ScrolledWebCapture)) { throw "Godot did not create the expected capture: $ScrolledWebCapture" }
 Write-Output "Captured $ScrolledWebCapture"
+
+foreach ($CaptureCase in @(
+	@{ Name = 'enemy-action'; Size = '1920x1080'; Scenario = 'enemy_action' },
+	@{ Name = 'damage-feedback'; Size = '1920x1080'; Scenario = 'damage_action' },
+	@{ Name = 'summon-feedback'; Size = '1920x1080'; Scenario = 'summon' },
+	@{ Name = 'level-up'; Size = '1920x1080'; Scenario = 'level_up' },
+	@{ Name = 'fast-playback'; Size = '1920x1080'; Scenario = 'fast_action' },
+	@{ Name = 'instant-playback'; Size = '1920x1080'; Scenario = 'instant_action' },
+	@{ Name = 'recent-events'; Size = '1920x1080'; Scenario = 'populated_history' },
+	@{ Name = 'quickbar-customized'; Size = '2340x1080'; Scenario = 'quickbar_customized' },
+	@{ Name = 'quickbar-unavailable'; Size = '2340x1080'; Scenario = 'quickbar_empty' },
+	@{ Name = 'inventory-full'; Size = '1920x1080'; Scenario = 'full_inventory'; Overlay = 'inventory' },
+	@{ Name = 'inventory-equipment'; Size = '1920x1080'; Scenario = 'selected_equipment'; Overlay = 'inventory' },
+	@{ Name = 'inventory-consumable'; Size = '1920x1080'; Scenario = 'selected_consumable'; Overlay = 'inventory' },
+	@{ Name = 'inventory-assign'; Size = '1920x1080'; Scenario = 'assign_item'; Overlay = 'inventory' }
+)) {
+	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Name)"
+	$ExtraArguments = @("--capture=$($CaptureCase.Size)", "--capture-dir=$CaseDirectory", "--capture-scenario=$($CaptureCase.Scenario)")
+	if ($CaptureCase.ContainsKey('Overlay')) { $ExtraArguments += "--capture-overlay=$($CaptureCase.Overlay)" }
+	& $Godot --path $ProjectRoot -- @ExtraArguments
+	if ($LASTEXITCODE -ne 0) { throw "Combat/inventory capture failed: $($CaptureCase.Name)." }
+	$Capture = Join-Path $ProjectRoot "build\visual-qa\$($CaptureCase.Name)\$($CaptureCase.Size).png"
+	if (-not (Test-Path -LiteralPath $Capture)) { throw "Godot did not create the expected state capture: $Capture" }
+	Write-Output "Captured $Capture"
+}
 
 $BookInventoryDirectory = 'res://build/visual-qa/spellbook-inventory'
 & $Godot --path $ProjectRoot -- '--capture=2340x1080' "--capture-dir=$BookInventoryDirectory" '--capture-overlay=inventory' '--capture-book=lesser_key_of_ash'

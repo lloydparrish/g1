@@ -36,6 +36,16 @@ Actions consume simulation time. Example conceptual costs: Quickstep 40, dagger 
 
 After the player chooses an action, resolve scheduled actors/events until the player's next decision point, then stop. Show a readable upcoming-turn timeline. This system must support speed, haste, slow, weapon speed, casting speed and future time magic.
 
+Combat presentation is a sequential rendering of events produced by the committed deterministic command. Normal, Fast and Instant are presentation speeds only: all modes share the same simulation outcome, and waiting for an animation never advances time or resolves another actor. Provide a visible skip control and prevent overlapping gameplay commands while the event sequence is playing. Keep bounded recent combat history and use concise floating feedback for important damage, healing, status, death, XP and level-up events.
+
+Presentation data must obey the same fog-of-war rules as the battlefield. Hidden actors and targets, their positions and damage details must not leak through event text, feed history, animation patches or floating labels. An unseen attack on the player may use generic impact feedback.
+
+Show roughly five to eight meaningful recent visible outcomes in the battle HUD and expose the larger encounter history only in a contextual, paged view. Store a bounded history of structured event records; omit routine scheduler/resource bookkeeping and do not reconstruct the feed from prose logs.
+
+Kill progression awards full experience for a player kill or a player-owned summon kill, partial assist experience for meaningful player participation in another actor's kill, and no experience for unrelated deaths. Level rewards remain deterministic and data-driven; character growth profiles define any automatic attribute milestones.
+
+Keep exactly eight configurable quickbar slots for learned active abilities and usable items. Persist stable ability/item IDs rather than inventory indices; an empty consumable slot remains associated with its item so replenished stock restores it. Passive abilities do not occupy action slots. Quickbar assignment is presentation/input convenience and must not create a second ability or item rule path.
+
 ## Battlefield
 
 - Square grid with eight-directional movement.

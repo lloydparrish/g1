@@ -2,18 +2,18 @@
   "damage_types": ["Slashing", "Piercing", "Blunt", "Fire", "Cold", "Lightning", "Poison", "Arcane", "Holy", "Shadow"],
   "resources": ["Health", "Mana", "Stamina", "Command", "Blood"],
   "statuses": {
-    "Burning": {"max_stacks": 3, "duration": 3, "tick_damage": 2, "damage": "Fire"},
-    "Bleeding": {"max_stacks": 4, "duration": 4, "tick_damage": 2, "damage": "Slashing"},
-    "Wet": {"max_stacks": 1, "duration": 3},
-    "Chilled": {"max_stacks": 3, "duration": 3},
-    "Frozen": {"max_stacks": 1, "duration": 1},
-    "Poisoned": {"max_stacks": 4, "duration": 4, "tick_damage": 2, "damage": "Poison"},
+    "Burning": {"max_stacks": 3, "duration": 3, "tick_damage": 2, "damage": "Fire", "harmful": true},
+    "Bleeding": {"max_stacks": 4, "duration": 4, "tick_damage": 2, "damage": "Slashing", "harmful": true},
+    "Wet": {"max_stacks": 1, "duration": 3, "harmful": true},
+    "Chilled": {"max_stacks": 3, "duration": 3, "harmful": true},
+    "Frozen": {"max_stacks": 1, "duration": 1, "harmful": true},
+    "Poisoned": {"max_stacks": 4, "duration": 4, "tick_damage": 2, "damage": "Poison", "harmful": true},
     "Haste": {"max_stacks": 1, "duration": 3},
-    "Slow": {"max_stacks": 1, "duration": 3},
+    "Slow": {"max_stacks": 1, "duration": 3, "harmful": true},
     "Guard": {"max_stacks": 1, "duration": 1},
-    "Stunned": {"max_stacks": 1, "duration": 1},
+    "Stunned": {"max_stacks": 1, "duration": 1, "harmful": true},
     "Empowered": {"max_stacks": 1, "duration": 3},
-    "Rooted": {"max_stacks": 1, "duration": 2}
+    "Rooted": {"max_stacks": 1, "duration": 2, "harmful": true}
   },
   "environment_rules": [
     {"effect": "Ice", "terrain": "water", "result": "ice", "message": "The water locks into ice."},
@@ -37,12 +37,12 @@
     "layout": "radial"
   },
   "characters": {
-    "jim": {"name": "Jim the Mundane", "subtitle": "No school. No prophecy. Just grit.", "aura": "None", "weapon": "sword", "starting_equipment": {"Body": "leather_armor", "Offhand": "iron_shield"}, "known": ["lunge", "guard", "quickstep"], "schools": [], "disciplines": ["Swordsmanship", "Defense", "Mobility"], "discipline": "Swordsmanship", "attributes": {"Might": 11, "Dexterity": 10, "Vitality": 11, "Intelligence": 8, "Willpower": 9, "Perception": 10}, "resources": {"Health": [52, 52], "Mana": [6, 6], "Stamina": [60, 60], "Command": [0, 2], "Blood": [0, 0]}},
-    "aldren": {"name": "Aldren, Exiled Battlemage", "subtitle": "A blade in one hand. An oath in the other.", "aura": "Spellsteel", "weapon": "sword", "starting_equipment": {"Body": "leather_armor"}, "known": ["arcane_bolt", "phantom_blade", "lunge", "guard"], "schools": ["Arcane"], "disciplines": ["Swordsmanship"], "discipline": "Swordsmanship", "attributes": {"Might": 10, "Dexterity": 10, "Vitality": 9, "Intelligence": 13, "Willpower": 12, "Perception": 10}, "resources": {"Health": [44, 44], "Mana": [36, 36], "Stamina": [54, 54], "Command": [0, 3], "Blood": [0, 0]}},
-    "mara": {"name": "Mara, the Bloodless", "subtitle": "She learned to make a weapon of what remained.", "aura": "Crimson Hunger", "weapon": "dagger", "starting_equipment": {"Body": "leather_armor"}, "known": ["blood_lance", "quickstep", "raise_skeleton", "guard"], "schools": ["Blood", "Necromancy"], "disciplines": ["Daggers", "Mobility"], "discipline": "Daggers", "attributes": {"Might": 8, "Dexterity": 13, "Vitality": 9, "Intelligence": 11, "Willpower": 14, "Perception": 12}, "resources": {"Health": [40, 40], "Mana": [23, 23], "Stamina": [62, 62], "Command": [0, 3], "Blood": [14, 24]}},
-    "brakka": {"name": "Brakka, Ironbound", "subtitle": "Plant your feet. Make them move you.", "aura": "Immovable", "weapon": "greatsword", "starting_equipment": {"Body": "scale_armor"}, "known": ["lunge", "cleave", "guard", "iron_resolve"], "schools": [], "disciplines": ["Heavy Weapons", "Defense"], "discipline": "Heavy Weapons", "attributes": {"Might": 13, "Dexterity": 8, "Vitality": 14, "Intelligence": 8, "Willpower": 11, "Perception": 9}, "resources": {"Health": [58, 58], "Mana": [4, 4], "Stamina": [58, 58], "Command": [0, 2], "Blood": [0, 0]}},
-    "sylvi": {"name": "Sylvi, Thornwalker", "subtitle": "The forest makes room for a moving hunter.", "aura": "Living Hunt", "weapon": "bow", "starting_equipment": {"Body": "leather_armor"}, "known": ["aimed_shot", "quickstep", "mend", "rootbound"], "schools": ["Nature"], "disciplines": ["Archery", "Mobility"], "discipline": "Archery", "attributes": {"Might": 8, "Dexterity": 14, "Vitality": 10, "Intelligence": 11, "Willpower": 12, "Perception": 14}, "resources": {"Health": [46, 46], "Mana": [28, 28], "Stamina": [58, 58], "Command": [0, 2], "Blood": [0, 0]}},
-    "orin": {"name": "Orin, Gravekeeper", "subtitle": "The fallen are not the end of an army.", "aura": "Keeper of the Fallen", "weapon": "staff", "starting_equipment": {"Body": "leather_armor"}, "known": ["raise_skeleton", "guard", "phantom_blade"], "schools": ["Necromancy"], "disciplines": ["Defense"], "discipline": "Defense", "attributes": {"Might": 9, "Dexterity": 9, "Vitality": 11, "Intelligence": 13, "Willpower": 14, "Perception": 10}, "resources": {"Health": [48, 48], "Mana": [32, 32], "Stamina": [52, 52], "Command": [0, 4], "Blood": [0, 0]}}
+    "jim": {"name": "Jim the Mundane", "subtitle": "No school. No prophecy. Just grit.", "aura": "None", "weapon": "sword", "growth_profile": ["Vitality", "Might", "Dexterity"], "starting_equipment": {"Body": "leather_armor", "Offhand": "iron_shield"}, "known": ["lunge", "guard", "quickstep"], "schools": [], "disciplines": ["Swordsmanship", "Defense", "Mobility"], "discipline": "Swordsmanship", "attributes": {"Might": 11, "Dexterity": 10, "Vitality": 11, "Intelligence": 8, "Willpower": 9, "Perception": 10}, "resources": {"Health": [52, 52], "Mana": [6, 6], "Stamina": [60, 60], "Command": [0, 2], "Blood": [0, 0]}},
+    "aldren": {"name": "Aldren, Exiled Battlemage", "subtitle": "A blade in one hand. An oath in the other.", "aura": "Spellsteel", "weapon": "sword", "growth_profile": ["Intelligence", "Willpower", "Might"], "starting_equipment": {"Body": "leather_armor"}, "known": ["arcane_bolt", "phantom_blade", "lunge", "guard"], "schools": ["Arcane"], "disciplines": ["Swordsmanship"], "discipline": "Swordsmanship", "attributes": {"Might": 10, "Dexterity": 10, "Vitality": 9, "Intelligence": 13, "Willpower": 12, "Perception": 10}, "resources": {"Health": [44, 44], "Mana": [36, 36], "Stamina": [54, 54], "Command": [0, 3], "Blood": [0, 0]}},
+    "mara": {"name": "Mara, the Bloodless", "subtitle": "She learned to make a weapon of what remained.", "aura": "Crimson Hunger", "weapon": "dagger", "growth_profile": ["Willpower", "Dexterity", "Vitality"], "starting_equipment": {"Body": "leather_armor"}, "known": ["blood_lance", "quickstep", "raise_skeleton", "guard"], "schools": ["Blood", "Necromancy"], "disciplines": ["Daggers", "Mobility"], "discipline": "Daggers", "attributes": {"Might": 8, "Dexterity": 13, "Vitality": 9, "Intelligence": 11, "Willpower": 14, "Perception": 12}, "resources": {"Health": [40, 40], "Mana": [23, 23], "Stamina": [62, 62], "Command": [0, 3], "Blood": [14, 24]}},
+    "brakka": {"name": "Brakka, Ironbound", "subtitle": "Plant your feet. Make them move you.", "aura": "Immovable", "weapon": "greatsword", "growth_profile": ["Vitality", "Might", "Willpower"], "starting_equipment": {"Body": "scale_armor"}, "known": ["lunge", "cleave", "guard", "iron_resolve"], "schools": [], "disciplines": ["Heavy Weapons", "Defense"], "discipline": "Heavy Weapons", "attributes": {"Might": 13, "Dexterity": 8, "Vitality": 14, "Intelligence": 8, "Willpower": 11, "Perception": 9}, "resources": {"Health": [58, 58], "Mana": [4, 4], "Stamina": [58, 58], "Command": [0, 2], "Blood": [0, 0]}},
+    "sylvi": {"name": "Sylvi, Thornwalker", "subtitle": "The forest makes room for a moving hunter.", "aura": "Living Hunt", "weapon": "bow", "growth_profile": ["Dexterity", "Perception", "Willpower"], "starting_equipment": {"Body": "leather_armor"}, "known": ["aimed_shot", "quickstep", "mend", "rootbound"], "schools": ["Nature"], "disciplines": ["Archery", "Mobility"], "discipline": "Archery", "attributes": {"Might": 8, "Dexterity": 14, "Vitality": 10, "Intelligence": 11, "Willpower": 12, "Perception": 14}, "resources": {"Health": [46, 46], "Mana": [28, 28], "Stamina": [58, 58], "Command": [0, 2], "Blood": [0, 0]}},
+    "orin": {"name": "Orin, Gravekeeper", "subtitle": "The fallen are not the end of an army.", "aura": "Keeper of the Fallen", "weapon": "staff", "growth_profile": ["Willpower", "Intelligence", "Vitality"], "starting_equipment": {"Body": "leather_armor"}, "known": ["raise_skeleton", "guard", "phantom_blade"], "schools": ["Necromancy"], "disciplines": ["Defense"], "discipline": "Defense", "attributes": {"Might": 9, "Dexterity": 9, "Vitality": 11, "Intelligence": 13, "Willpower": 14, "Perception": 10}, "resources": {"Health": [48, 48], "Mana": [32, 32], "Stamina": [52, 52], "Command": [0, 4], "Blood": [0, 0]}}
   },
   "weapons": {
     "dagger": {"name": "Field Dagger", "slot": "Weapon", "hands": 1, "range": 1, "time": 65, "stamina": 4, "damage": 7, "type": "Piercing", "style": "fast"},

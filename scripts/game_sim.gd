@@ -12,6 +12,8 @@ var content: Dictionary = {}
 var run: Dictionary = {}
 var codex: Dictionary = {"creatures": [], "abilities": [], "spellbooks": [], "artifacts": [], "schools": []}
 var _rng := RandomNumberGenerator.new()
+var _recording_presentation := false
+var _action_presentation_events: Array = []
 
 func _init() -> void:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
@@ -207,12 +209,24 @@ func start_run(seed_value: int, character_id: String) -> bool:
 		"discoveries": [], "school_ranks": {}, "discipline_ranks": {}, "attributes": definition.attributes.duplicate(true),
 		"entities": {}, "grid": [], "visible": [], "explored": [], "objects": [], "corpses": [],
 		"equipment": equipment, "inventory": inventory, "artifacts": [], "known": definition.known.duplicate(),
-		"temporary_abilities": {}, "xp": 0, "level": 1, "skill_points": 0, "kills": 0,
+		"temporary_abilities": {}, "xp": 0, "level": 1, "skill_points": 0, "kills": 0, "assists": 0,
+		"growth_milestones": 0, "quickbar": [], "quickbar_customized": false,
+		"combat_history": [], "combat_contributions": {}, "combat_event_sequence": 0,
 		"time": 0, "turn": 0, "stage_index": 0, "encounters_completed": 0,
 		"stage_id": "", "objective": {}, "stage_completed": false, "reward_choices": [], "reward_choice_resolved": false, "reward_chosen_index": -1,
 		"route_choices": [], "route": ["ruined_village"], "outcome": "", "log": ["The March stirs beyond the gate."],
 		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "spellbook_resolutions": {}, "trigger_counts": {}
 	}
+	for ability_id in definition.known:
+		if content.abilities.get(ability_id, {}).get("kind", "active") != "passive" and run.quickbar.size() < 8:
+			run.quickbar.append({"type": "ability", "id": ability_id})
+	for item_id in inventory:
+		if run.quickbar.size() >= 8:
+			break
+		if content.items.get(item_id, {}).get("type", "") in ["consumable", "scroll"]:
+			run.quickbar.append({"type": "item", "id": item_id})
+	while run.quickbar.size() < 8:
+		run.quickbar.append({"type": "empty", "id": ""})
 	var player := {"id": "player", "name": definition.name, "kind": "player", "faction": "Adventurers", "pos": [12, 8], "hp": definition.resources.Health[0], "max_hp": definition.resources.Health[1], "resources": definition.resources.duplicate(true), "statuses": {}, "next_time": 0, "footprint": 1, "armor": 0, "alive": true, "sight": 10}
 	run.entities["player"] = player
 	_new_stage("ruined_village", false)
@@ -227,6 +241,15 @@ func resume_run() -> bool:
 	if not (parsed is Dictionary) or int(parsed.get("version", 0)) != 1:
 		return false
 	run = _canonicalize(parsed)
+	run["assists"] = int(run.get("assists", 0))
+	run["growth_milestones"] = int(run.get("growth_milestones", maxi(0, int((int(run.get("level", 1)) - 1) / 2))))
+	if not (run.get("quickbar", []) is Array) or run.get("quickbar", []).is_empty():
+		run["quickbar"] = _default_quickbar()
+	run["quickbar"] = _normalize_quickbar(run.get("quickbar", []))
+	run["quickbar_customized"] = bool(run.get("quickbar_customized", false))
+	run["combat_history"] = run.get("combat_history", [])
+	run["combat_contributions"] = run.get("combat_contributions", {})
+	run["combat_event_sequence"] = int(run.get("combat_event_sequence", 0))
 	run["disciplines"] = run.get("disciplines", [run.get("discipline", "")])
 	run["discoveries"] = run.get("discoveries", [])
 	run["school_ranks"] = run.get("school_ranks", {})
@@ -327,6 +350,169 @@ func get_visible_entities() -> Array:
 			result.append(entity)
 	return result
 
+func _capture_display_state() -> Dictionary:
+	var visible_entities: Dictionary = {}
+	for entity_id in run.get("entities", {}):
+		if _can_perceive_entity(String(entity_id)):
+			visible_entities[entity_id] = run.entities[entity_id].duplicate(true)
+	var visible_objects: Array = []
+	for object in run.get("objects", []):
+		if _event_cell_visible(_pos(object)):
+			visible_objects.append(object.duplicate(true))
+	return {"grid": run.get("grid", []).duplicate(true), "visible": run.get("visible", []).duplicate(true),
+		"explored": run.get("explored", []).duplicate(true), "entities": visible_entities,
+		"objects": visible_objects, "corpses": run.get("corpses", []).duplicate(true),
+		"stage_id": run.get("stage_id", ""), "stage_index": int(run.get("stage_index", 0)),
+		"time": int(run.get("time", 0)), "turn": int(run.get("turn", 0)), "xp": int(run.get("xp", 0)),
+		"level": int(run.get("level", 1)), "skill_points": int(run.get("skill_points", 0)),
+		"attributes": run.get("attributes", {}).duplicate(true), "combat_history": run.get("combat_history", []).duplicate(true)}
+
+func _event_cell_visible(cell: Vector2i) -> bool:
+	if not _inside(cell) or run.get("entities", {}).is_empty():
+		return false
+	var player: Dictionary = get_player()
+	if player.is_empty() or not player.get("alive", true):
+		return false
+	var origin := _pos(player)
+	return _dist(origin, cell) <= int(player.get("sight", 8)) and _line_of_sight(origin, cell)
+
+func _can_perceive_entity(entity_id: String) -> bool:
+	if entity_id == "player":
+		return true
+	var entity: Dictionary = run.get("entities", {}).get(entity_id, {})
+	return not entity.is_empty() and _event_cell_visible(_pos(entity))
+
+func _presentation_entity_patch(entity_id: String) -> Dictionary:
+	if entity_id == "" or not run.get("entities", {}).has(entity_id):
+		return {}
+	var entity: Dictionary = run.entities[entity_id]
+	return entity.duplicate(true) if _can_perceive_entity(entity_id) else {"id": entity_id, "alive": false, "hidden": true}
+
+func _emit_combat_event(event_type: String, actor_id: String = "", target_id: String = "", details: Dictionary = {}) -> void:
+	if run.is_empty():
+		return
+	var actor_visible := actor_id != "" and _can_perceive_entity(actor_id)
+	var target_visible := target_id != "" and _can_perceive_entity(target_id)
+	var cell_visible := details.has("pos") and _event_cell_visible(_as_cell(details.pos))
+	var from_visible := details.has("from") and _event_cell_visible(_as_cell(details.from))
+	var to_visible := details.has("to") and _event_cell_visible(_as_cell(details.to))
+	if target_id != "" and target_id != "player" and not target_visible and event_type in ["Attack", "Damage", "Death", "StatusApplied", "KillCredit"]:
+		return
+	if actor_id != "" and not actor_visible and not (target_id == "player" and event_type == "Damage") and not (event_type == "Move" and from_visible):
+		return
+	if not actor_visible and not target_visible and not cell_visible:
+		return
+	var actor_name := String(run.entities.get(actor_id, {}).get("name", "")) if actor_visible else ""
+	var target_name := String(run.entities.get(target_id, {}).get("name", "")) if target_visible else ""
+	var safe_type := event_type
+	var safe_details := details.duplicate(true)
+	if target_id != "" and not target_visible:
+		safe_details.erase("name")
+		safe_details.erase("pos")
+	if event_type == "Move" and actor_id != "" and not from_visible and to_visible:
+		safe_type = "Spotted"
+		actor_name = String(run.entities.get(actor_id, {}).get("name", "Creature"))
+	elif event_type == "Move" and actor_id != "" and from_visible and not to_visible:
+		safe_type = "LeavesSight"
+		actor_name = String(run.entities.get(actor_id, {}).get("name", "Creature"))
+	if target_id == "player" and not actor_visible and event_type == "Damage":
+		safe_type = "UnseenImpact"
+		safe_details = {"message": "An unseen attack strikes you."}
+	if safe_details.has("from") and not _event_cell_visible(_as_cell(safe_details.from)):
+		safe_details.erase("from")
+	if safe_details.has("to") and not _event_cell_visible(_as_cell(safe_details.to)):
+		safe_details.erase("to")
+	if safe_details.has("pos") and not _event_cell_visible(_as_cell(safe_details.pos)):
+		safe_details.erase("pos")
+	var visible_actor_id := actor_id if actor_visible or event_type == "Move" and from_visible else ""
+	var visible_target_id := target_id if target_visible else ""
+	var event := {"type": safe_type, "actor_id": visible_actor_id, "target_id": visible_target_id,
+		"actor_name": actor_name, "target_name": target_name, "details": safe_details,
+		"patches": []}
+	for participant_id in [actor_id, target_id]:
+		if participant_id == "" or not run.entities.has(participant_id):
+			continue
+		var patch: Dictionary = _presentation_entity_patch(participant_id)
+		if not patch.is_empty():
+			event.patches.append(patch)
+	run["combat_event_sequence"] = int(run.get("combat_event_sequence", 0)) + 1
+	var history_event := {"sequence": int(run.combat_event_sequence), "type": safe_type,
+		"actor_name": actor_name, "target_name": target_name, "details": safe_details.duplicate(true)}
+	if _is_meaningful_combat_event(history_event):
+		var history: Array = run.get("combat_history", [])
+		history.append(history_event)
+		if history.size() > 100:
+			history = history.slice(history.size() - 100)
+		run["combat_history"] = history
+	if _recording_presentation:
+		_action_presentation_events.append(event)
+
+func _is_meaningful_combat_event(event: Dictionary) -> bool:
+	var event_type := String(event.get("type", ""))
+	if event_type in ["ActorTurnStarted", "ResourceSpent"]:
+		return false
+	if event_type == "XPGranted" and String(event.get("details", {}).get("reason", "")) in ["kill", "assist"]:
+		return false
+	return event_type in ["Move", "Spotted", "LeavesSight", "Attack", "Cast", "Damage", "UnseenImpact", "Heal", "StatusApplied", "StatusRemoved", "StatusTick", "Summon", "Death", "KillCredit", "XPGranted", "LevelUp", "TerrainChanged", "EncounterComplete"]
+
+func _default_quickbar() -> Array:
+	var result: Array = []
+	var character: Dictionary = content.get("characters", {}).get(run.get("character_id", ""), {})
+	for ability_id in character.get("known", []):
+		if content.get("abilities", {}).get(ability_id, {}).get("kind", "active") != "passive" and result.size() < 8:
+			result.append({"type": "ability", "id": ability_id})
+	for item_id in run.get("inventory", []):
+		if result.size() >= 8: break
+		if content.get("items", {}).get(item_id, {}).get("type", "") in ["consumable", "scroll"]:
+			result.append({"type": "item", "id": item_id})
+	while result.size() < 8: result.append({"type": "empty", "id": ""})
+	return result
+
+func _normalize_quickbar(value: Array) -> Array:
+	var result: Array = []
+	for slot in value:
+		var normalized := {"type": String(slot.get("type", "empty")), "id": String(slot.get("id", ""))}
+		if normalized.type == "ability" and (not content.get("abilities", {}).has(normalized.id) or content.abilities[normalized.id].get("kind", "active") == "passive" or not run.get("known", []).has(normalized.id)):
+			normalized = {"type": "empty", "id": ""}
+		elif normalized.type == "item" and not content.get("items", {}).has(normalized.id):
+			normalized = {"type": "empty", "id": ""}
+		elif normalized.type not in ["ability", "item"]:
+			normalized = {"type": "empty", "id": ""}
+		result.append(normalized)
+		if result.size() == 8: break
+	while result.size() < 8: result.append({"type": "empty", "id": ""})
+	return result
+
+func assign_quickbar(slot_index: int, action_type: String, action_id: String) -> bool:
+	if slot_index < 0 or slot_index >= 8 or run.is_empty(): return false
+	var assignment := {"type": action_type, "id": action_id}
+	if action_type == "empty":
+		assignment = {"type": "empty", "id": ""}
+	elif action_type == "ability":
+		if not run.get("known", []).has(action_id) or not content.get("abilities", {}).has(action_id) or content.abilities[action_id].get("kind", "active") == "passive": return false
+		for index in range(8):
+			if index != slot_index and run.quickbar[index].get("type") == "ability" and run.quickbar[index].get("id") == action_id:
+				run.quickbar[index] = {"type": "empty", "id": ""}
+	elif action_type == "item":
+		if not content.get("items", {}).has(action_id) or content.items[action_id].get("type", "") not in ["consumable", "scroll"]: return false
+	else:
+		return false
+	run.quickbar[slot_index] = assignment
+	run.quickbar_customized = true
+	save_run()
+	return true
+
+func use_quickbar(slot_index: int, target: Vector2i = Vector2i(-1, -1)) -> Dictionary:
+	if slot_index < 0 or slot_index >= run.get("quickbar", []).size(): return {"ok": false, "message": "That action slot is empty."}
+	var assignment: Dictionary = run.quickbar[slot_index]
+	if assignment.get("type") == "ability":
+		return act({"type": "cast", "id": assignment.id, "target": [target.x, target.y] if target.x >= 0 else _pos(get_player())})
+	if assignment.get("type") == "item":
+		var index := int(run.get("inventory", []).find(String(assignment.id)))
+		if index < 0: return {"ok": false, "message": "You have none of that item."}
+		return act({"type": "use_item", "index": index, "target": [target.x, target.y]})
+	return {"ok": false, "message": "That action slot is empty."}
+
 func get_enemy_at(cell: Vector2i) -> Dictionary:
 	var found_id := _occupant(cell)
 	if found_id == "" or found_id == "player":
@@ -339,6 +525,9 @@ func get_enemy_at(cell: Vector2i) -> Dictionary:
 func act(command: Dictionary) -> Dictionary:
 	if run.is_empty() or run.get("outcome", "") != "":
 		return {"ok": false, "message": "There is no active encounter."}
+	var display_before := _capture_display_state()
+	_recording_presentation = true
+	_action_presentation_events = []
 	var result := {"ok": false, "message": "That action is not available."}
 	match String(command.get("type", "")):
 		"move": result = _player_move(_as_cell(command.get("target", [0, 0])))
@@ -350,6 +539,10 @@ func act(command: Dictionary) -> Dictionary:
 	if result.get("ok", false):
 		_update_vision()
 		save_run()
+		result["presentation_before"] = display_before
+		result["presentation_events"] = _action_presentation_events.duplicate(true)
+	_recording_presentation = false
+	_action_presentation_events = []
 	return result
 
 func learn_ability(ability_id: String) -> bool:
@@ -902,6 +1095,7 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 	run.reward_chosen_index = -1
 	run.boss_summoned = false
 	run.turn = 0
+	run.combat_contributions = {}
 	var terrain: Dictionary = stage.terrain
 	run.grid = []
 	for y in range(HEIGHT):
@@ -1074,6 +1268,7 @@ func _spawn_summon(summon_id: String, cell: Vector2i) -> bool:
 	player.resources["Command"] = command
 	_emit_trigger("OnResourceSpent", {"entity_id": "player", "resource": "Command", "amount": cost})
 	_add_log("%s answers the call." % entity.get("name", "A summon"))
+	_emit_combat_event("Summon", "player", id, {"name": String(entity.get("name", "Summon")), "pos": [spawn_at.x, spawn_at.y]})
 	_emit_trigger("OnSummon", {"entity_id": id, "summon_id": summon_id, "owner": "player", "pos": [spawn_at.x, spawn_at.y]})
 	return true
 
@@ -1095,7 +1290,9 @@ func _player_move(target: Vector2i) -> Dictionary:
 		return {"ok": false, "message": "You need 3 Stamina to move."}
 	stamina[0] = int(stamina[0]) - 3
 	player.resources.Stamina = stamina
+	_emit_combat_event("ResourceSpent", "player", "player", {"resource": "Stamina", "amount": 3})
 	player.pos = [next_step.x, next_step.y]
+	_emit_combat_event("Move", "player", "", {"from": [previous_pos.x, previous_pos.y], "to": [next_step.x, next_step.y]})
 	_emit_trigger("OnMove", {"entity_id": "player", "from": [previous_pos.x, previous_pos.y], "pos": [next_step.x, next_step.y]})
 	_emit_trigger("OnTerrainEntered", {"entity_id": "player", "terrain": _terrain_at(next_step), "pos": [next_step.x, next_step.y]})
 	if _terrain_at(next_step) == "water":
@@ -1126,15 +1323,17 @@ func _player_attack(target: Vector2i) -> Dictionary:
 		return {"ok": false, "message": "You need more Stamina for that attack."}
 	stamina[0] = int(stamina[0]) - int(weapon.stamina)
 	player.resources.Stamina = stamina
+	_emit_combat_event("ResourceSpent", "player", "player", {"resource": "Stamina", "amount": int(weapon.stamina)})
 	var damage := int(weapon.damage) + int(run.attributes.get("Might", 10)) / 4 + int(round(get_passive_modifier("weapon_damage_bonus")))
 	if _has_status("player", "Empowered"):
 		damage += 8
 		run.entities.player.statuses.erase("Empowered")
-	_damage(target_id, damage, String(weapon.get("type", "Slashing")), player.name)
+	_emit_combat_event("Attack", "player", target_id, {"style": String(weapon.get("style", "melee")), "damage_type": String(weapon.get("type", "Slashing"))})
+	_damage(target_id, damage, String(weapon.get("type", "Slashing")), player.name, "player")
 	if weapon.get("style") == "cleave":
 		for adjacent in run.entities.keys():
 			if adjacent != target_id and adjacent != "player" and run.entities[adjacent].get("alive", true) and _is_hostile("player", adjacent) and _dist(_pos(run.entities[target_id]), _pos(run.entities[adjacent])) <= 1:
-				_damage(adjacent, int(damage * 0.65), String(weapon.get("type", "Slashing")), player.name)
+				_damage(adjacent, int(damage * 0.65), String(weapon.get("type", "Slashing")), player.name, "player")
 	var time_cost := int(weapon.time)
 	if _has_status("player", "Haste"):
 		time_cost = int(time_cost * 0.8)
@@ -1192,6 +1391,7 @@ func _cast(ability_id: String, target: Vector2i) -> Dictionary:
 		return {"ok": false, "message": "Requires %s. %s" % [get_cost_summary(ability.get("costs", {})), "; ".join(cost_status.issues)]}
 	_pay(ability.get("costs", {}))
 	var targets: Array = _targets_for_ability(ability, target)
+	_emit_combat_event("Cast", "player", _occupant(target), {"ability": String(ability.name), "school": String(ability.get("school", "")), "pos": [target.x, target.y]})
 	for effect in ability.get("effects", []):
 		_apply_effect(effect, target, targets, ability)
 	if temporary:
@@ -1227,15 +1427,16 @@ func _apply_effect(effect: Dictionary, center: Vector2i, targets: Array, ability
 		"damage":
 			for target_id in targets:
 				for repeat_index in range(int(effect.get("repeats", 1))):
-					_damage(String(target_id), int(effect.get("amount", 0)), String(effect.get("damage", "Arcane")), ability.get("name", "magic"))
+					_damage(String(target_id), int(effect.get("amount", 0)), String(effect.get("damage", "Arcane")), ability.get("name", "magic"), "player")
 		"status":
 			for target_id in targets:
-				_apply_status(String(target_id), String(effect.get("id", "")), int(effect.get("stacks", 1)), String(ability.get("name", "")))
+				_apply_status(String(target_id), String(effect.get("id", "")), int(effect.get("stacks", 1)), String(ability.get("name", "")), "player")
 		"heal":
 			var player := get_player()
 			var health_before := int(player.hp)
 			player.hp = mini(int(player.max_hp), int(player.hp) + int(effect.get("amount", 0)))
 			if int(player.hp) > health_before:
+				_emit_combat_event("Heal", "player", "player", {"amount": int(player.hp) - health_before})
 				_emit_trigger("OnHeal", {"target_id": "player", "source": ability.get("name", "magic"), "amount": int(player.hp) - health_before})
 		"heal_on_hit":
 			if not targets.is_empty():
@@ -1244,6 +1445,7 @@ func _apply_effect(effect: Dictionary, center: Vector2i, targets: Array, ability
 				var health_before := int(player.hp)
 				player.hp = mini(int(player.max_hp), int(player.hp) + heal_amount)
 				if int(player.hp) > health_before:
+					_emit_combat_event("Heal", "player", "player", {"amount": int(player.hp) - health_before})
 					_emit_trigger("OnHeal", {"target_id": "player", "source": ability.get("name", "magic"), "amount": int(player.hp) - health_before})
 		"terrain":
 			var radius := int(ability.get("radius", 0))
@@ -1255,6 +1457,7 @@ func _apply_effect(effect: Dictionary, center: Vector2i, targets: Array, ability
 			if _terrain_at(center) != "wall" and _occupant(center, "player") == "":
 				var previous_pos := _pos(get_player())
 				get_player().pos = [center.x, center.y]
+				_emit_combat_event("Move", "player", "", {"from": [previous_pos.x, previous_pos.y], "to": [center.x, center.y], "style": "teleport"})
 				_emit_trigger("OnMove", {"entity_id": "player", "from": [previous_pos.x, previous_pos.y], "pos": [center.x, center.y]})
 				_emit_trigger("OnTerrainEntered", {"entity_id": "player", "terrain": _terrain_at(center), "pos": [center.x, center.y]})
 		"move":
@@ -1266,6 +1469,7 @@ func _apply_effect(effect: Dictionary, center: Vector2i, targets: Array, ability
 				if step == _pos(player):
 					break
 				player.pos = [step.x, step.y]
+				_emit_combat_event("Move", "player", "", {"from": [previous_pos.x, previous_pos.y], "to": [step.x, step.y]})
 				_emit_trigger("OnMove", {"entity_id": "player", "from": [previous_pos.x, previous_pos.y], "pos": [step.x, step.y]})
 				_emit_trigger("OnTerrainEntered", {"entity_id": "player", "terrain": _terrain_at(step), "pos": [step.x, step.y]})
 				steps -= 1
@@ -1308,6 +1512,7 @@ func use_item(index: int, target: Vector2i = Vector2i(-1, -1)) -> Dictionary:
 			var health_before := int(player.hp)
 			player.hp = mini(int(player.max_hp), int(player.hp) + int(item.amount))
 			if int(player.hp) > health_before:
+				_emit_combat_event("Heal", "player", "player", {"amount": int(player.hp) - health_before})
 				_emit_trigger("OnHeal", {"target_id": "player", "source": item.name, "amount": int(player.hp) - health_before})
 			_add_log("The Healing Draught restores your strength.")
 		"mana":
@@ -1321,7 +1526,8 @@ func use_item(index: int, target: Vector2i = Vector2i(-1, -1)) -> Dictionary:
 				return {"ok": false, "message": "That target is too far away."}
 			for entity_id in run.entities.keys():
 				if entity_id != "player" and run.entities[entity_id].get("alive", true) and _dist(_pos(run.entities[entity_id]), target) <= 1:
-					_damage(entity_id, int(item.amount), "Fire", "the Cinder Bomb")
+					_damage(entity_id, int(item.amount), "Fire", "the Cinder Bomb", "player")
+			_emit_combat_event("Cast", "player", "", {"ability": String(item.get("name", "Cinder Bomb")), "school": "Fire", "pos": [target.x, target.y]})
 			_transform_terrain(target, "fire")
 		"":
 			if item.get("type") == "scroll":
@@ -1378,6 +1584,7 @@ func _pay(costs: Dictionary) -> void:
 			continue
 		values[0] = int(values[0]) - int(costs[resource_id])
 		player.resources[resource_id] = values
+		_emit_combat_event("ResourceSpent", "player", "player", {"resource": resource_id, "amount": int(costs[resource_id])})
 		_emit_trigger("OnResourceSpent", {"entity_id": "player", "resource": resource_id, "amount": int(costs[resource_id])})
 
 func _spend_player_time(cost: int, message: String) -> Dictionary:
@@ -1445,6 +1652,7 @@ func _enemy_turn(actor_id: String) -> void:
 	if not run.entities.has(actor_id) or not run.entities[actor_id].get("alive", true):
 		return
 	var actor: Dictionary = run.entities[actor_id]
+	_emit_combat_event("ActorTurnStarted", actor_id, "", {})
 	_emit_trigger("OnTurn", {"entity_id": actor_id, "faction": actor.get("faction", "")})
 	var target_id := _choose_target(actor_id)
 	if target_id == "":
@@ -1459,7 +1667,8 @@ func _enemy_turn(actor_id: String) -> void:
 		return
 	if behavior == "orbit_assault":
 		if distance <= int(actor.get("range", 5)) and _line_of_sight(origin, target_pos):
-			_damage(target_id, int(actor.get("damage", 8)), String(actor.get("damage_type", "Arcane")), actor.name)
+			_emit_combat_event("Attack", actor_id, target_id, {"style": "projectile", "damage_type": String(actor.get("damage_type", "Arcane"))})
+			_damage(target_id, int(actor.get("damage", 8)), String(actor.get("damage_type", "Arcane")), actor.name, actor_id)
 			_add_log("The Phantom Blade darts at %s." % target.name)
 		else:
 			var owner_id: String = actor.get("owner", "player")
@@ -1473,15 +1682,17 @@ func _enemy_turn(actor_id: String) -> void:
 		attack_range = 1
 	if distance <= attack_range and _line_of_sight(origin, target_pos):
 		var attack_damage := int(actor.get("damage", 5))
-		_damage(target_id, attack_damage, String(actor.get("damage_type", "Blunt")), actor.name)
+		_emit_combat_event("Attack", actor_id, target_id, {"style": "projectile" if behavior in ["ranged", "caster"] else "melee", "damage_type": String(actor.get("damage_type", "Blunt"))})
+		_damage(target_id, attack_damage, String(actor.get("damage_type", "Blunt")), actor.name, actor_id)
 		if actor.get("damage_type") == "Fire" and _rng.randf() < 0.2:
-			_apply_status(target_id, "Burning", 1, String(actor.get("name", "")))
+			_apply_status(target_id, "Burning", 1, String(actor.get("name", "")), actor_id)
 		_add_log("%s attacks %s." % [actor.name, target.name])
 		return
 	if behavior == "summoner" and not bool(run.get("boss_summoned", false)):
 		var spawn_at := _find_spawn(origin + Vector2i(1, 0))
 		if spawn_at != Vector2i(-1, -1):
-			_spawn_enemy("skeleton", spawn_at, false)
+			var summoned_id := _spawn_enemy("skeleton", spawn_at, false)
+			_emit_combat_event("Summon", actor_id, summoned_id, {"name": String(run.entities.get(summoned_id, {}).get("name", "Skeleton")), "pos": [spawn_at.x, spawn_at.y]})
 			_add_log("%s raises a skeleton." % actor.name)
 			return
 	if behavior == "ranged" or behavior == "caster":
@@ -1490,12 +1701,14 @@ func _enemy_turn(actor_id: String) -> void:
 			if retreat != origin:
 				var previous_pos := _pos(actor)
 				actor.pos = [retreat.x, retreat.y]
+				_emit_combat_event("Move", actor_id, "", {"from": [previous_pos.x, previous_pos.y], "to": [retreat.x, retreat.y]})
 				_emit_trigger("OnMove", {"entity_id": actor_id, "from": [previous_pos.x, previous_pos.y], "pos": [retreat.x, retreat.y]})
 				_emit_trigger("OnTerrainEntered", {"entity_id": actor_id, "terrain": _terrain_at(retreat), "pos": [retreat.x, retreat.y]})
 				return
 	var step := _next_step(origin, target_pos, actor_id)
 	if step != origin:
 		actor.pos = [step.x, step.y]
+		_emit_combat_event("Move", actor_id, "", {"from": [origin.x, origin.y], "to": [step.x, step.y]})
 		_emit_trigger("OnMove", {"entity_id": actor_id, "from": [origin.x, origin.y], "pos": [step.x, step.y]})
 		_emit_trigger("OnTerrainEntered", {"entity_id": actor_id, "terrain": _terrain_at(step), "pos": [step.x, step.y]})
 		if _terrain_at(step) == "water":
@@ -1519,21 +1732,24 @@ func _enemy_boss_action(actor_id: String, target_id: String) -> void:
 		if minion_count < 3:
 			var spawn_at := _find_spawn(_pos(boss) + Vector2i(2, 1))
 			if spawn_at != Vector2i(-1, -1):
-				_spawn_enemy("skeleton", spawn_at, false)
+				var summoned_id := _spawn_enemy("skeleton", spawn_at, false)
+				_emit_combat_event("Summon", actor_id, summoned_id, {"name": String(run.entities.get(summoned_id, {}).get("name", "Skeleton")), "pos": [spawn_at.x, spawn_at.y]})
 				_add_log("The Grave Tyrant hauls a skeleton from the soil.")
 		else:
-			_apply_status(target_id, "Bleeding", 1, boss.name)
+			_apply_status(target_id, "Bleeding", 1, boss.name, actor_id)
 			_add_log("The barrow splits beneath you.")
 		return
 	var distance := _distance_to_entity(_pos(boss), target)
 	if distance <= 1:
-		_damage(target_id, int(boss.damage), String(boss.damage_type), boss.name)
+		_emit_combat_event("Attack", actor_id, target_id, {"style": "melee", "damage_type": String(boss.damage_type)})
+		_damage(target_id, int(boss.damage), String(boss.damage_type), boss.name, actor_id)
 		_add_log("The Grave Tyrant strikes with a tombstone fist.")
 	else:
 		var step := _next_step(_pos(boss), _pos(target), actor_id)
 		if step != _pos(boss):
 			var previous_pos := _pos(boss)
 			boss.pos = [step.x, step.y]
+			_emit_combat_event("Move", actor_id, "", {"from": [previous_pos.x, previous_pos.y], "to": [step.x, step.y]})
 			_emit_trigger("OnMove", {"entity_id": actor_id, "from": [previous_pos.x, previous_pos.y], "pos": [step.x, step.y]})
 			_emit_trigger("OnTerrainEntered", {"entity_id": actor_id, "terrain": _terrain_at(step), "pos": [step.x, step.y]})
 			_add_log("The Grave Tyrant lumbers closer.")
@@ -1554,7 +1770,7 @@ func _choose_target(actor_id: String) -> String:
 			best_distance = distance
 	return selected
 
-func _damage(target_id: String, raw_amount: int, damage_type: String, source: String) -> void:
+func _damage(target_id: String, raw_amount: int, damage_type: String, source: String, source_id: String = "") -> void:
 	if not run.entities.has(target_id) or not run.entities[target_id].get("alive", true):
 		return
 	var target: Dictionary = run.entities[target_id]
@@ -1578,6 +1794,14 @@ func _damage(target_id: String, raw_amount: int, damage_type: String, source: St
 		amount = int(ceil(float(amount) * 0.5))
 		target.statuses.erase("Guard")
 	target.hp = int(target.get("hp", 0)) - amount
+	if source_id == "" and source == String(get_player().get("name", "")):
+		source_id = "player"
+	var credit_owner := _credit_owner(source_id)
+	if credit_owner == "player" and target_id != "player" and _is_hostile("player", target_id) and amount > 0:
+		var contributions: Dictionary = run.get("combat_contributions", {})
+		contributions[target_id] = int(contributions.get(target_id, 0)) + amount
+		run.combat_contributions = contributions
+	_emit_combat_event("Damage", source_id, target_id, {"amount": amount, "damage_type": damage_type})
 	_emit_trigger("OnHit", {"target_id": target_id, "source": source, "amount": amount, "damage_type": damage_type})
 	_emit_trigger("OnDamaged", {"target_id": target_id, "source": source, "amount": amount, "damage_type": damage_type})
 	if target_id == "player":
@@ -1585,13 +1809,14 @@ func _damage(target_id: String, raw_amount: int, damage_type: String, source: St
 	else:
 		_add_log("%s takes %d damage." % [target.get("name", "A creature"), amount])
 	if int(target.hp) <= 0:
-		_on_death(target_id, source)
+		_on_death(target_id, source, source_id)
 
-func _on_death(entity_id: String, source: String) -> void:
+func _on_death(entity_id: String, source: String, source_id: String = "") -> void:
 	var entity: Dictionary = run.entities[entity_id]
 	if not entity.get("alive", true):
 		return
 	entity.alive = false
+	_emit_combat_event("Death", "", entity_id, {"name": String(entity.get("name", "Creature")), "pos": entity.get("pos", []).duplicate()})
 	_emit_trigger("OnDeath", {"entity_id": entity_id, "faction": entity.get("faction", ""), "source": source, "pos": entity.get("pos", []).duplicate()})
 	if entity_id == "player":
 		entity.hp = 0
@@ -1605,12 +1830,27 @@ func _on_death(entity_id: String, source: String) -> void:
 		run.corpses.append({"pos": corpse_pos, "faction": entity.faction, "name": entity.name})
 		if entity.faction not in ["Undead", "Demons"]:
 			_set_grid(_pos(entity), "blood")
-		if _is_hostile("player", entity_id) and _is_player_source(source):
-			run.kills = int(run.kills) + 1
-			_award_xp(int(entity.get("xp", 10)))
-			if entity.faction in ["Adventurers", "Beasts", "Goblinoids", "Bandits"]:
-				run.living_kills = int(run.living_kills) + 1
-			_emit_trigger("OnKill", {"entity_id": entity_id, "faction": entity.faction, "pos": entity.pos.duplicate()})
+		if _is_hostile("player", entity_id):
+			var killing_owner := _credit_owner(source_id)
+			if killing_owner == "" and _is_player_source(source): killing_owner = "player"
+			var contribution: int = int(run.get("combat_contributions", {}).get(entity_id, 0))
+			if killing_owner == "player":
+				run.kills = int(run.kills) + 1
+				_award_xp(int(entity.get("xp", 10)), "kill")
+				_emit_combat_event("KillCredit", "player", entity_id, {"xp": int(entity.get("xp", 10)), "credit": "full"})
+				if entity.faction in ["Adventurers", "Beasts", "Goblinoids", "Bandits"]:
+					run.living_kills = int(run.living_kills) + 1
+				_emit_trigger("OnKill", {"entity_id": entity_id, "faction": entity.faction, "pos": entity.pos.duplicate()})
+			elif contribution > 0:
+				var assist_xp := maxi(1, int(floor(float(entity.get("xp", 10)) * 0.5)))
+				run.assists = int(run.get("assists", 0)) + 1
+				_award_xp(assist_xp, "assist")
+				_emit_combat_event("KillCredit", "player", entity_id, {"xp": assist_xp, "credit": "assist"})
+			else:
+				_emit_combat_event("KillCredit", "", entity_id, {"xp": 0, "credit": "none"})
+		var contributions_after_kill: Dictionary = run.get("combat_contributions", {})
+		contributions_after_kill.erase(entity_id)
+		run.combat_contributions = contributions_after_kill
 	_add_log("%s falls." % entity.get("name", "A creature"))
 	if entity.get("kind") == "boss":
 		run.outcome = "victory"
@@ -1618,8 +1858,11 @@ func _on_death(entity_id: String, source: String) -> void:
 		_add_log("The Grave Tyrant is defeated. The March is yours.")
 	_check_objective()
 
-func _award_xp(amount: int) -> void:
+func _award_xp(amount: int, reason: String = "encounter") -> void:
+	if amount <= 0:
+		return
 	run.xp = int(run.xp) + amount
+	_emit_combat_event("XPGranted", "player", "", {"amount": amount, "reason": reason})
 	while int(run.xp) >= int(run.level) * 35:
 		run.xp = int(run.xp) - int(run.level) * 35
 		run.level = int(run.level) + 1
@@ -1627,7 +1870,29 @@ func _award_xp(amount: int) -> void:
 		var player := get_player()
 		player.max_hp = int(player.max_hp) + 2
 		player.hp = mini(int(player.max_hp), int(player.hp) + 2)
-		_add_log("Level %d · a new ability point is ready." % run.level)
+		var growth: Dictionary = _apply_automatic_growth()
+		_emit_combat_event("LevelUp", "player", "", {"level": int(run.level), "xp": int(run.xp), "max_hp": 2, "skill_points": 1, "attribute": growth.get("attribute", ""), "attribute_value": growth.get("value", 0)})
+		_add_log("Level %d · +2 Max Health · 1 ability point%s." % [run.level, " · +1 %s" % growth.attribute if growth.get("attribute", "") != "" else ""])
+
+func _apply_automatic_growth() -> Dictionary:
+	if int(run.level) % 2 != 0:
+		return {}
+	var profile: Array = content.get("characters", {}).get(run.get("character_id", ""), {}).get("growth_profile", [])
+	if profile.is_empty():
+		return {}
+	var milestone := int(run.get("growth_milestones", 0))
+	var attribute := String(profile[milestone % profile.size()])
+	if not run.get("attributes", {}).has(attribute):
+		return {}
+	run.attributes[attribute] = int(run.attributes[attribute]) + 1
+	run.growth_milestones = milestone + 1
+	return {"attribute": attribute, "value": int(run.attributes[attribute])}
+
+func _credit_owner(source_id: String) -> String:
+	if source_id == "player": return "player"
+	var entity: Dictionary = run.get("entities", {}).get(source_id, {})
+	if entity.get("owner", "") == "player": return "player"
+	return ""
 
 func _is_player_source(source: String) -> bool:
 	if source in [String(get_player().get("name", "")), "Cinder Bomb", "the Ossuary Bell", "Phantom Blade"]:
@@ -1637,7 +1902,7 @@ func _is_player_source(source: String) -> bool:
 			return true
 	return false
 
-func _apply_status(entity_id: String, status_id: String, stacks: int, source: String = "") -> void:
+func _apply_status(entity_id: String, status_id: String, stacks: int, source: String = "", source_id: String = "") -> void:
 	if not run.entities.has(entity_id) or not run.entities[entity_id].get("alive", true):
 		return
 	var definition: Dictionary = content.get("statuses", {}).get(status_id, {"max_stacks": 1, "duration": 1})
@@ -1647,8 +1912,15 @@ func _apply_status(entity_id: String, status_id: String, stacks: int, source: St
 	current.duration = maxi(int(current.get("duration", 0)), int(definition.get("duration", 1)))
 	if source != "":
 		current.source = source
+	if source_id != "":
+		current.source_actor_id = source_id
 	statuses[status_id] = current
 	run.entities[entity_id].statuses = statuses
+	_emit_combat_event("StatusApplied", source_id, entity_id, {"status": status_id, "stacks": stacks})
+	if definition.get("harmful", false) and _credit_owner(source_id) == "player" and entity_id != "player" and _is_hostile("player", entity_id):
+		var contributions: Dictionary = run.get("combat_contributions", {})
+		contributions[entity_id] = int(contributions.get(entity_id, 0)) + 1
+		run.combat_contributions = contributions
 	_emit_trigger("OnStatusApplied", {"entity_id": entity_id, "status": status_id, "stacks": stacks, "source": source})
 
 func _tick_statuses(entity_id: String) -> void:
@@ -1661,12 +1933,14 @@ func _tick_statuses(entity_id: String) -> void:
 		var definition: Dictionary = content.get("statuses", {}).get(status_id, {})
 		var tick_damage := int(definition.get("tick_damage", 0)) * int(status.get("stacks", 1))
 		if tick_damage > 0:
-			_damage(entity_id, tick_damage, String(definition.get("damage", "Arcane")), String(status.get("source", status_id)))
+			_emit_combat_event("StatusTick", String(status.get("source_actor_id", "")), entity_id, {"status": status_id})
+			_damage(entity_id, tick_damage, String(definition.get("damage", "Arcane")), String(status.get("source", status_id)), String(status.get("source_actor_id", "")))
 		if not run.entities[entity_id].get("alive", true):
 			return
 		status.duration = int(status.get("duration", 0)) - 1
 		if int(status.duration) <= 0:
 			statuses.erase(status_id)
+			_emit_combat_event("StatusRemoved", "", entity_id, {"status": status_id})
 		else:
 			statuses[status_id] = status
 	entity.statuses = statuses
@@ -1717,6 +1991,7 @@ func _complete_stage() -> void:
 	if run.get("stage_completed", false):
 		return
 	run.stage_completed = true
+	_emit_combat_event("EncounterComplete", "player", "", {"stage": String(run.get("stage_id", ""))})
 	run.encounters_completed = int(run.encounters_completed) + 1
 	var clear_xp := 15 + mini(int(run.stage_index), 4) * 3
 	_award_xp(clear_xp)
@@ -1777,6 +2052,7 @@ func _transform_terrain(cell: Vector2i, target: String) -> void:
 				_add_log(String(rule.message))
 			break
 	_set_grid(cell, result)
+	_emit_combat_event("TerrainChanged", "", "", {"pos": [cell.x, cell.y], "terrain": result})
 
 func _recompute_armor() -> void:
 	var total := 0
@@ -2030,7 +2306,7 @@ func _emit_trigger(event_id: String, context: Dictionary) -> void:
 		for effect in rule.get("effects", []):
 			match String(effect.get("type", "")):
 				"status":
-					_apply_status(String(effect.get("target", "player")), String(effect.get("id", "")), int(effect.get("stacks", 1)), String(rule.get("source", "")))
+					_apply_status(String(effect.get("target", "player")), String(effect.get("id", "")), int(effect.get("stacks", 1)), String(rule.get("source", "")), "player" if owner_type in ["aura", "artifact", "ability"] else "")
 				"repeat_cast_damage":
 					var ability_id: String = context.get("ability_id", "")
 					if content.abilities.has(ability_id):
@@ -2038,7 +2314,7 @@ func _emit_trigger(event_id: String, context: Dictionary) -> void:
 							if ability_effect.get("type") != "damage":
 								continue
 							for target_id in context.get("targets", []):
-								_damage(String(target_id), int(round(float(ability_effect.amount) * float(effect.get("multiplier", 0.5)))), String(ability_effect.damage), String(rule.get("source", owner_id)))
+								_damage(String(target_id), int(round(float(ability_effect.amount) * float(effect.get("multiplier", 0.5)))), String(ability_effect.damage), String(rule.get("source", owner_id)), "player")
 					if rule.get("message", "") != "":
 						_add_log(String(rule.message))
 				"summon":

@@ -8,6 +8,11 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - The simulation must run headlessly and reproduce the same result from the same seed, saved state and player commands.
 - Waiting for player input never advances game time. Resolve scheduled actors after each committed player action, then stop at the player's next decision.
 - Save enough state to resume the current encounter, including the random generator state. Version serialized data and test round trips.
+- Combat presentation is a renderer-only playback of events emitted by committed simulation commands. Normal, Fast and Instant playback must produce identical authoritative state; playback never schedules actors or advances time on its own.
+- Keep combat event records bounded and visibility-filtered. Fog of war applies to the event feed and animation patches as well as the battlefield; never reveal hidden actors, targets or damage details.
+- Keep the compact Recent Events panel on the battle HUD and put the longer, paged encounter history in a contextual overlay. Store only meaningful visible structured events, with a sensible cap; never parse presentation text back into game state.
+- Award full kill experience only for player or player-owned summon kills, partial assist experience for meaningful player participation, and no experience for unrelated kills. Keep level growth data-driven per character.
+- Keep exactly eight configurable stable-ID quickbar slots for active abilities and usable items. Reassignment and save/resume preserve identity; do not key an item slot to a transient inventory index.
 
 ## Content and rules
 
@@ -47,6 +52,10 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Re-selecting the active target action cancels targeting. Selecting a different action switches modes; the visible Cancel control, Escape and Android Back follow the same cancellation path.
 - Command is occupied summon capacity, not a spendable cost. Report the specific insufficient resource or full capacity when an action cannot be used.
 - Use one simulation-owned entity presentation source for symbols and names shown on the battlefield, timeline and inspection views.
+- Show each committed player action and the scheduled responses in a readable sequential presentation. Normal, Fast and Instant are display speeds only; simulation resolution remains deterministic and immediate at command commit. Provide a visible skip control and block overlapping gameplay input during playback.
+- Present concise floating combat feedback and a recent-event feed, with fuller event history available contextually where practical. Keep the active actor/target and target cancellation clear on touch.
+- Use the eight-slot action bar as a stable, configurable quickbar for learned active abilities and usable inventory items. Empty stacks keep their item identity so replenishment restores the action; passive abilities do not occupy active slots.
+- Grant full kill XP to the player or player-owned summons, assist XP for meaningful player contribution to another kill, and no XP for unrelated deaths. Level-up attribute growth follows a character data profile, alongside defined health and ability-point gains.
 - Every playable ability needs an authored player-facing description in content data. Validate descriptions and spellbook references with the content registry.
 
 ## Opening difficulty and progression pacing

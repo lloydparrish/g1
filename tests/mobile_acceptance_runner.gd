@@ -11,6 +11,7 @@ func _initialize() -> void:
 
 func run_suite() -> void:
 	var mobile = MainScene.instantiate()
+	mobile.playback_mode = "Instant"
 	root.add_child(mobile)
 	await process_frame
 	await process_frame
@@ -20,6 +21,7 @@ func run_suite() -> void:
 	_check(mobile.page == "battle" and mobile.sim.run.character_id == "aldren", "touch begins a run from character selection")
 
 	var desktop = MainScene.instantiate()
+	desktop.playback_mode = "Instant"
 	root.add_child(desktop)
 	await process_frame
 	desktop.sim.start_run(20261005, "jim")
@@ -36,10 +38,20 @@ func run_suite() -> void:
 	await _touch(mobile, mobile._cell_center(destination))
 	_check(mobile.sim._pos(mobile.sim.get_player()) == destination, "a direct screen touch moves through the normal tile action")
 	_check(JSON.stringify(mobile.sim.run) == JSON.stringify(desktop.sim.run), "equivalent mouse and touch movement produce identical deterministic run state")
+	var feed_digest: String = mobile.sim.state_digest()
+	await _touch_action(mobile, "open_combat_history")
+	_check(mobile.overlay == "combat_history" and not mobile.sim.run.combat_history.is_empty(), "touch opens the expanded encounter history from Recent Events")
+	await _touch_action(mobile, "close")
+	_check(mobile.overlay == "" and mobile.sim.state_digest() == feed_digest, "closing encounter history through touch leaves game state unchanged")
 
 	var time_before_cancel := int(mobile.sim.run.time)
 	if not mobile.sim.run.known.has("arcane_bolt"):
 		mobile.sim.run.known.append("arcane_bolt")
+	await _touch_action(mobile, "overlay", "abilities")
+	await _touch_action(mobile, "begin_quickbar_assignment", "arcane_bolt")
+	_check(mobile.quickbar_assign_mode and int(mobile.sim.run.time) == time_before_cancel, "touch starts ability-bar assignment without consuming a turn")
+	await _touch_action(mobile, "quickbar_slot", "7")
+	_check(mobile.sim.run.quickbar[7] == {"type": "ability", "id": "arcane_bolt"} and not mobile.quickbar_assign_mode, "touch assigns a learned ability to the selected action slot")
 	mobile.queue_redraw()
 	await process_frame
 	await _touch_action(mobile, "ability", "arcane_bolt")
@@ -113,6 +125,19 @@ func run_suite() -> void:
 		if hit_rect.size.x < 54.0 or hit_rect.size.y < 54.0:
 			target_sizes_ok = false
 	_check(target_sizes_ok, "visible inventory and action hit regions have at least 54 logical pixels per dimension")
+	mobile.overlay = ""
+	mobile.queue_redraw()
+	await process_frame
+	await process_frame
+	var action_hits: Array = []
+	for hit in mobile.active_hits:
+		if hit.rect.position.y >= 640 and String(hit.action.get("type", "")) in ["target_mode", "quickbar_slot", "open_action_palette", "overlay", "wait", "playback_speed", "playback_skip"]:
+			action_hits.append(hit)
+	var separated := true
+	for i in range(action_hits.size()):
+		for j in range(i + 1, action_hits.size()):
+			if action_hits[i].rect.intersects(action_hits[j].rect): separated = false
+	_check(separated, "the primary action bar keeps touch hit regions separated")
 
 	mobile.queue_free()
 	desktop.queue_free()
@@ -134,11 +159,21 @@ func _open_neighbor(sim, origin: Vector2i) -> Vector2i:
 
 func _touch_action(main: Control, action_type: String, action_id: String = "") -> void:
 	await process_frame
+	if action_type == "ability":
+		for slot_index in range(main.sim.run.get("quickbar", []).size()):
+			if main.sim.run.quickbar[slot_index].get("type") == "ability" and main.sim.run.quickbar[slot_index].get("id") == action_id:
+				await _touch_action(main, "quickbar_slot", str(slot_index))
+				return
+	if action_type == "quick_item":
+		for slot_index in range(main.sim.run.get("quickbar", []).size()):
+			if main.sim.run.quickbar[slot_index].get("type") == "item" and main.sim.run.quickbar[slot_index].get("id") == "healing_potion":
+				await _touch_action(main, "quickbar_slot", str(slot_index))
+				return
 	for hit in main.active_hits:
 		var action: Dictionary = hit.action
 		if String(action.get("type", "")) != action_type:
 			continue
-		if action_id != "" and String(action.get("id", action.get("mode", ""))) != action_id:
+		if action_id != "" and str(action.get("id", action.get("mode", action.get("index", "")))) != action_id:
 			continue
 		var rect: Rect2 = hit.rect
 		await _touch(main, rect.get_center())
