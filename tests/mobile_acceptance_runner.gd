@@ -38,6 +38,12 @@ func run_suite() -> void:
 	await _touch(mobile, mobile._cell_center(destination))
 	_check(mobile.sim._pos(mobile.sim.get_player()) == destination, "a direct screen touch moves through the normal tile action")
 	_check(JSON.stringify(mobile.sim.run) == JSON.stringify(desktop.sim.run), "equivalent mouse and touch movement produce identical deterministic run state")
+	var dock_digest: String = mobile.sim.state_digest()
+	for section_id in ["world_map", "character", "inventory", "spellbook"]:
+		await _touch_action(mobile, "lower_panel", section_id)
+		_check(mobile.ui_state.lower_dock_expanded and mobile.ui_state.active_lower_panel == section_id, "touch expands lower section: %s" % section_id)
+	await _touch_action(mobile, "lower_panel", "spellbook")
+	_check(not mobile.ui_state.lower_dock_expanded and mobile.sim.state_digest() == dock_digest, "switching and collapsing lower sections never advances the simulation")
 	var feed_digest: String = mobile.sim.state_digest()
 	await _touch_action(mobile, "open_combat_history")
 	_check(mobile.overlay == "combat_history" and not mobile.sim.run.combat_history.is_empty(), "touch opens the expanded encounter history from Recent Events")
@@ -47,7 +53,8 @@ func run_suite() -> void:
 	var time_before_cancel := int(mobile.sim.run.time)
 	if not mobile.sim.run.known.has("arcane_bolt"):
 		mobile.sim.run.known.append("arcane_bolt")
-	await _touch_action(mobile, "overlay", "abilities")
+	await _touch_action(mobile, "lower_panel", "character")
+	await _touch_action(mobile, "select_lower_ability", "arcane_bolt")
 	await _touch_action(mobile, "begin_quickbar_assignment", "arcane_bolt")
 	_check(mobile.quickbar_assign_mode and int(mobile.sim.run.time) == time_before_cancel, "touch starts ability-bar assignment without consuming a turn")
 	await _touch_action(mobile, "quickbar_slot", "7")
@@ -58,6 +65,16 @@ func run_suite() -> void:
 	_check(mobile.target_mode == "arcane_bolt", "touching an ability enters explicit target mode")
 	await _touch_action(mobile, "cancel_target")
 	_check(mobile.target_mode == "" and int(mobile.sim.run.time) == time_before_cancel, "visible touch cancel exits targeting without advancing simulation")
+	var normal_mode: String = mobile.playback_mode
+	mobile._handle_action({"type": "playback_speed", "mode": "Fast"})
+	_check(mobile.playback_mode == "Fast", "the internal presentation-speed setting remains callable")
+	mobile._handle_action({"type": "playback_speed", "mode": normal_mode})
+	var speed_action_visible := false
+	var desktop_dpad_visible := false
+	for hit in mobile.active_hits:
+		if String(hit.action.get("type", "")) == "playback_speed": speed_action_visible = true
+		if String(hit.action.get("type", "")) == "dpad": desktop_dpad_visible = true
+	_check(not speed_action_visible and not desktop_dpad_visible, "desktop combat has no playback-speed control or movement D-pad")
 
 	for entity_id in mobile.sim.run.entities.keys():
 		if entity_id != "player":
@@ -80,9 +97,9 @@ func run_suite() -> void:
 	mobile.target_mode = "arcane_bolt"
 	mobile._handle_back_request()
 	_check(mobile.target_mode == "" and mobile.page == "battle" and mobile.overlay == "", "the first Android Back cancels targeting without opening a menu")
-	mobile.overlay = "inventory"
+	mobile._open_lower_panel("inventory", false)
 	mobile._handle_back_request()
-	_check(mobile.overlay == "", "Android Back closes the inventory overlay before gameplay")
+	_check(mobile.overlay == "" and not mobile.ui_state.lower_dock_expanded, "Android Back collapses inventory before opening a menu")
 	mobile._handle_back_request()
 	_check(mobile.overlay == "pause", "Android Back opens pause instead of exiting from gameplay")
 	mobile._handle_back_request()
@@ -105,7 +122,13 @@ func run_suite() -> void:
 		if content_bounds.position.x < viewport_rect.position.x or content_bounds.position.y < viewport_rect.position.y or content_bounds.end.x > viewport_rect.end.x or content_bounds.end.y > viewport_rect.end.y:
 			layout_ok = false
 		mobile.screen_size = logical_size
-		if logical_size.x > 1550.0 and mobile._board_rect().end.x > 1150.0:
+		var battle_layout: Dictionary = mobile._battle_layout()
+		var logical_bounds := Rect2(Vector2.ZERO, logical_size)
+		var toolbar_rect := Rect2(Vector2(float(battle_layout.action_x), float(battle_layout.toolbar_y)), Vector2(float(battle_layout.action_width), float(battle_layout.toolbar_height)))
+		var dock_rect := Rect2(18.0, float(battle_layout.dock_top), logical_size.x - 36.0, float(battle_layout.dock_bottom) - float(battle_layout.dock_top))
+		if not logical_bounds.encloses(mobile._board_rect()) or not logical_bounds.encloses(toolbar_rect) or not logical_bounds.encloses(dock_rect):
+			layout_ok = false
+		if mobile._board_rect().intersects(toolbar_rect) or toolbar_rect.intersects(dock_rect):
 			layout_ok = false
 	var inset_layout: Dictionary = mobile._calculate_layout(Vector2(2400, 1080), Rect2(90, 0, 2220, 1080))
 	if not is_equal_approx(float(inset_layout.offset.x), 98.0) or inset_layout.size.x < 1440.0:
@@ -115,23 +138,26 @@ func run_suite() -> void:
 	_check(ThemeDB.fallback_font.get_string_size(fitted_name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x <= 150.0, "long character names fit beside the level label on compact screens")
 
 	mobile.page = "battle"
-	mobile.overlay = "inventory"
+	mobile._open_lower_panel("inventory", false)
 	mobile.queue_redraw()
 	await process_frame
 	await process_frame
 	var target_sizes_ok := true
 	for hit in mobile.active_hits:
 		var hit_rect: Rect2 = hit.rect
-		if hit_rect.size.x < 54.0 or hit_rect.size.y < 54.0:
+		if String(hit.action.get("type", "")) == "select_item":
+			if hit_rect.size.x < 28.0 or hit_rect.size.y < 28.0: target_sizes_ok = false
+		elif hit_rect.size.x < 54.0 or hit_rect.size.y < 54.0:
 			target_sizes_ok = false
 	_check(target_sizes_ok, "visible inventory and action hit regions have at least 54 logical pixels per dimension")
-	mobile.overlay = ""
+	mobile._handle_back_request()
+	_check(not mobile.ui_state.lower_dock_expanded, "Back collapses the active inventory section")
 	mobile.queue_redraw()
 	await process_frame
 	await process_frame
 	var action_hits: Array = []
 	for hit in mobile.active_hits:
-		if hit.rect.position.y >= 640 and String(hit.action.get("type", "")) in ["target_mode", "quickbar_slot", "open_action_palette", "overlay", "wait", "playback_speed", "playback_skip"]:
+		if hit.rect.position.y >= 640 and String(hit.action.get("type", "")) in ["target_mode", "quickbar_slot", "wait", "end_turn", "cancel_target", "playback_skip"]:
 			action_hits.append(hit)
 	var separated := true
 	for i in range(action_hits.size()):

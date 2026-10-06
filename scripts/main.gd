@@ -1,27 +1,31 @@
 extends Control
 
 const SimScript = preload("res://scripts/game_sim.gd")
+const UIStateScript = preload("res://scripts/ui_state.gd")
+const LowerDockScript = preload("res://scripts/lower_dock.gd")
 const LOGICAL_SIZE := Vector2(1440, 810)
 const BASE_BOARD_ORIGIN := Vector2(250, 62)
-const BASE_TILE := 35.0
-const WIDE_TILE := 35.0
+const BASE_TILE := 36.0
+const WIDE_TILE := 36.0
 const WIDE_LAYOUT_MIN_WIDTH := 1550.0
 const TOUCH_TARGET := 54.0
 const POINTER_DRAG_SLOP := 18.0
 
 var sim: ArcanistSim
+var ui_state
+var lower_dock
 var page := "title"
 var overlay := ""
 var selected_character := "jim"
 var selected_enemy := ""
-var selected_inventory_index := -1
+
 var selected_object_index := -1
 var selected_ability := ""
 var target_mode := ""
 var selected_book_abilities: Array = []
 var codex_book_id := ""
 var selected_ward := ""
-var selected_web_ability := ""
+
 var ability_filter := "All"
 var ability_filter_page := 0
 var palette_filter := "All"
@@ -96,6 +100,9 @@ func _ready() -> void:
 	set_process(false)
 	get_tree().quit_on_go_back = false
 	sim = SimScript.new()
+	ui_state = UIStateScript.new()
+	lower_dock = LowerDockScript.new()
+	lower_dock.host = self
 	var args := OS.get_cmdline_user_args()
 	for arg in args:
 		if arg.begins_with("--capture-dir="):
@@ -128,14 +135,24 @@ func _ready() -> void:
 				sim.save_run()
 				overlay = capture_overlay
 				match capture_overlay:
-					"inventory": selected_inventory_index = 0
+					"map": _open_lower_panel("world_map", false)
+					"character", "abilities":
+						overlay = ""
+						ui_state.active_lower_panel = "character"
+						ui_state.lower_dock_expanded = true
+						ui_state.character_tab = "Abilities"
+					"inventory": _open_lower_panel("inventory", false)
+					"spellbook", "discovery": _open_lower_panel("spellbook", false)
+					"ability_web": overlay = "abilities"
+				match capture_overlay:
+					"inventory": ui_state.selected_inventory_index = 0
 					"map": sim.run.route_choices = ["graveyard", "flooded_ruins"]
 					"rewards":
 						sim.run.stage_completed = true
 						sim.run.reward_choices = [{"type": "artifact", "id": "copper_hare", "claimed": false}, {"type": "item", "id": "healing_potion", "claimed": false}]
 				if capture_book != "" and sim.content.items.has(capture_book):
 					sim.run.inventory.append(capture_book)
-					selected_inventory_index = sim.run.inventory.size() - 1
+					ui_state.selected_inventory_index = sim.run.inventory.size() - 1
 					codex_book_id = capture_book
 					if capture_overlay == "codex_book":
 						var captured_book_index: int = sim.run.inventory.size() - 1
@@ -154,18 +171,18 @@ func _ready() -> void:
 						var book_options: Dictionary = sim.get_spellbook_options(book_index)
 						var book_choices: Array = [0] if book_options.get("mode") == "choose" else []
 						sim.study_spellbook(book_index, book_choices)
-					selected_web_ability = "storm_arrow"
+					ui_state.selected_ability_id = "storm_arrow"
 				if capture_overlay == "action_palette":
 					var capture_abilities: Array = sim.get_available_abilities()
 					selected_ability = String(capture_abilities[0]) if not capture_abilities.is_empty() else ""
 				if capture_target != "":
 					target_mode = capture_target
-				if capture_overlay == "abilities":
-					if selected_web_ability == "":
-						selected_web_ability = String(sim.run.known.back()) if not sim.run.known.is_empty() else ""
-					ability_filter = String(sim.content.abilities.get(selected_web_ability, {}).get("school", "All"))
+				if capture_overlay in ["abilities", "character", "ability_web"]:
+					if ui_state.selected_ability_id == "":
+						ui_state.selected_ability_id = String(sim.run.known.back()) if not sim.run.known.is_empty() else ""
+					ability_filter = String(sim.content.abilities.get(ui_state.selected_ability_id, {}).get("school", "All"))
 					web_zoom = 0.86
-					_center_web_on(selected_web_ability)
+					_center_web_on(ui_state.selected_ability_id)
 					if capture_web_pan_provided:
 						web_pan += capture_web_pan
 				_prepare_capture_scenario()
@@ -207,6 +224,8 @@ func _handle_back_request() -> void:
 		last_android_back_msec = now
 	if target_mode != "":
 		_cancel_targeting()
+	elif ui_state.lower_dock_expanded:
+		ui_state.lower_dock_expanded = false
 	elif overlay == "exit_confirm":
 		overlay = "pause"
 	elif overlay == "pause":
@@ -215,7 +234,7 @@ func _handle_back_request() -> void:
 		overlay = "codex"
 	elif overlay != "":
 		overlay = ""
-		selected_inventory_index = -1
+		ui_state.selected_inventory_index = -1
 	elif page == "battle":
 		overlay = "pause"
 	elif page == "outcome":
@@ -425,6 +444,45 @@ func _draw_title() -> void:
 	_draw_label("Landscape first  ·  Touch or mouse  ·  No timer while you decide", 56, 745, 13, COLORS.muted)
 	_draw_corner_marks(Rect2(47, 215, 1346, 450))
 
+func _battle_layout() -> Dictionary:
+	var active_panel := String(ui_state.active_lower_panel)
+	var panel_height := 0.0
+	if ui_state.lower_dock_expanded:
+		panel_height = 260.0 if active_panel == "inventory" else 220.0
+	var dock_bottom := screen_size.y - 18.0
+	var dock_top := dock_bottom - (panel_height if panel_height > 0.0 else 38.0)
+	var toolbar_height := 88.0
+	var toolbar_y := dock_top - toolbar_height - 10.0
+	var battle_bottom := toolbar_y - 10.0
+	var right_width := clampf(screen_size.x * 0.19, 258.0, 310.0)
+	var left_rect := Rect2(18.0, 18.0, 216.0, maxf(220.0, battle_bottom - 36.0))
+	var right_rect := Rect2(screen_size.x - right_width - 18.0, 18.0, right_width, maxf(200.0, battle_bottom - 36.0))
+	var center_rect := Rect2(left_rect.end.x + 10.0, 48.0, right_rect.position.x - left_rect.end.x - 20.0, maxf(160.0, battle_bottom - 58.0))
+	var max_tile := WIDE_TILE if _is_wide_layout() else BASE_TILE
+	var tile := minf(max_tile, maxf(20.0, center_rect.size.y / float(ArcanistSim.HEIGHT)))
+	var board_size := Vector2(ArcanistSim.WIDTH * tile, ArcanistSim.HEIGHT * tile)
+	var board_rect := Rect2(Vector2(center_rect.position.x + (center_rect.size.x - board_size.x) * 0.5, 58.0), board_size)
+	var dock_header_y := dock_top
+	var dock_header_height := 38.0 if panel_height <= 0.0 else 34.0
+	var panel_content_height := maxf(0.0, panel_height - dock_header_height)
+	var timeline_height := clampf(right_rect.size.y * 0.34, 140.0, 190.0)
+	var group_target_width := minf(screen_size.x * 0.68, 1280.0)
+	var end_turn_width := 126.0
+	var action_gap := 6.0
+	var ordinary_count := 11 + (1 if target_mode != "" and not playback_active else 0)
+	var slot_width := clampf((group_target_width - end_turn_width - float(ordinary_count) * action_gap) / float(ordinary_count), 64.0, 96.0)
+	var action_width := float(ordinary_count) * slot_width + end_turn_width + float(ordinary_count) * action_gap
+	var action_x := (screen_size.x - action_width) * 0.5
+	return {
+		"dock_top": dock_top, "dock_bottom": dock_bottom, "dock_header_y": dock_header_y,
+		"dock_header_height": dock_header_height, "panel_content_height": panel_content_height,
+		"toolbar_y": toolbar_y, "toolbar_height": toolbar_height, "battle_bottom": battle_bottom,
+		"left_rect": left_rect, "center_rect": center_rect, "right_rect": right_rect,
+		"board_rect": board_rect, "tile": tile, "timeline_height": timeline_height,
+		"action_x": action_x, "action_slot_width": slot_width, "action_end_width": end_turn_width,
+		"action_gap": action_gap, "action_width": action_width, "ordinary_count": ordinary_count
+	}
+
 func _draw_battle() -> void:
 	if sim.run.is_empty():
 		page = "title"
@@ -435,34 +493,36 @@ func _draw_battle() -> void:
 	_draw_inspection_card()
 	_draw_side_controls()
 	_draw_action_bar()
+	lower_dock.draw()
 	if notice != "":
 		_draw_toast(notice)
 
 func _draw_player_card() -> void:
 	var player: Dictionary = _display_player()
+	var layout := _battle_layout()
+	var mobile := OS.get_name() == "Android"
 	var displayed_level := int(presentation_state.get("level", sim.run.get("level", 1))) if playback_active else int(sim.run.get("level", 1))
 	var displayed_xp := int(presentation_state.get("xp", sim.run.get("xp", 0))) if playback_active else int(sim.run.get("xp", 0))
-	var rect := Rect2(18, 18, 216, 444)
+	var rect := Rect2(18.0, 18.0, 216.0, 244.0 if mobile else 392.0)
 	_draw_panel(rect, "", COLORS.line)
 	var level_label := "LV %d" % displayed_level
 	var level_width := ThemeDB.fallback_font.get_string_size(level_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13).x
 	var name_width := 190.0 - level_width - 10.0
-	_draw_label(_fit_text(String(player.get("name", "Adventurer")), name_width, 15), 31, 47, 15, COLORS.text)
-	_draw_label(level_label, 221, 47, 13, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
-	_draw_label("%s  ·  %d / %d" % [sim.get_stage_name(), sim.run.get("stage_index", 0) + 1, 6], 31, 70, 10, COLORS.muted)
-	_draw_bar(Rect2(31, 84, 190, 22), "HP", player.hp, player.max_hp, COLORS.red)
+	_draw_label(_fit_text(String(player.get("name", "Adventurer")), name_width, 15), 31, 44, 15, COLORS.text)
+	_draw_label(level_label, 221, 44, 13, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
+	_draw_label("%s  ·  %d / 6" % [sim.get_stage_name(), int(sim.run.get("stage_index", 0)) + 1], 31, 64, 9, COLORS.muted)
 	var xp_required := maxi(1, displayed_level * 35)
-	_draw_label("XP  %d / %d" % [displayed_xp, xp_required], 31, 123, 9, COLORS.gold)
+	_draw_label("XP  %d / %d" % [displayed_xp, xp_required], 31, 82, 8 if mobile else 9, COLORS.gold)
 	var displayed_skill_points := int(presentation_state.get("skill_points", sim.run.get("skill_points", 0))) if playback_active else int(sim.run.get("skill_points", 0))
 	if displayed_skill_points > 0:
-		_draw_label("✦ %d AP" % displayed_skill_points, 221, 123, 9, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
-		active_hits.append({"rect": _touch_hit_rect(Rect2(163, 110, 58, 22)), "action": {"type": "overlay", "id": "abilities"}})
-	draw_rect(Rect2(31, 129, 190, 7), Color("#22272b"))
-	draw_rect(Rect2(31, 129, 190.0 * clampf(float(displayed_xp) / xp_required, 0.0, 1.0), 7), COLORS.gold)
-	var y := 145.0
+		_draw_label("✦ %d AP" % displayed_skill_points, 221, 82, 9, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
+		active_hits.append({"rect": _touch_hit_rect(Rect2(163, 70, 58, 22)), "action": {"type": "lower_panel", "id": "character"}})
+	draw_rect(Rect2(31, 88, 190, 4), Color("#22272b"))
+	draw_rect(Rect2(31, 88, 190.0 * clampf(float(displayed_xp) / xp_required, 0.0, 1.0), 4), COLORS.gold)
+	_draw_bar(Rect2(31, 98, 190, 20), "HP", player.hp, player.max_hp, COLORS.red)
 	var has_mana_actions: bool = not sim.run.get("schools", []).is_empty()
 	for ability_id in sim.run.get("known", []):
-		if int(sim.content.abilities[ability_id].get("costs", {}).get("Mana", 0)) > 0: has_mana_actions = true
+		if sim.content.abilities.has(ability_id) and int(sim.content.abilities[ability_id].get("costs", {}).get("Mana", 0)) > 0: has_mana_actions = true
 	var command_is_relevant := int(player.get("resources", {}).get("Command", [0, 0])[0]) > 0
 	for ability_id in sim.run.get("known", []):
 		for effect in sim.content.abilities.get(ability_id, {}).get("effects", []):
@@ -470,33 +530,41 @@ func _draw_player_card() -> void:
 	var resource_rows: Array = [["STA", player.resources.get("Stamina", [0, 0]), COLORS.green]]
 	if has_mana_actions: resource_rows.append(["MP", player.resources.get("Mana", [0, 0]), COLORS.blue])
 	var blood: Array = player.resources.get("Blood", [0, 0])
-	if int(blood[1]) > 0: resource_rows.append(["BLD", blood, COLORS.blood])
+	if int(blood[1]) > 0: resource_rows.append(["BLOOD", blood, COLORS.blood])
 	if command_is_relevant: resource_rows.append(["CMD", player.resources.get("Command", [0, 0]), COLORS.purple])
-	for resource in resource_rows:
+	var resource_y := 126.0 if mobile else 130.0
+	var resource_step := 17.0 if mobile else 19.0
+	for resource_index in range(resource_rows.size()):
+		if resource_index >= 4:
+			break
+		var resource = resource_rows[resource_index]
 		var resource_color: Color = resource[2]
-		_draw_bar(Rect2(31, y, 190, 19), String(resource[0]), int(resource[1][0]), int(resource[1][1]), resource_color)
-		y += 22
-	_draw_line(31, y + 2, 221, y + 2, COLORS.line_soft)
+		_draw_bar(Rect2(31.0, resource_y + float(resource_index) * resource_step, 190.0, 16.0 if mobile else 18.0), String(resource[0]), int(resource[1][0]), int(resource[1][1]), resource_color)
+	var attributes_y := 184.0 if mobile else 224.0
+	_draw_line(31, attributes_y - 10, 221, attributes_y - 10, COLORS.line_soft)
 	var attributes: Dictionary = presentation_state.get("attributes", sim.run.attributes) if playback_active else sim.run.attributes
 	var names: Array = ["Might", "Dexterity", "Vitality", "Intelligence", "Willpower", "Perception"]
 	for i in range(names.size()):
 		var column := i % 2
 		var row := int(i / 2)
 		var stat_x := 31 + column * 96
-		var stat_y := y + 22 + row * 18
-		_draw_label("%s  %d" % [String(names[i]).substr(0, 3).to_upper(), int(attributes.get(names[i], 10))], stat_x, stat_y, 9, COLORS.text)
-	var status_y := y + 88
-	_draw_line(31, status_y - 11, 221, status_y - 11, COLORS.line_soft)
-	_draw_label("ACTIVE EFFECTS", 31, status_y, 10, COLORS.gold)
+		var stat_y := attributes_y + 12 + row * (14.0 if mobile else 17.0)
+		_draw_label("%s  %d" % [String(names[i]).substr(0, 3).to_upper(), int(attributes.get(names[i], 10))], stat_x, stat_y, 8 if mobile else 9, COLORS.text)
+	var status_y := 244.0 if mobile else 313.0
+	_draw_line(31, status_y - 12, 221, status_y - 12, COLORS.line_soft)
+	_draw_label("ACTIVE EFFECTS", 31, status_y, 9, COLORS.gold)
 	var status_index := 0
 	for status_id in player.get("statuses", {}):
-		if status_index >= 4:
+		if status_index >= (1 if mobile else 4):
 			break
 		var status: Dictionary = player.statuses[status_id]
-		_draw_label("✦  %s  (%d)" % [status_id, status.stacks], 34, status_y + 23 + status_index * 17, 10, COLORS.cyan if status_id in ["Haste", "Empowered"] else COLORS.orange)
+		var duration := int(status.get("duration", status.get("turns", 0)))
+		var suffix := " (%d)" % int(status.get("stacks", 1))
+		if duration > 0: suffix += " · %d" % duration
+		_draw_label("✦  %s%s" % [String(status_id).replace("_", " "), suffix], 34, status_y + 18 + status_index * 16, 8 if mobile else 10, COLORS.cyan if status_id in ["Haste", "Empowered"] else COLORS.orange)
 		status_index += 1
 	if status_index == 0:
-		_draw_label("No active effects", 34, status_y + 23, 10, COLORS.muted)
+		_draw_label("No active effects", 34, status_y + 18, 8 if mobile else 10, COLORS.muted)
 
 func _display_player() -> Dictionary:
 	if playback_active and presentation_state.get("entities", {}).has("player"):
@@ -512,9 +580,8 @@ func _is_quickbar_assigned(action_type: String, action_id: String) -> bool:
 func _draw_board() -> void:
 	var origin := _board_origin()
 	var tile := _tile_size()
-	var board_panel_width := ArcanistSim.WIDTH * tile + 17.0
-	var board_panel_height := ArcanistSim.HEIGHT * tile + 20.0
-	_draw_panel(Rect2(origin.x - 8.0, 52, board_panel_width, board_panel_height), "", COLORS.line)
+	var board_rect := _board_rect()
+	_draw_panel(Rect2(board_rect.position - Vector2(8.0, 8.0), board_rect.size + Vector2(16.0, 16.0)), "", COLORS.line)
 	var board_state: Dictionary = presentation_state if playback_active else sim.run
 	var grid: Array = board_state.get("grid", sim.run.grid)
 	var visible: Array = board_state.get("visible", sim.run.visible)
@@ -622,9 +689,9 @@ func _draw_board() -> void:
 		_draw_presentation_effect(origin, tile)
 		_draw_floating_combat_text()
 	if target_mode != "" and not playback_active:
-		_draw_label("TARGETING  ·  %s  ·  tap a highlighted target; tap the action again to cancel" % _target_action_name(), 260, 45, 10, COLORS.gold)
+		_draw_label("TARGETING  ·  %s  ·  tap a highlighted target; tap the action again to cancel" % _target_action_name(), origin.x, origin.y - 15, 9, COLORS.gold)
 	else:
-		_draw_label("%s  ·  %s" % [sim.get_stage_name().to_upper(), sim.get_objective_text()], 260, 45, 12, COLORS.text)
+		_draw_label("%s  ·  %s" % [sim.get_stage_name().to_upper(), sim.get_objective_text()], origin.x, origin.y - 15, 11, COLORS.text)
 	if target_mode != "" and not playback_active and _point_in_board(press_current_position):
 		var preview_cell := _cell_from_point(press_current_position)
 		if sim._inside(preview_cell):
@@ -712,9 +779,9 @@ func _draw_floating_combat_text() -> void:
 		_draw_label(String(item.text), center.x, label_rect.position.y + 13.0, 12, color, HORIZONTAL_ALIGNMENT_CENTER)
 
 func _draw_timeline() -> void:
-	var panel_x := 1150.0
-	var panel_width := screen_size.x - panel_x - 18.0
-	var panel_rect := Rect2(panel_x, 18, panel_width, 227)
+	var layout := _battle_layout()
+	var right_rect: Rect2 = layout.right_rect
+	var panel_rect := Rect2(right_rect.position, Vector2(right_rect.size.x, float(layout.timeline_height)))
 	_draw_panel(panel_rect, "TURN TIMELINE", COLORS.line)
 	var entries: Array = []
 	var timeline_entities: Dictionary = presentation_state.get("entities", {}) if playback_active else sim.run.get("entities", {})
@@ -727,130 +794,164 @@ func _draw_timeline() -> void:
 		if a.time == b.time: return a.id < b.id
 		return a.time < b.time)
 	entries = entries.slice(0, 6)
-	var label_x := panel_x + 16.0
+	var label_x := panel_rect.position.x + 14.0
 	var time_x := panel_rect.end.x - 15.0
 	for i in range(entries.size()):
 		var entry: Dictionary = entries[i]
-		var y := 58 + i * 25
+		var y := panel_rect.position.y + 45.0 + i * minf(23.0, (panel_rect.size.y - 66.0) / 5.0)
 		var entry_id := String(entry.id)
 		var color_key := "player" if entry_id == "player" else "ally" if entry.faction == "Adventurers" else "hostile" if entry.faction in ["Undead", "Demons"] else "other"
 		var color := _entity_presentation_color(color_key)
-		if playback_active and entry_id == acting_actor_id:
-			draw_rect(Rect2(panel_x + 8, y - 17, panel_width - 16, 22), Color(0.75, 0.58, 0.2, 0.13), true)
-			draw_rect(Rect2(panel_x + 8, y - 17, 3, 22), COLORS.gold, true)
+		var is_current := entry_id == "player" and not playback_active
+		var is_acting := playback_active and entry_id == acting_actor_id
+		if is_current or is_acting:
+			draw_rect(Rect2(panel_rect.position.x + 7, y - 17, panel_rect.size.x - 14, 22), Color(0.75, 0.58, 0.2, 0.14), true)
+			draw_rect(Rect2(panel_rect.position.x + 7, y - 17, 3, 22), COLORS.gold, true)
 		_draw_label(String(entry.symbol), label_x, y, 14, color)
-		_draw_label(String(entry.name).substr(0, 28 if _is_wide_layout() else 19), label_x + 24, y, 11, COLORS.text)
+		_draw_label(_fit_text(String(entry.name), panel_rect.size.x - 94.0, 10), label_x + 22, y, 10, COLORS.text)
 		var time_left := int(entry.time) - int(sim.get_player().next_time)
-		_draw_label("ACTING" if playback_active and entry_id == acting_actor_id else "NOW" if entry_id == "player" else str(time_left), time_x, y, 9, COLORS.gold if playback_active and entry_id == acting_actor_id or entry_id == "player" else COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
-		active_hits.append({"rect": _touch_hit_rect(Rect2(panel_x + 8, y - 18, panel_width - 16, 23)), "action": {"type": "inspect_entity", "id": entry_id}})
-	_draw_line(label_x, 218, time_x, 218, COLORS.line_soft)
-	_draw_label("DETERMINISTIC TURN ORDER", label_x, 236, 9, COLORS.muted)
+		_draw_label("ACTING" if is_acting else "NOW" if entry_id == "player" else str(maxi(0, time_left)), time_x, y, 9, COLORS.gold if is_acting or is_current else COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
+		active_hits.append({"rect": _touch_hit_rect(Rect2(panel_rect.position.x + 7, y - 18, panel_rect.size.x - 14, 23)), "action": {"type": "inspect_entity", "id": entry_id}})
+	_draw_line(label_x, panel_rect.end.y - 24.0, time_x, panel_rect.end.y - 24.0, COLORS.line_soft)
+	_draw_label("NEXT ACTION  ·  TIME COST", label_x, panel_rect.end.y - 9.0, 8, COLORS.muted)
 
 func _draw_inspection_card() -> void:
-	var panel_x := 1150.0
-	var panel_width := screen_size.x - panel_x - 18.0
-	var rect := Rect2(panel_x, 258, panel_width, 360)
-	var content_x := panel_x + 16.0
-	var content_width := panel_width - 32.0
-	_draw_panel(rect, "FIELD INTELLIGENCE", COLORS.line)
+	var layout := _battle_layout()
+	var right_rect: Rect2 = layout.right_rect
+	var context_top := right_rect.position.y + float(layout.timeline_height) + 8.0
+	var context_bottom := float(layout.battle_bottom) - 18.0
+	var context_height := minf(250.0, maxf(160.0, context_bottom - context_top))
+	var rect := Rect2(right_rect.position.x, context_top, right_rect.size.x, context_height)
+	var content_x := rect.position.x + 14.0
+	var content_width := rect.size.x - 28.0
 	var display_entities: Dictionary = presentation_state.get("entities", {}) if playback_active else sim.run.get("entities", {})
 	var enemy: Dictionary = display_entities.get(selected_enemy, {})
+	var enemy_selected: bool = not enemy.is_empty() and bool(enemy.get("alive", true)) and (playback_active or sim._cell_visible(sim._pos(enemy)))
 	var object: Dictionary = _selected_object()
-	var feed_start := 451.0
+	_draw_panel(rect, "ENEMY INSPECTION" if enemy_selected else "FIELD INTELLIGENCE", COLORS.line)
+	var cursor_y := rect.position.y + 43.0
 	if not object.is_empty():
-		_draw_label(String(object.get("name", "Field object")), content_x, 300, 18, COLORS.cyan if object.get("kind") == "exit" else COLORS.gold)
-		_draw_label("%s  ·  %d / %d HP" % [String(object.get("kind", "object")).capitalize(), int(object.get("hp", 1)), int(object.get("max_hp", 1))], content_x, 334, 13, COLORS.text)
+		_draw_label(String(object.get("name", "Field object")), content_x, cursor_y, 14, COLORS.cyan if object.get("kind") == "exit" else COLORS.gold)
+		_draw_label("%s  ·  %d / %d HP" % [String(object.get("kind", "object")).capitalize(), int(object.get("hp", 1)), int(object.get("max_hp", 1))], content_x, cursor_y + 22.0, 10, COLORS.text)
 		var object_cell := Vector2i(int(object.pos[0]), int(object.pos[1]))
-		_draw_label("Distance  ·  %d tiles" % sim._dist(sim._pos(sim.get_player()), object_cell), content_x, 364, 13, COLORS.muted)
+		_draw_label("Distance  ·  %d tiles" % sim._dist(sim._pos(sim.get_player()), object_cell), content_x, cursor_y + 42.0, 9, COLORS.muted)
 		var object_action := {"type": "interact"} if object.get("kind") == "exit" else {"type": "target_object"}
 		var object_label := "INTERACT" if object.get("kind") == "exit" else "TARGET WARD"
-		_draw_button(Rect2(content_x, 387, content_width, 50), object_label, object_action, false, 12)
-		feed_start = 451.0
-	elif enemy.is_empty() or not enemy.get("alive", true) or (not playback_active and not sim._cell_visible(sim._pos(enemy))):
-		_draw_label("OBJECTIVE", content_x, 300, 11, COLORS.gold)
-		var objective_lines := _wrap(sim.get_objective_text(), 31)
-		for i in range(objective_lines.size()):
-			_draw_label(objective_lines[i], content_x, 326 + i * 17, 11, COLORS.text)
-		_draw_label("ENCOUNTER  ·  %d / 6" % [int(sim.run.stage_index) + 1], content_x, 365, 10, COLORS.gold)
-		_draw_label("%d hostiles  ·  %d XP  ·  Level %d" % [sim._hostile_count(), int(sim.run.xp), int(sim.run.level)], content_x, 388, 10, COLORS.muted)
-		feed_start = 433.0
+		_draw_button(Rect2(content_x, cursor_y + 54.0, content_width, 46.0), object_label, object_action, false, 10)
+		cursor_y += 110.0
+	elif enemy_selected:
+		var glyph := String(_display_entity_presentation(enemy).get("symbol", "?"))
+		_draw_label(glyph, content_x + 4.0, cursor_y + 9.0, 25, COLORS.red if enemy.faction in ["Undead", "Demons"] else COLORS.gold)
+		_draw_label(_fit_text(String(enemy.get("name", "Creature")), content_width - 36.0, 13), content_x + 35.0, cursor_y + 7.0, 13, COLORS.text)
+		_draw_label("HP  %d / %d" % [int(enemy.get("hp", 0)), int(enemy.get("max_hp", 1))], content_x + 35.0, cursor_y + 25.0, 9, COLORS.muted)
+		var hp_bar := Rect2(content_x + 35.0, cursor_y + 32.0, maxf(40.0, content_width - 40.0), 5.0)
+		draw_rect(hp_bar, Color("#202a30"))
+		draw_rect(Rect2(hp_bar.position, Vector2(hp_bar.size.x * clampf(float(enemy.get("hp", 0)) / maxf(1.0, float(enemy.get("max_hp", 1))), 0.0, 1.0), hp_bar.size.y)), COLORS.red)
+		cursor_y += 51.0
+		var footprint := int(enemy.get("footprint", 1))
+		_draw_label("%s  ·  %s" % ["Large %d×%d" % [footprint, footprint] if footprint > 1 else "Standard", String(enemy.get("kind", "enemy")).capitalize()], content_x, cursor_y, 9, COLORS.muted)
+		cursor_y += 17.0
+		var damage_type := String(enemy.get("damage_type", "Blunt"))
+		_draw_label("Attack  %d–%d  ·  %s" % [int(enemy.get("min_damage", enemy.get("damage", 0))), int(enemy.get("max_damage", enemy.get("damage", 0))), damage_type], content_x, cursor_y, 9, COLORS.text)
+		cursor_y += 17.0
+		var resistances: Dictionary = enemy.get("resist", {})
+		var vulnerabilities: Dictionary = enemy.get("vulnerable", enemy.get("vulnerabilities", {}))
+		_draw_label("Resist  %s" % (", ".join(resistances.keys()) if not resistances.is_empty() else "None"), content_x, cursor_y, 8, COLORS.cyan if not resistances.is_empty() else COLORS.muted)
+		cursor_y += 15.0
+		_draw_label("Vulnerable  %s" % (", ".join(vulnerabilities.keys()) if not vulnerabilities.is_empty() else "None"), content_x, cursor_y, 8, COLORS.gold if not vulnerabilities.is_empty() else COLORS.muted)
+		cursor_y += 16.0
+		var status_line := ", ".join(enemy.get("statuses", {}).keys()) if not enemy.get("statuses", {}).is_empty() else "Clear"
+		_draw_label("Effects  %s" % _fit_text(status_line, content_width - 50.0, 8), content_x, cursor_y, 8, COLORS.orange if status_line != "Clear" else COLORS.muted)
+		cursor_y += 18.0
 	else:
-		_draw_label(String(enemy.get("name", "Creature")), content_x, 300, 18, COLORS.red if enemy.faction in ["Undead", "Demons"] else COLORS.gold)
-		_draw_label("HP  %d / %d" % [enemy.get("hp", 0), enemy.get("max_hp", 1)], content_x, 328, 12, COLORS.text)
-		draw_rect(Rect2(content_x, 338, content_width, 7), Color("#202a30"))
-		draw_rect(Rect2(content_x, 338, content_width * clampf(float(enemy.get("hp", 0)) / maxf(1.0, float(enemy.get("max_hp", 1))), 0.0, 1.0), 7), COLORS.red)
-		_draw_label("%s  ·  %s" % ["Large 2×2" if int(enemy.get("footprint", 1)) > 1 else "Standard", String(enemy.get("faction", ""))], content_x, 365, 10, COLORS.muted)
-		_draw_label("Attack  %d  ·  %s" % [int(enemy.get("damage", 0)), String(enemy.get("damage_type", ""))], content_x, 385, 10, COLORS.text)
-		_draw_label("Resist  %s" % (", ".join(enemy.get("resist", {}).keys()) if not enemy.get("resist", {}).is_empty() else "None"), content_x, 405, 9, COLORS.cyan if not enemy.get("resist", {}).is_empty() else COLORS.muted)
-		var status_line := "Clear"
-		if not enemy.get("statuses", {}).is_empty():
-			status_line = ", ".join(enemy.statuses.keys())
-		_draw_label("Effects  %s" % status_line, content_x, 426, 9, COLORS.orange if status_line != "Clear" else COLORS.muted)
-		feed_start = 451.0
-	_draw_label("RECENT EVENTS  ·  VIEW HISTORY ›", content_x, feed_start, 9, COLORS.gold)
-	active_hits.append({"rect": _touch_hit_rect(Rect2(content_x, feed_start - 11, content_width, 22)), "action": {"type": "open_combat_history"}})
+		_draw_label("OBJECTIVE", content_x, cursor_y, 9, COLORS.gold)
+		cursor_y += 17.0
+		for line in _wrap(sim.get_objective_text(), maxi(18, int(content_width / 7.0))).slice(0, 2):
+			_draw_label(String(line), content_x, cursor_y, 10, COLORS.text)
+			cursor_y += 15.0
+		_draw_label("ENCOUNTER  ·  %d / 6" % [int(sim.run.stage_index) + 1], content_x, cursor_y + 3.0, 9, COLORS.gold)
+		cursor_y += 20.0
+		_draw_label("%d hostiles  ·  %d XP  ·  Level %d" % [sim._hostile_count(), int(sim.run.xp), int(sim.run.level)], content_x, cursor_y, 8, COLORS.muted)
+		cursor_y += 22.0
 	var feed: Array = presentation_history if playback_active else sim.run.get("combat_history", [])
-	for i in range(mini(6, feed.size())):
+	var can_show_next: bool = bool(sim.run.get("stage_completed", false))
+	var reserved_bottom := 14.0 + (44.0 if can_show_next else 0.0)
+	var feed_capacity := maxi(0, int((rect.end.y - reserved_bottom - cursor_y - 30.0) / 14.0))
+	var event_count := mini(mini(6, feed.size()), feed_capacity)
+	var feed_start := maxf(cursor_y + 8.0, rect.end.y - reserved_bottom - (event_count * 14.0) - 26.0)
+	if feed_start + 18.0 < rect.end.y - reserved_bottom:
+		_draw_label("RECENT EVENTS  ·  VIEW HISTORY ›", content_x, feed_start, 8, COLORS.gold)
+		active_hits.append({"rect": _touch_hit_rect(Rect2(content_x, feed_start - 12.0, content_width, 22.0)), "action": {"type": "open_combat_history"}})
+	for i in range(event_count):
 		var event: Dictionary = feed[feed.size() - 1 - i]
-		_draw_label(_fit_text(_format_combat_event(event), content_width, 8), content_x, feed_start + 20 + i * 15, 8, COLORS.gold if event.get("type", "") in ["LevelUp", "XPGranted", "KillCredit"] else COLORS.text if i == 0 else COLORS.muted)
-	var transition_ready: bool = sim.run.get("stage_completed", false)
-	var transition_action := {"type": "next_stage"} if transition_ready else {"type": "overlay", "id": "map"}
-	_draw_button(Rect2(content_x, 560, content_width, 50), "%s" % ("NEXT STAGE" if transition_ready and sim.run.get("stage_index", 0) < 5 else "VICTORY" if sim.run.get("outcome") == "victory" else "ROUTE MAP"), transition_action, transition_ready, 12)
+		_draw_label(_fit_text(_format_combat_event(event), content_width, 8), content_x, feed_start + 18.0 + i * 14.0, 8, COLORS.gold if event.get("type", "") in ["LevelUp", "XPGranted", "KillCredit"] else COLORS.text if i == 0 else COLORS.muted)
+	if can_show_next:
+		var button_y := rect.end.y - 49.0
+		var transition_action := {"type": "next_stage"}
+		_draw_button(Rect2(content_x, button_y, content_width, 39.0), "NEXT STAGE  ›" if int(sim.run.get("stage_index", 0)) < 5 else "VICTORY", transition_action, true, 10, COLORS.green)
 
 func _draw_side_controls() -> void:
-	_draw_label("GOAL  ·  REACH THE TYRANT", 22, 484, 11, COLORS.gold)
-	_draw_label("PATH  %d / 5 ENCOUNTERS" % mini(int(sim.run.get("stage_index", 0)), 5), 22, 504, 10, COLORS.muted)
-	_draw_dpad_button(Rect2(98, 510, TOUCH_TARGET, TOUCH_TARGET), "▲", Vector2i(0, -1))
-	_draw_dpad_button(Rect2(38, 570, TOUCH_TARGET, TOUCH_TARGET), "◀", Vector2i(-1, 0))
-	_draw_dpad_button(Rect2(98, 570, TOUCH_TARGET, TOUCH_TARGET), "▼", Vector2i(0, 1))
-	_draw_dpad_button(Rect2(158, 570, TOUCH_TARGET, TOUCH_TARGET), "▶", Vector2i(1, 0))
+	if OS.get_name() != "Android":
+		return
+	var layout := _battle_layout()
+	var dpad_y := float(layout.battle_bottom) - 162.0
+	var dpad_x := 18.0 + (216.0 - 162.0) * 0.5
+	_draw_dpad_button(Rect2(dpad_x + 54.0, dpad_y, 54.0, 54.0), "▲", Vector2i(0, -1))
+	_draw_dpad_button(Rect2(dpad_x, dpad_y + 54.0, 54.0, 54.0), "◀", Vector2i(-1, 0))
+	_draw_dpad_button(Rect2(dpad_x + 54.0, dpad_y + 54.0, 54.0, 54.0), "▼", Vector2i(0, 1))
+	_draw_dpad_button(Rect2(dpad_x + 108.0, dpad_y + 54.0, 54.0, 54.0), "▶", Vector2i(1, 0))
 
 func _draw_action_bar() -> void:
-	_draw_panel(Rect2(18, 644, screen_size.x - 36, 148), "", COLORS.line)
-	var prompt := "MOVE  ·  WEAPON  ·  8 QUICK SLOTS  ·  WAITING NEVER ADVANCES TIME"
+	var layout := _battle_layout()
+	var action_x := float(layout.action_x)
+	var action_y := float(layout.toolbar_y)
+	var slot_width := float(layout.action_slot_width)
+	var end_turn_width := float(layout.action_end_width)
+	var gap := float(layout.action_gap)
+	var action_width := float(layout.action_width)
+	_draw_panel(Rect2(action_x - 10.0, action_y, action_width + 20.0, float(layout.toolbar_height)), "", COLORS.line)
+	var prompt := "COMBAT ACTIONS  ·  EQUIPPED ABILITIES AND ITEMS"
 	if playback_active: prompt = "PRESENTING  ·  %s" % _format_combat_event(current_presentation_event)
-	elif quickbar_assign_mode: prompt = "ASSIGNING  ·  TAP AN ACTION SLOT TO PLACE %s" % String(quickbar_pending.get("id", "")).replace("_", " ").to_upper()
+	elif quickbar_assign_mode: prompt = "ASSIGNING  ·  TAP A SLOT FOR %s" % _quick_action_name(String(quickbar_pending.get("type", "")), String(quickbar_pending.get("id", ""))).to_upper()
 	elif target_mode != "": prompt = "TARGETING  ·  %s  ·  TAP THE ACTION AGAIN, BACK OR × TO CANCEL" % _target_action_name()
-	_draw_label(prompt, 32, 661, 9, COLORS.gold if target_mode != "" or playback_active or quickbar_assign_mode else COLORS.muted)
-	var y := 674.0
-	var h := 70.0
-	var x := 28.0
-	_draw_action_icon_slot(Rect2(x, y, 66, h), _ui_glyph("move"), "MOVE", "100", {"type": "target_mode", "mode": "move"}, target_mode == "move", COLORS.cyan)
-	x += 70
+	_draw_label(_fit_text(prompt, action_width - 18.0, 8), action_x, action_y + 12.0, 8, COLORS.gold if target_mode != "" or playback_active or quickbar_assign_mode else COLORS.muted)
+	var y := action_y + 18.0
+	var h := 62.0
+	var x := action_x
+	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("move"), "MOVE", "100", {"type": "target_mode", "mode": "move"}, target_mode == "move", COLORS.cyan)
+	x += slot_width + gap
 	var weapon_id: String = sim.run.equipment.get("Weapon", "sword")
 	var weapon: Dictionary = sim.content.weapons.get(weapon_id, sim.content.weapons.get("sword", {}))
-	_draw_action_icon_slot(Rect2(x, y, 66, h), _ui_glyph("attack"), "ATTACK", "%d STA" % int(weapon.get("stamina", 0)), {"type": "target_mode", "mode": "attack"}, target_mode == "attack", COLORS.gold)
-	x += 72
+	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("attack"), _fit_text(String(weapon.get("name", "Weapon")), slot_width - 6.0, 8).to_upper(), "%d STA" % int(weapon.get("stamina", 0)), {"type": "target_mode", "mode": "attack"}, target_mode == "attack", COLORS.gold)
+	x += slot_width + gap
 	for slot_index in range(8):
 		var assignment: Dictionary = sim.run.get("quickbar", [])[slot_index] if sim.run.get("quickbar", []).size() > slot_index else {"type": "empty", "id": ""}
-		_draw_quickbar_slot(Rect2(x, y, 68, h), slot_index, assignment)
-		x += 72
-	if target_mode != "":
-		_draw_utility_slot(Rect2(x, y, 54, h), "cancel", "CANCEL", {"type": "cancel_target"}, COLORS.orange)
-	else:
-		_draw_utility_slot(Rect2(x, y, 54, h), "more", "MORE", {"type": "open_action_palette"}, COLORS.cyan)
-	x += 60
-	for utility in [["pack", "PACK", "inventory", COLORS.gold], ["web", "WEB", "abilities", COLORS.cyan], ["map", "MAP", "map", COLORS.green], ["codex", "CODEX", "codex", COLORS.purple]]:
-		_draw_utility_slot(Rect2(x, y, 52, h), String(utility[0]), String(utility[1]), {"type": "overlay", "id": String(utility[2])}, Color(utility[3]))
-		x += 60
-	_draw_action_icon_slot(Rect2(x, y, 72, h), _ui_glyph("wait"), "END", "TURN", {"type": "wait"}, false, COLORS.green)
-	x += 78
-	for speed in ["Normal", "Fast", "Instant"]:
-		var speed_glyph := "1×" if speed == "Normal" else "2×" if speed == "Fast" else "Ⅱ"
-		_draw_action_icon_slot(Rect2(x, y, 50, h), speed_glyph, speed.substr(0, 1).to_upper(), "", {"type": "playback_speed", "mode": speed}, playback_mode == speed, COLORS.gold if playback_mode == speed else COLORS.line)
-		x += 56
-	if playback_active:
-		_draw_action_icon_slot(Rect2(x, y, 54, h), "▶▶", "SKIP", "", {"type": "playback_skip"}, false, COLORS.orange)
+		_draw_quickbar_slot(Rect2(x, y, slot_width, h), slot_index, assignment)
+		x += slot_width + gap
+	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("wait"), "WAIT", "100", {"type": "wait"}, false, COLORS.muted)
+	x += slot_width + gap
+	if target_mode != "" and not playback_active:
+		_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("cancel"), "CANCEL", "", {"type": "cancel_target"}, false, COLORS.orange)
+		x += slot_width + gap
+	var end_action := {"type": "playback_skip"} if playback_active else {"type": "end_turn"}
+	_draw_end_turn_slot(Rect2(x, y, end_turn_width, h), end_action, playback_active)
+
+func _quick_action_name(action_type: String, action_id: String) -> String:
+	if action_type == "ability":
+		return String(sim.content.abilities.get(action_id, {}).get("name", action_id))
+	if action_type == "item":
+		return String(sim.content.items.get(action_id, {}).get("name", action_id))
+	return action_id.replace("_", " ").capitalize()
 
 func _draw_action_icon_slot(rect: Rect2, glyph: String, label: String, detail: String, action: Dictionary, active: bool, accent: Color) -> void:
-	var fill := Color("#18352d") if active else Color("#0d1722")
+	var fill := Color("#17342d") if active else Color("#0c151e")
 	draw_rect(rect, fill)
-	draw_rect(Rect2(rect.position.x, rect.position.y, rect.size.x, 3), accent)
-	draw_rect(rect, COLORS.gold if active else COLORS.line_soft, false, 1.4 if active else 1.0)
-	draw_circle(Vector2(rect.get_center().x, rect.position.y + 24), minf(17.0, rect.size.x * 0.32), Color(accent.r, accent.g, accent.b, 0.12))
-	_draw_label(glyph, rect.get_center().x, rect.position.y + 31, 21 if rect.size.x > 42 else 15, accent, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(label, rect.get_center().x, rect.position.y + 52, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
-	if detail != "": _draw_label(detail, rect.get_center().x, rect.position.y + 65, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	draw_rect(Rect2(rect.position.x + 3.0, rect.position.y + 2.0, rect.size.x - 6.0, 2.0), accent)
+	draw_rect(rect, COLORS.gold if active else COLORS.line, false, 2.2 if active else 1.0)
+	draw_circle(Vector2(rect.get_center().x, rect.position.y + 22.0), minf(17.0, rect.size.x * 0.28), Color(accent.r, accent.g, accent.b, 0.13))
+	_draw_label(glyph, rect.get_center().x, rect.position.y + 28.0, 20, accent, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label(_fit_text(label, rect.size.x - 6.0, 8), rect.get_center().x, rect.position.y + 43.0, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+	if detail != "": _draw_label(_fit_text(detail, rect.size.x - 6.0, 7), rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 	active_hits.append({"rect": _touch_hit_rect(rect), "action": action})
 
 func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -> void:
@@ -862,43 +963,48 @@ func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -
 	var accent := COLORS.line
 	var action := {"type": "quickbar_slot", "index": slot_index}
 	var enabled := true
+	var selected_action := false
 	if kind == "ability" and sim.content.abilities.has(action_id):
 		var ability: Dictionary = sim.content.abilities[action_id]
 		glyph = _ability_glyph(ability)
-		label = _fit_text(String(ability.get("name", action_id)), 54, 7)
+		label = _fit_text(String(ability.get("name", action_id)), rect.size.x - 6.0, 8)
 		detail = _cost_text(ability.get("costs", {}))
 		accent = _school_color(String(ability.get("school", "")))
 		enabled = sim._can_pay(ability.get("costs", {}))
+		selected_action = target_mode == action_id
 		action = {"type": "quickbar_slot", "index": slot_index}
 	elif kind == "item" and sim.content.items.has(action_id):
 		var item: Dictionary = sim.content.items[action_id]
 		var item_count := int(sim.run.inventory.count(action_id))
 		glyph = _item_glyph(action_id, item)
-		label = _fit_text(String(item.get("name", action_id)), 54, 7) if item_count > 0 else "EMPTY"
+		label = _fit_text(String(item.get("name", action_id)), rect.size.x - 6.0, 8) if item_count > 0 else "EMPTY"
 		detail = "×%d" % item_count
-		accent = COLORS.orange if item_count > 0 else COLORS.line
+		accent = _item_color(String(item.get("type", "item")), String(item.get("rarity", "Common"))) if item_count > 0 else COLORS.line
 		enabled = item_count > 0
-	if quickbar_assign_mode and action_id == String(quickbar_pending.get("id", "")) and kind == String(quickbar_pending.get("type", "")):
+	if quickbar_assign_mode:
+		selected_action = true
 		accent = COLORS.gold
-	var fill := Color("#131f28") if enabled else Color("#0a1015")
+	var fill := Color("#1a392e") if selected_action else Color("#121e28") if enabled else Color("#0a1015")
 	draw_rect(rect, fill)
-	draw_rect(Rect2(rect.position.x, rect.position.y, rect.size.x, 3), accent)
-	draw_rect(rect, COLORS.gold if quickbar_assign_mode else COLORS.line_soft, false, 1.5 if quickbar_assign_mode else 1.0)
-	_draw_label(glyph, rect.get_center().x, rect.position.y + 33, 24, accent if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(_fit_text(label, rect.size.x - 4, 7), rect.get_center().x, rect.position.y + 52, 7, COLORS.text if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	if detail != "": _draw_label(_fit_text(detail, rect.size.x - 4, 7), rect.get_center().x, rect.position.y + 66, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(str(slot_index + 1), rect.position.x + 5, rect.position.y + 12, 7, COLORS.gold)
+	draw_rect(Rect2(rect.position.x + 3.0, rect.position.y + 2.0, rect.size.x - 6.0, 2.0), accent)
+	draw_rect(rect, COLORS.gold if selected_action else COLORS.line_soft, false, 2.2 if selected_action else 1.0)
+	_draw_label(glyph, rect.get_center().x, rect.position.y + 28.0, 20, accent if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label(_fit_text(label, rect.size.x - 6.0, 8), rect.get_center().x, rect.position.y + 43.0, 8, COLORS.text if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	if detail != "": _draw_label(_fit_text(detail, rect.size.x - 6.0, 7), rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label(str(slot_index + 1), rect.position.x + 5.0, rect.position.y + 12.0, 7, COLORS.gold)
 	active_hits.append({"rect": _touch_hit_rect(rect), "action": {"type": "quickbar_slot", "index": slot_index}})
 
 func _draw_action_slot(rect: Rect2, glyph: String, label: String, detail: String, action: Dictionary, active: bool, accent: Color) -> void:
-	var fill := Color("#18352d") if active else Color("#0d1722")
-	draw_rect(rect, fill)
-	draw_rect(Rect2(rect.position.x, rect.position.y, rect.size.x, 3), accent)
-	draw_rect(rect, accent if active else COLORS.line_soft, false, 1.2)
-	draw_circle(Vector2(rect.get_center().x, rect.position.y + 25), 16, Color(accent.r, accent.g, accent.b, 0.12))
-	_draw_label(glyph, rect.get_center().x, rect.position.y + 31, 22, accent, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(_fit_text(label.to_upper(), rect.size.x - 4, 8), rect.get_center().x, rect.position.y + 52, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(_fit_text(detail, rect.size.x - 4, 7), rect.get_center().x, rect.position.y + 66, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_action_icon_slot(rect, glyph, label, detail, action, active, accent)
+
+func _draw_end_turn_slot(rect: Rect2, action: Dictionary, skip: bool) -> void:
+	var accent := COLORS.orange if skip else COLORS.green
+	draw_rect(rect, Color("#17392b") if not skip else Color("#38251d"))
+	draw_rect(rect, accent, false, 2.0)
+	draw_rect(Rect2(rect.position.x + 4.0, rect.position.y + 4.0, rect.size.x - 8.0, rect.size.y - 8.0), Color(accent.r, accent.g, accent.b, 0.08), false, 1.0)
+	_draw_label("▶▶" if skip else "↓", rect.get_center().x, rect.position.y + 29.0, 21, accent, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label("SKIP" if skip else "END TURN", rect.get_center().x, rect.position.y + 44.0, 9, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label("" if skip else "100", rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 	active_hits.append({"rect": _touch_hit_rect(rect), "action": action})
 
 func _draw_utility_slot(rect: Rect2, icon_key: String, label: String, action: Dictionary, accent: Color) -> void:
@@ -917,14 +1023,10 @@ func _draw_overlay() -> void:
 	var rect := Rect2(100, 61, 1240, 690)
 	_draw_panel(rect, "", COLORS.gold)
 	overlay_hit_start = active_hits.size()
-	if overlay == "inventory":
-		_draw_inventory(rect)
-	elif overlay == "abilities":
+	if overlay == "abilities":
 		_draw_abilities(rect)
 	elif overlay == "action_palette":
 		_draw_action_palette(rect)
-	elif overlay == "map":
-		_draw_map(rect)
 	elif overlay == "rewards":
 		_draw_rewards(rect)
 	elif overlay == "codex":
@@ -965,121 +1067,6 @@ func _draw_combat_history(rect: Rect2) -> void:
 	_draw_button(Rect2(145, 686, 125, TOUCH_TARGET), "‹ OLDER", {"type": "combat_history_page", "delta": -1}, combat_history_page > 0, 10)
 	_draw_label("PAGE %d / %d" % [combat_history_page + 1, page_count], 720, 720, 10, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
 	_draw_button(Rect2(1118, 686, 170, TOUCH_TARGET), "NEWER ›", {"type": "combat_history_page", "delta": 1}, combat_history_page < page_count - 1, 10)
-
-func _draw_inventory(rect: Rect2) -> void:
-	_draw_label("INVENTORY  /  EQUIPMENT", 131, 103, 20, COLORS.text)
-	_draw_label("A compact pack, worn gear and contextual item actions", 132, 127, 12, COLORS.muted)
-	_draw_panel(Rect2(124, 150, 280, 546), "EQUIPMENT  ·  3 × 3", COLORS.line_soft)
-	var slots: Array = ["Head", "Body", "Hands", "Feet", "Weapon", "Offhand", "Ring 1", "Ring 2", "Amulet"]
-	for i in range(slots.size()):
-		var slot: String = slots[i]
-		var item_id: String = sim.run.equipment.get(slot, "")
-		var item: Dictionary = sim.content.items.get(item_id, {})
-		var slot_rect := Rect2(136 + (i % 3) * 87, 190 + int(i / 3) * 91, 82, 82)
-		var occupied := item_id not in ["", "occupied"]
-		_draw_panel(slot_rect, "", COLORS.gold if occupied else COLORS.line_soft)
-		_draw_label(slot.to_upper(), slot_rect.get_center().x, slot_rect.position.y + 14, 8, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
-		_draw_label("⊕" if item_id == "occupied" else _item_glyph(item_id, item) if occupied else "·", slot_rect.get_center().x, slot_rect.position.y + 48, 22, COLORS.cyan if item_id == "occupied" else COLORS.gold if occupied else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-		var slot_item_name := "Two-hand" if item_id == "occupied" else String(item.get("name", "Empty"))
-		_draw_label(_fit_text(slot_item_name, 74, 8), slot_rect.get_center().x, slot_rect.position.y + 72, 8, COLORS.text if occupied else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-		if occupied:
-			active_hits.append({"rect": _touch_hit_rect(slot_rect), "action": {"type": "unequip", "slot": slot}})
-	_draw_label("Tap worn gear to unequip", 136, 496, 10, COLORS.muted)
-	_draw_panel(Rect2(414, 150, 514, 546), "PACK  ·  %d / 30" % sim.run.inventory.size(), COLORS.line_soft)
-	for i in range(30):
-		var item_rect := Rect2(425 + (i % 6) * 80, 190 + int(i / 6) * 82, 75, 75)
-		if i >= sim.run.inventory.size():
-			_draw_panel(item_rect, "", Color("#18232c"))
-			continue
-		var item_id: String = sim.run.inventory[i]
-		var item: Dictionary = sim.content.items.get(item_id, {})
-		var rarity := String(item.get("rarity", "Common"))
-		var rarity_color := COLORS.purple if rarity in ["Rare", "Epic", "Legendary"] else COLORS.gold if rarity == "Uncommon" else COLORS.line_soft
-		var active := selected_inventory_index == i
-		_draw_panel(item_rect, "", COLORS.gold if active else rarity_color)
-		_draw_label(_item_glyph(item_id, item), item_rect.get_center().x, item_rect.position.y + 45, 27, _item_color(String(item.get("type", "item")), rarity), HORIZONTAL_ALIGNMENT_CENTER)
-		_draw_label("✦" if rarity in ["Rare", "Epic", "Legendary"] else "·", item_rect.position.x + 7, item_rect.position.y + 14, 10, rarity_color)
-		_draw_label(_fit_text(String(item.get("name", item_id)), item_rect.size.x - 8, 8), item_rect.get_center().x, item_rect.position.y + 68, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
-		active_hits.append({"rect": _touch_hit_rect(item_rect), "action": {"type": "select_item", "index": i}})
-	_draw_panel(Rect2(940, 150, 373, 546), "ITEM DETAILS", COLORS.line_soft)
-	if selected_inventory_index >= 0 and selected_inventory_index < sim.run.inventory.size():
-		var selected_id: String = sim.run.inventory[selected_inventory_index]
-		var selected: Dictionary = sim.content.items.get(selected_id, {})
-		_draw_label(_fit_text(String(selected.get("name", selected_id)), 332, 17), 960, 202, 17, COLORS.text)
-		_draw_label("%s  ·  %s" % [String(selected.get("type", "item")).capitalize(), String(selected.get("rarity", "Common"))], 960, 226, 11, COLORS.cyan if selected.get("type") == "spellbook" else COLORS.gold)
-		var detail_y := 260.0
-		for line in _wrap(String(selected.get("description", "A useful object from the March.")), 39).slice(0, 3):
-			_draw_label(String(line), 960, detail_y, 10, COLORS.muted)
-			detail_y += 17.0
-		if selected.get("type") == "equipment":
-			_draw_label("EQUIPMENT  ·  %s" % selected.get("slot", ""), 960, 321, 11, COLORS.gold)
-			if selected.has("weapon"):
-				var weapon: Dictionary = sim.content.weapons.get(selected.weapon, {})
-				_draw_label("%d %s damage  ·  %d reach" % [weapon.get("damage", 0), weapon.get("type", ""), weapon.get("range", 1)], 960, 348, 11, COLORS.text)
-				_draw_label("%d action  ·  %d Stamina  ·  %d hand%s" % [weapon.get("time", 0), weapon.get("stamina", 0), weapon.get("hands", 1), "s" if weapon.get("hands", 1) != 1 else ""], 960, 372, 10, COLORS.muted)
-			elif int(selected.get("armor", 0)) > 0:
-				_draw_label("Armor  ·  %d" % int(selected.armor), 960, 348, 11, COLORS.text)
-		elif selected.get("type") == "consumable":
-			_draw_label("USE  ·  %s" % String(selected.get("effect", "item")).replace("_", " ").capitalize(), 960, 321, 11, COLORS.orange)
-		elif selected.get("type") == "spellbook":
-			_draw_spellbook_inventory_details(selected, selected_inventory_index, 960)
-		var primary_label := "EQUIP" if selected.get("type") == "equipment" else "STUDY" if selected.get("type") == "spellbook" else "USE ITEM"
-		var primary_action := "equip" if selected.get("type") == "equipment" else "study_book" if selected.get("type") == "spellbook" else "use_item"
-		var study_ready := true
-		if selected.get("type") == "spellbook":
-			var study_options: Dictionary = sim.get_spellbook_options(selected_inventory_index)
-			study_ready = not study_options.get("resolved", false) and (study_options.get("mode") != "choose" or selected_book_abilities.size() == int(study_options.get("choice_count", 0)))
-		var quick_usable: bool = String(selected.get("type", "")) in ["consumable", "scroll"]
-		if quick_usable:
-			_draw_button(Rect2(958, 620, 102, TOUCH_TARGET), "USE", {"type": primary_action}, true, 10, COLORS.green)
-			var item_assigned := _is_quickbar_assigned("item", selected_id)
-			_draw_button(Rect2(1068, 620, 116, TOUCH_TARGET), "REMOVE" if item_assigned else "ADD BAR", {"type": "remove_quickbar_assignment" if item_assigned else "begin_quickbar_assignment", "kind": "item", "id": selected_id}, item_assigned, 9, COLORS.gold)
-			_draw_button(Rect2(1192, 620, 102, TOUCH_TARGET), "DISCARD", {"type": "discard"}, false, 9, COLORS.red)
-		else:
-			if study_ready:
-				_draw_button(Rect2(958, 620, 164, TOUCH_TARGET), primary_label, {"type": primary_action}, true, 11, COLORS.green)
-			else:
-				draw_rect(Rect2(958, 620, 164, TOUCH_TARGET), Color("#111922"))
-				draw_rect(Rect2(958, 620, 164, TOUCH_TARGET), COLORS.line_soft, false, 1)
-				_draw_label("CHOOSE %d / %d" % [selected_book_abilities.size(), int(sim.get_spellbook_options(selected_inventory_index).get("choice_count", 0))], 1040, 651, 10, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-			_draw_button(Rect2(1130, 620, 164, TOUCH_TARGET), "DISCARD", {"type": "discard"}, false, 11, COLORS.red)
-	else:
-		_draw_label("Select a square slot to inspect the item and its available action.", 960, 210, 12, COLORS.muted)
-		_draw_label("ARTIFACTS", 960, 278, 10, COLORS.gold)
-		var artifacts_text := ", ".join(_artifact_names()) if not sim.run.artifacts.is_empty() else "None carried"
-		for line in _wrap(artifacts_text, 39):
-			_draw_label(line, 960, 301, 11, COLORS.text)
-	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 11)
-	_draw_label("Two-handed weapons reserve Offhand. Artifacts do not use pack slots.", 326, 741, 10, COLORS.muted)
-
-func _draw_spellbook_inventory_details(selected: Dictionary, inventory_index: int, x: float) -> void:
-	var options: Dictionary = sim.get_spellbook_options(inventory_index)
-	_draw_label("CONTENTS  ·  %s" % String(options.get("school", "Knowledge")).to_upper(), x, 321, 10, COLORS.purple)
-	var mode := String(options.get("mode", "all"))
-	var required := int(options.get("choice_count", 0))
-	if mode == "choose":
-		_draw_label("CHOOSE %d  ·  %d SELECTED" % [required, selected_book_abilities.size()], x, 343, 9, COLORS.gold)
-		var entries: Array = options.get("options", [])
-		for i in range(entries.size()):
-			var entry: Dictionary = entries[i]
-			var button_rect := Rect2(x - 2, 352 + i * 59, 344, 49)
-			var is_selected: bool = selected_book_abilities.has(i)
-			_draw_button(button_rect, ("✓  " if is_selected else "◇  ") + String(entry.name), {"type": "toggle_book_choice", "index": i}, is_selected, 10, COLORS.purple)
-			if entry.learned:
-				_draw_label("ALREADY KNOWN", button_rect.end.x - 8, button_rect.position.y + 44, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
-	elif mode == "all":
-		var offered_count: int = options.get("options", []).size()
-		_draw_label("STUDY TEACHES ALL %d OFFERED %s" % [offered_count, "ABILITY" if offered_count == 1 else "ABILITIES"], x, 344, 9, COLORS.gold)
-		var row := 0
-		for entry in options.get("options", []):
-			_draw_label("✦  %s" % String(entry.name), x + 4, 371 + row * 21, 10, COLORS.text)
-			row += 1
-	else:
-		_draw_label("STUDY UNLOCKS %s KNOWLEDGE" % String(options.get("school", "school")).to_upper(), x, 346, 10, COLORS.gold)
-	if options.get("resolved", false):
-		_draw_label("This copy has already been studied.", x, 435, 10, COLORS.muted)
-	elif options.get("consume_on_study", false):
-		_draw_label("The book is consumed after study. Contents are recorded in the Codex.", x, 558, 9, COLORS.muted)
 
 func _draw_abilities(rect: Rect2) -> void:
 	_draw_label("CHARACTER  /  ABILITY WEB", 131, 103, 20, COLORS.text)
@@ -1124,13 +1111,13 @@ func _draw_abilities(rect: Rect2) -> void:
 				continue
 			var source_rect: Rect2 = node_rects[parent_id]
 			if graph_rect.has_point(source_rect.get_center()) and graph_rect.has_point(target_rect.get_center()):
-				var connected: bool = selected_web_ability == String(node.id) or selected_web_ability == String(parent_id)
+				var connected: bool = ui_state.selected_ability_id == String(node.id) or ui_state.selected_ability_id == String(parent_id)
 				draw_line(source_rect.get_center(), target_rect.get_center(), COLORS.gold if connected else COLORS.line, 2.0 if connected else 1.0)
 	for node in visible_nodes:
 		var node_rect: Rect2 = node_rects[node.id]
 		if not graph_rect.intersects(node_rect):
 			continue
-		var selected_node: bool = selected_web_ability == node.id
+		var selected_node: bool = ui_state.selected_ability_id == node.id
 		var fill := Color("#19372d") if node.learned else Color("#193042") if node.learnable else Color("#17212a")
 		var accent := COLORS.gold if selected_node else COLORS.green if node.learned else COLORS.cyan if node.learnable else COLORS.line_soft
 		var node_center := node_rect.get_center()
@@ -1147,14 +1134,14 @@ func _draw_abilities(rect: Rect2) -> void:
 		active_hits.append({"rect": _touch_hit_rect(node_rect), "action": {"type": "select_web_node", "id": node.id}})
 	_draw_label("Roots radiate into prerequisite branches. Pan or zoom; the graph grows independently of this viewport.", 141, 665, 9, COLORS.muted)
 	_draw_panel(Rect2(948, 194, 365, 487), "ABILITY DETAILS", COLORS.line_soft)
-	var chosen_id := selected_web_ability
+	var chosen_id: String = ui_state.selected_ability_id
 	if chosen_id == "" or not sim.content.abilities.has(chosen_id):
 		for known_id in sim.run.known:
 			if sim.content.abilities.has(known_id):
 				chosen_id = String(known_id)
 				break
 	if chosen_id != "" and sim.content.abilities.has(chosen_id):
-		selected_web_ability = chosen_id
+		ui_state.selected_ability_id = chosen_id
 		var ability: Dictionary = sim.content.abilities[chosen_id]
 		var status: Dictionary = sim.get_ability_progress(chosen_id)
 		_draw_label(String(ability.name), 972, 244, 17, COLORS.text)
@@ -1253,44 +1240,6 @@ func _draw_action_palette(rect: Rect2) -> void:
 		var palette_assigned := _is_quickbar_assigned("ability", selected_ability)
 		_draw_button(Rect2(1128, 611, 164, TOUCH_TARGET), "REMOVE BAR" if palette_assigned else "ADD TO BAR", {"type": "remove_quickbar_assignment" if palette_assigned else "begin_quickbar_assignment", "kind": "ability", "id": selected_ability}, palette_assigned, 10, COLORS.gold)
 	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
-
-func _draw_map(rect: Rect2) -> void:
-	_draw_label("WORLD MAP  /  THE FRACTURED MARCH", 131, 103, 20, COLORS.text)
-	_draw_label("Each branch leads to a different fight, terrain and reward.", 132, 128, 13, COLORS.muted)
-	_draw_panel(Rect2(128, 158, 1185, 150), "YOUR ROUTE", COLORS.line_soft)
-	var route: Array = sim.run.get("route", [])
-	var nodes: Array = route.duplicate()
-	var node_x := 183.0
-	for i in range(6):
-		var node_stage: String = nodes[i] if i < nodes.size() else ""
-		var node_name := "Grave Tyrant" if node_stage == "grave_tyrant" or (node_stage == "" and i == 5) else "Encounter %d" % (i + 1)
-		if node_stage != "" and node_stage != "grave_tyrant":
-			node_name = sim.content.stages.get(node_stage, {}).get("name", node_name)
-		var fill := COLORS.green if i < int(sim.run.stage_index) else COLORS.gold if i == int(sim.run.stage_index) else Color("#526574")
-		draw_circle(Vector2(node_x, 227), 13, fill)
-		_draw_label(str(i + 1), node_x, 231, 10, COLORS.ink, HORIZONTAL_ALIGNMENT_CENTER)
-		_draw_label(String(node_name).substr(0, 17), node_x, 264, 11, COLORS.text if i <= int(sim.run.stage_index) else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-		if i < 5:
-			draw_line(Vector2(node_x + 16, 227), Vector2(node_x + 176, 227), COLORS.line, 2)
-		node_x += 215
-	_draw_panel(Rect2(128, 326, 1185, 300), "CHOOSE A DESTINATION", COLORS.line_soft)
-	if int(sim.run.stage_index) < 4:
-		for i in range(sim.run.route_choices.size()):
-			var stage_id: String = sim.run.route_choices[i]
-			var stage: Dictionary = sim.content.stages[stage_id]
-			var card := Rect2(157 + i * 563, 379, 518, 205)
-			_draw_panel(card, "", COLORS.line)
-			_draw_label(stage.name, card.position.x + 20, card.position.y + 34, 21, COLORS.text)
-			_draw_label(String(stage.subtitle), card.position.x + 20, card.position.y + 57, 14, COLORS.muted)
-			_draw_label("HOSTILES", card.position.x + 20, card.position.y + 84, 10, COLORS.gold)
-			_draw_label(", ".join(stage.enemies.map(func(id: String) -> String: return String(sim.content.enemies[id].name))), card.position.x + 20, card.position.y + 108, 13, COLORS.text)
-			_draw_label("TERRAIN  ·  %s" % ", ".join(stage.terrain.keys()), card.position.x + 20, card.position.y + 132, 11, COLORS.cyan)
-			_draw_button(Rect2(card.position.x + 17, card.position.y + 146, card.size.x - 34, TOUCH_TARGET), "TRAVEL HERE", {"type": "route", "id": stage_id}, true, 12)
-	else:
-		_draw_label("The final road leads to the Old Graveyard. The Grave Tyrant is waiting.", 176, 402, 17, COLORS.text)
-		_draw_label("Bring every spell, summon and weapon you have learned.", 176, 437, 14, COLORS.muted)
-		_draw_button(Rect2(175, 488, 470, 72), "ENTER THE BARROW", {"type": "boss"}, true, 17)
-	_draw_button(Rect2(129, 651, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
 
 func _draw_rewards(rect: Rect2) -> void:
 	_draw_label("ENCOUNTER COMPLETE", 131, 105, 23, COLORS.text)
@@ -1541,14 +1490,31 @@ func _is_wide_layout() -> bool:
 	return screen_size.x >= WIDE_LAYOUT_MIN_WIDTH
 
 func _board_origin() -> Vector2:
-	return BASE_BOARD_ORIGIN
+	return _battle_layout().board_rect.position
 
 func _tile_size() -> float:
-	return WIDE_TILE if _is_wide_layout() else BASE_TILE
+	return float(_battle_layout().tile)
 
 func _board_rect() -> Rect2:
-	var origin := _board_origin()
-	return Rect2(origin, Vector2(ArcanistSim.WIDTH * _tile_size(), ArcanistSim.HEIGHT * _tile_size()))
+	return _battle_layout().board_rect
+
+func _open_lower_panel(panel_id: String, toggle: bool = true) -> void:
+	if target_mode != "": _cancel_targeting()
+	overlay = ""
+	if toggle and ui_state.lower_dock_expanded and String(ui_state.active_lower_panel) == panel_id:
+		ui_state.lower_dock_expanded = false
+	else:
+		ui_state.active_lower_panel = panel_id
+		ui_state.lower_dock_expanded = true
+		if panel_id == "character" and String(ui_state.selected_ability_id) == "" and not sim.run.get("known", []).is_empty():
+			ui_state.selected_ability_id = String(sim.run.known[0])
+		if panel_id == "spellbook" and String(ui_state.selected_spellbook_id) == "":
+			for book_id in sim.run.get("inventory", []):
+				if sim.content.items.get(book_id, {}).get("type", "") == "spellbook":
+					ui_state.selected_spellbook_id = String(book_id)
+					ui_state.selected_inventory_index = int(sim.run.inventory.find(book_id))
+					break
+	queue_redraw()
 
 func _shift_active_hits(first_index: int, horizontal_delta: float) -> void:
 	if is_zero_approx(horizontal_delta):
@@ -1736,7 +1702,7 @@ func _handle_tap(point: Vector2) -> void:
 
 func _handle_action(action: Dictionary) -> void:
 	var action_type := String(action.get("type", ""))
-	if playback_active and action_type not in ["playback_speed", "playback_skip", "pause_menu", "close"]:
+	if playback_active and action_type not in ["playback_skip", "pause_menu", "close"]:
 		return
 	match String(action.get("type", "")):
 		"select_character":
@@ -1763,23 +1729,68 @@ func _handle_action(action: Dictionary) -> void:
 			page = "title"
 			overlay = "codex"
 		"overlay":
-			if target_mode != "": _cancel_targeting()
-			overlay = String(action.id)
-			selected_inventory_index = -1
-			selected_object_index = -1
-			selected_enemy = "" if action.id != "inspect" else selected_enemy
+			var overlay_id := String(action.id)
+			if overlay_id in ["map", "inventory", "spellbook"]:
+				if overlay_id == "map": _open_lower_panel("world_map")
+				elif overlay_id == "inventory": _open_lower_panel("inventory")
+				else: _open_lower_panel("spellbook")
+			elif overlay_id == "abilities":
+				_open_lower_panel("character")
+			elif overlay_id == "ability_web":
+				overlay = "abilities"
+				ui_state.lower_dock_expanded = false
+			elif overlay_id == "inspect":
+				selected_enemy = String(action.get("id", selected_enemy))
+				selected_object_index = -1
+				overlay = ""
+			else:
+				if target_mode != "": _cancel_targeting()
+				overlay = overlay_id
+				ui_state.selected_inventory_index = -1
+				selected_object_index = -1
+				selected_enemy = "" if overlay_id != "inspect" else selected_enemy
 			if overlay == "abilities":
 				var known: Array = sim.run.get("known", [])
-				selected_web_ability = String(known.back()) if not known.is_empty() else ""
-				ability_filter = String(sim.content.abilities.get(selected_web_ability, {}).get("school", "All"))
+				ui_state.selected_ability_id = String(known.back()) if not known.is_empty() else ""
+				ability_filter = String(sim.content.abilities.get(ui_state.selected_ability_id, {}).get("school", "All"))
 				ability_filter_page = 0
 				web_zoom = 0.86
-				_center_web_on(selected_web_ability)
+				_center_web_on(ui_state.selected_ability_id)
 			elif overlay == "action_palette":
 				palette_page = 0
 				palette_filter = "All"
 		"close":
-			overlay = "pause" if overlay == "exit_confirm" else "codex" if overlay == "codex_book" else ""
+			if overlay != "":
+				overlay = "pause" if overlay == "exit_confirm" else "codex" if overlay == "codex_book" else ""
+			else:
+				ui_state.lower_dock_expanded = false
+		"lower_panel":
+			_open_lower_panel(String(action.get("id", "world_map")))
+		"lower_character_tab":
+			ui_state.character_tab = String(action.get("id", "Abilities"))
+			ui_state.ability_page = 0
+		"lower_inventory_tab":
+			ui_state.inventory_tab = String(action.get("id", "Equipment"))
+			ui_state.inventory_page = 0
+		"lower_ability_page":
+			var total_abilities: int = sim.get_progression_graph().size() if ui_state.character_tab == "Known" else sim.run.get("known", []).size()
+			var page_count := maxi(1, int(ceil(float(total_abilities) / 4.0)))
+			ui_state.ability_page = posmod(int(ui_state.ability_page) + int(action.get("delta", 0)), page_count)
+		"inventory_page":
+			var page_count := maxi(1, int(ceil(float(sim.run.get("artifacts", []).size()) / 3.0)))
+			ui_state.inventory_page = posmod(int(ui_state.inventory_page) + int(action.get("delta", 0)), page_count)
+		"select_map_node":
+			ui_state.selected_map_node_id = String(action.get("id", ""))
+		"select_lower_ability":
+			var ability_id := String(action.get("id", ""))
+			ui_state.selected_ability_id = ability_id
+			if quickbar_pending_slot >= 0 and sim.assign_quickbar(quickbar_pending_slot, "ability", ability_id):
+				quickbar_pending_slot = -1
+				_show_notice("Action bar updated.")
+		"select_lower_book":
+			ui_state.selected_spellbook_id = String(action.get("id", ""))
+			ui_state.selected_inventory_index = int(sim.run.inventory.find(String(ui_state.selected_spellbook_id)))
+			selected_book_abilities.clear()
 		"pause_menu":
 			overlay = "pause"
 		"cancel_target":
@@ -1798,11 +1809,13 @@ func _handle_action(action: Dictionary) -> void:
 		"inspect":
 			selected_enemy = String(action.id)
 			selected_object_index = -1
-			overlay = "inspect"
+			overlay = ""
 		"dpad":
 			var pos: Vector2i = sim._pos(sim.get_player()) + Vector2i(int(action.direction[0]), int(action.direction[1]))
 			_commit_action(sim.act({"type": "move", "target": [pos.x, pos.y]}))
 		"wait":
+			_commit_action(sim.act({"type": "wait"}))
+		"end_turn":
 			_commit_action(sim.act({"type": "wait"}))
 		"quick_item":
 			var item_index := int(action.index)
@@ -1814,38 +1827,37 @@ func _handle_action(action: Dictionary) -> void:
 				target_mode = ""
 				_commit_action(sim.act({"type": "use_item", "index": item_index, "target": [-1, -1]}))
 		"use_item":
-			if selected_inventory_index >= 0:
-				var item_id: String = sim.run.inventory[selected_inventory_index]
+			if ui_state.selected_inventory_index >= 0:
+				var item_id: String = sim.run.inventory[ui_state.selected_inventory_index]
 				var item: Dictionary = sim.content.items[item_id]
 				if item.get("effect") == "bomb" or item.get("type") == "scroll":
-					_set_target_mode("item:%d" % selected_inventory_index)
+					_set_target_mode("item:%d" % ui_state.selected_inventory_index)
 					overlay = ""
 					_show_notice("Choose a visible target on the battlefield.")
 				else:
-					_commit_action(sim.act({"type": "use_item", "index": selected_inventory_index, "target": [-1, -1]}))
-					overlay = "inventory"
+					_commit_action(sim.act({"type": "use_item", "index": ui_state.selected_inventory_index, "target": [-1, -1]}))
 		"equip":
-			if sim.equip_item(selected_inventory_index):
-				selected_inventory_index = -1
+			if sim.equip_item(ui_state.selected_inventory_index):
+				ui_state.selected_inventory_index = -1
 				_show_notice("Equipment updated.")
 		"discard":
-			if sim.discard_item(selected_inventory_index):
-				selected_inventory_index = -1
+			if sim.discard_item(ui_state.selected_inventory_index):
+				ui_state.selected_inventory_index = -1
 				_show_notice("Item discarded.")
 		"unequip":
 			if sim.unequip_item(String(action.get("slot", ""))):
 				_show_notice("Equipment moved into the pack.")
 		"select_item":
-			selected_inventory_index = int(action.index)
+			ui_state.selected_inventory_index = int(action.index)
 			selected_book_abilities.clear()
 		"study_book":
-			var book_id: String = sim.run.inventory[selected_inventory_index] if selected_inventory_index >= 0 and selected_inventory_index < sim.run.inventory.size() else ""
-			if sim.study_spellbook(selected_inventory_index, selected_book_abilities):
+			var book_id: String = sim.run.inventory[ui_state.selected_inventory_index] if ui_state.selected_inventory_index >= 0 and ui_state.selected_inventory_index < sim.run.inventory.size() else ""
+			if sim.study_spellbook(ui_state.selected_inventory_index, selected_book_abilities):
 				var resolution: Dictionary = sim.run.spellbook_resolutions.get(book_id, {})
 				var chosen_names: Array[String] = []
 				for ability_id in resolution.get("abilities", []):
 					chosen_names.append(String(sim.content.abilities[ability_id].name))
-				selected_inventory_index = -1 if sim.content.items.get(book_id, {}).get("learning", {}).get("consume_on_study", false) else selected_inventory_index
+				ui_state.selected_inventory_index = -1 if sim.content.items.get(book_id, {}).get("learning", {}).get("consume_on_study", false) else ui_state.selected_inventory_index
 				selected_book_abilities.clear()
 				_show_notice("Knowledge recorded: %s." % (", ".join(chosen_names) if not chosen_names.is_empty() else "school unlocked"))
 		"toggle_book_choice":
@@ -1853,7 +1865,7 @@ func _handle_action(action: Dictionary) -> void:
 			if selected_book_abilities.has(option_index):
 				selected_book_abilities.erase(option_index)
 			else:
-				var book_options: Dictionary = sim.get_spellbook_options(selected_inventory_index)
+				var book_options: Dictionary = sim.get_spellbook_options(ui_state.selected_inventory_index)
 				var required_choices := int(book_options.get("choice_count", 0))
 				if selected_book_abilities.size() >= required_choices:
 					if required_choices == 1:
@@ -1863,24 +1875,27 @@ func _handle_action(action: Dictionary) -> void:
 						return
 				selected_book_abilities.append(option_index)
 		"select_web_node":
-			selected_web_ability = String(action.id)
+			ui_state.selected_ability_id = String(action.id)
 		"web_filter":
 			ability_filter = String(action.get("school", "All"))
-			var focus_id := sim.get_progression_focus_id(ability_filter) if ability_filter != "All" else selected_web_ability
-			if focus_id != "": selected_web_ability = focus_id
-			_center_web_on(focus_id if focus_id != "" else selected_web_ability)
+			var focus_id: String = sim.get_progression_focus_id(ability_filter) if ability_filter != "All" else ui_state.selected_ability_id
+			if focus_id != "": ui_state.selected_ability_id = focus_id
+			_center_web_on(focus_id if focus_id != "" else ui_state.selected_ability_id)
 		"web_filter_page":
 			ability_filter_page = maxi(0, ability_filter_page + int(action.get("delta", 0)))
 		"web_zoom":
 			_zoom_ability_web(float(action.get("factor", 1.0)), _ability_graph_rect().get_center())
 		"web_center":
-			_center_web_on(selected_web_ability)
+			_center_web_on(ui_state.selected_ability_id)
 		"web_center_root":
 			var root_school := ability_filter
-			if root_school == "All": root_school = String(sim.content.abilities.get(selected_web_ability, {}).get("school", ""))
+			if root_school == "All": root_school = String(sim.content.abilities.get(ui_state.selected_ability_id, {}).get("school", ""))
 			_center_web_on(sim.get_progression_root_id(root_school))
 		"open_action_palette":
-			overlay = "action_palette"
+			overlay = ""
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Known"
 			palette_page = 0
 			palette_filter = "All"
 			quickbar_pending_slot = int(action.get("slot", -1))
@@ -1914,16 +1929,15 @@ func _handle_action(action: Dictionary) -> void:
 						_commit_action(sim.act({"type": "use_item", "index": item_index, "target": [-1, -1]}))
 				else:
 					quickbar_pending_slot = slot_index
-					overlay = "action_palette"
-					palette_page = 0
-					palette_filter = "All"
+					ui_state.active_lower_panel = "character"
+					ui_state.lower_dock_expanded = true
+					ui_state.character_tab = "Known"
 		"begin_quickbar_assignment":
 			var assignment_type := String(action.get("kind", ""))
 			var assignment_id := String(action.get("id", ""))
 			if quickbar_pending_slot >= 0:
 				if sim.assign_quickbar(quickbar_pending_slot, assignment_type, assignment_id):
 					quickbar_pending_slot = -1
-					overlay = ""
 					_show_notice("Action bar updated.")
 			else:
 				quickbar_assign_mode = true
@@ -1957,12 +1971,12 @@ func _handle_action(action: Dictionary) -> void:
 			quickbar_page = posmod(quickbar_page + int(action.get("delta", 0)), page_count)
 		"route":
 			if sim.choose_route(String(action.id)):
-				overlay = ""
+				ui_state.lower_dock_expanded = false
 				selected_enemy = ""
 				selected_object_index = -1
 		"boss":
 			if sim.start_boss():
-				overlay = ""
+				ui_state.lower_dock_expanded = false
 				selected_enemy = ""
 				selected_object_index = -1
 		"next_stage":
@@ -1970,14 +1984,14 @@ func _handle_action(action: Dictionary) -> void:
 				page = "outcome"
 				overlay = ""
 			elif sim.run.get("stage_completed", false):
-				overlay = "map"
+				_open_lower_panel("world_map", false)
 		"claim_reward":
 			if sim.claim_reward(int(action.index)):
 				_show_notice("Your one reward choice is secured. You may keep exploring.")
 		"learn":
 			if sim.learn_ability(String(action.id)):
-				selected_web_ability = String(action.id)
-				_center_web_on(selected_web_ability)
+				ui_state.selected_ability_id = String(action.id)
+				_center_web_on(ui_state.selected_ability_id)
 				_show_notice("Ability learned.")
 		"codex_book":
 			codex_book_id = String(action.id)
@@ -1989,7 +2003,7 @@ func _handle_action(action: Dictionary) -> void:
 			else:
 				selected_enemy = entity_id
 				selected_object_index = -1
-				overlay = "inspect"
+				overlay = ""
 		"save":
 			sim.save_run()
 			_show_notice("Run saved.")
@@ -2067,7 +2081,7 @@ func _inspect_cell(cell: Vector2i, detailed: bool) -> void:
 	if not entity.is_empty():
 		selected_enemy = String(entity.id)
 		if detailed:
-			overlay = "inspect"
+			overlay = ""
 			_show_notice("Inspecting %s." % entity.name)
 		else:
 			_show_notice("%s · %d / %d HP" % [entity.name, entity.hp, entity.max_hp])
@@ -2093,10 +2107,6 @@ func _handle_key(event: InputEventKey) -> void:
 	if playback_active and event.keycode != KEY_ESCAPE:
 		if event.keycode == KEY_0:
 			_finish_presentation()
-		elif event.keycode == KEY_F:
-			playback_mode = "Fast"
-		elif event.keycode == KEY_N:
-			playback_mode = "Normal"
 		else:
 			return
 		queue_redraw()
@@ -2113,6 +2123,8 @@ func _handle_key(event: InputEventKey) -> void:
 			return
 		if target_mode != "":
 			_cancel_targeting()
+		elif ui_state.lower_dock_expanded:
+			ui_state.lower_dock_expanded = false
 		elif overlay == "exit_confirm":
 			overlay = "pause"
 		elif overlay != "":
@@ -2125,6 +2137,17 @@ func _handle_key(event: InputEventKey) -> void:
 		return
 	if page != "battle" or overlay != "":
 		return
+	if event.keycode == KEY_I:
+		_open_lower_panel("inventory")
+		return
+	if event.keycode == KEY_K:
+		_open_lower_panel("character")
+		return
+	if event.keycode == KEY_M:
+		_open_lower_panel("world_map")
+		return
+	if ui_state.lower_dock_expanded:
+		return
 	var direction := Vector2i.ZERO
 	if event.keycode in [KEY_W, KEY_UP]: direction = Vector2i(0, -1)
 	elif event.keycode in [KEY_S, KEY_DOWN]: direction = Vector2i(0, 1)
@@ -2135,12 +2158,6 @@ func _handle_key(event: InputEventKey) -> void:
 		_commit_action(sim.act({"type": "move", "target": [cell.x, cell.y]}))
 	elif event.keycode in [KEY_E, KEY_PERIOD, KEY_SPACE]:
 		_commit_action(sim.act({"type": "wait"}))
-	elif event.keycode == KEY_I:
-		overlay = "inventory"
-	elif event.keycode == KEY_K:
-		overlay = "abilities"
-	elif event.keycode == KEY_M:
-		overlay = "map"
 	elif event.keycode >= KEY_1 and event.keycode <= KEY_6:
 		var index := int(event.keycode - KEY_1)
 		var known: Array = sim.get_available_abilities()
@@ -2150,6 +2167,7 @@ func _handle_key(event: InputEventKey) -> void:
 
 func _commit_action(result: Dictionary) -> void:
 	if result.get("ok", false):
+		ui_state.lower_dock_expanded = false
 		pending_outcome_page = "outcome" if sim.run.get("outcome", "") != "" else ""
 		pending_outcome_overlay = "rewards" if sim.run.get("stage_completed", false) and sim.run.get("outcome", "") == "" else ""
 		var events: Array = result.get("presentation_events", [])
@@ -2457,6 +2475,21 @@ func _content_display_name(content_id: String) -> String:
 
 func _prepare_capture_scenario() -> void:
 	match capture_scenario:
+		"selected_enemy":
+			selected_enemy = _capture_adjacent_enemy()
+		"assign_ability":
+			var assignable_ability := "arcane_bolt"
+			if not sim.run.known.has(assignable_ability): sim.run.known.append(assignable_ability)
+			ui_state.selected_ability_id = assignable_ability
+			ui_state.character_tab = "Known"
+			ui_state.ability_page = int(sim.run.known.find(assignable_ability) / 4)
+			quickbar_assign_mode = true
+			quickbar_pending = {"type": "ability", "id": assignable_ability}
+		"assign_item":
+			ui_state.selected_inventory_index = 0
+			ui_state.inventory_tab = "Inventory"
+			quickbar_assign_mode = true
+			quickbar_pending = {"type": "item", "id": String(sim.run.inventory[0]) if not sim.run.inventory.is_empty() else "healing_potion"}
 		"quickbar_customized":
 			var actives: Array = sim.get_available_abilities()
 			var items: Array[String] = ["healing_potion", "mana_potion", "bomb", "fireball_scroll"]
@@ -2474,12 +2507,12 @@ func _prepare_capture_scenario() -> void:
 			var item_ids: Array = sim.content.items.keys()
 			while sim.run.inventory.size() < 30:
 				sim.run.inventory.append(String(item_ids[(sim.run.inventory.size() - 4) % item_ids.size()]))
-			selected_inventory_index = 29
+			ui_state.selected_inventory_index = 29
 		"selected_equipment":
 			sim.run.inventory.append("scale_armor")
-			selected_inventory_index = sim.run.inventory.size() - 1
-		"selected_consumable", "assign_item":
-			selected_inventory_index = 0
+			ui_state.selected_inventory_index = sim.run.inventory.size() - 1
+		"selected_consumable":
+			ui_state.selected_inventory_index = 0
 		"populated_history", "combat_history":
 			var capture_events: Array = [
 				{"sequence": 1, "type": "Move", "actor_name": "Mara, the Bloodless", "target_name": "", "details": {"from": [12, 8], "to": [13, 8]}},
@@ -2544,11 +2577,6 @@ func _capture_adjacent_enemy() -> String:
 		target_id = sim._spawn_enemy("skeleton", target_cell, false)
 	else:
 		sim.run.entities[target_id].pos = [target_cell.x, target_cell.y]
-	for entity_id in sim.run.entities:
-		if entity_id != "player" and entity_id != target_id:
-			sim.run.entities[entity_id].next_time = 100000
-	sim.get_player().next_time = 0
-	sim.run.entities[target_id].next_time = 0
 	return target_id
 
 func _capture_enemy_action() -> Dictionary:

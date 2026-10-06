@@ -44,6 +44,12 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Completing an objective does not force a transition. Let the player explore and collect rewards, then choose the next location.
 - Use [`docs/Project_Arcanist_UI_Reference.png`](docs/Project_Arcanist_UI_Reference.png) as the production visual direction: resource/status information, a large battlefield, turn order, contextual inspection, action costs, and compact inventory/build panels.
 - Make inventory and build screens contextual. Opening them may reorganize available space; closing them should return the battlefield to its largest practical layout.
+- Keep the production battle composition in three bands: compact character/resources at left, the largest practical battlefield in the center, and turn order plus contextual inspection at right. Tapping a visible enemy selects it and shows its details in the right panel.
+- Put routine management in one lower dock with four sections: World Map, Character / Abilities, Inventory / Equipment, and Spellbook / Discovery. Expand at most one section at a time; keep the other sections available as compact headers/summaries and collapse the dock to restore battlefield height.
+- Keep the ability web available as a dedicated large subview from Character / Abilities. Do not restore duplicate full-screen map or inventory interfaces beside the lower dock.
+- The battle action strip has fixed Move, Weapon, Wait, and End Turn actions plus exactly eight configurable slots between Weapon and Wait. Slots accept only learned active abilities and usable carried items. Show each action's resource and time cost; keep passive, unknown, and unassigned actions out of the configured slots.
+- Keep Normal/Fast/Instant playback options out of the ordinary battle HUD. Keep the movement D-pad Android-only; desktop movement uses the battlefield and standard desktop input.
+- For major UI work, inspect the canonical reference beside the production screen at 1920×1080 or larger in three logged visual passes. Record concrete layout defects and their fixes in `docs/PROMPT6_VISUAL_QA.md`.
 
 ## Production interaction contracts
 

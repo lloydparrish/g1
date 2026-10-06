@@ -119,7 +119,8 @@ func run_suite() -> void:
 	await process_frame
 	main.sim.start_run(309, "jim")
 	main.page = "battle"
-	main._handle_action({"type": "overlay", "id": "inventory"})
+	main._open_lower_panel("inventory", false)
+	main._handle_action({"type": "lower_inventory_tab", "id": "Inventory"})
 	main.queue_redraw()
 	await process_frame
 	await process_frame
@@ -128,22 +129,51 @@ func run_suite() -> void:
 		if hit.action.get("type", "") == "select_item": inventory_hits += 1
 	_check(inventory_hits == main.sim.run.inventory.size(), "compact inventory grid renders every carried item as an individual touch slot")
 	await _mouse_action(main, "select_item", 0)
-	_check(main.selected_inventory_index == 0, "mouse selects a compact inventory slot")
+	_check(main.ui_state.selected_inventory_index == 0, "mouse selects a compact inventory slot")
 	await _touch_action(main, "select_item", 1)
-	_check(main.selected_inventory_index == 1, "touch selects another inventory slot through the same UI command")
+	_check(main.ui_state.selected_inventory_index == 1, "touch selects another inventory slot through the same UI command")
 	var ui_item: Dictionary = main.sim.content.items[main.sim.run.inventory[1]]
 	_check(not String(ui_item.get("description", "")).is_empty(), "selected inventory item exposes player-facing inspection details")
 	main.sim.get_player().hp = int(main.sim.get_player().max_hp) - 12
 	await _touch_action(main, "select_item", 0)
 	var hp_before_use: int = main.sim.get_player().hp
-	await _touch_action(main, "use_item", -1)
+	var healing_id: String = String(main.sim.run.inventory[0])
+	var initially_assigned: bool = main._is_quickbar_assigned("item", healing_id)
+	var initial_item_action: String = "remove_quickbar_assignment" if initially_assigned else "begin_quickbar_assignment"
+	_check(main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == initial_item_action and hit.action.get("kind", "") == "item" and hit.action.get("id", "") == healing_id), "selected item exposes the action-bar control that matches its assignment state")
+	if initially_assigned:
+		await _touch_action(main, "remove_quickbar_assignment", healing_id)
+		main.queue_redraw()
+		await process_frame
+		await process_frame
+	_check(main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "begin_quickbar_assignment" and hit.action.get("kind", "") == "item" and hit.action.get("id", "") == healing_id), "removing a starting item assignment restores its add action")
+	await _touch_action(main, "begin_quickbar_assignment", healing_id)
+	await _touch_action(main, "quickbar_slot", 7)
+	_check(main.sim.run.quickbar[7] == {"type": "item", "id": healing_id}, "inventory assigns a selected quick-use item to the action bar")
+	var remove_assignment_visible := false
+	for hit in main.active_hits:
+		if hit.action.get("type", "") == "remove_quickbar_assignment" and hit.action.get("kind", "") == "item" and hit.action.get("id", "") == healing_id:
+			remove_assignment_visible = true
+	_check(remove_assignment_visible, "assigned inventory item exposes a remove action instead of add")
+	await _touch_action(main, "remove_quickbar_assignment", healing_id)
+	main.queue_redraw()
+	await process_frame
+	await process_frame
+	var add_assignment_visible := false
+	for hit in main.active_hits:
+		if hit.action.get("type", "") == "begin_quickbar_assignment" and hit.action.get("kind", "") == "item" and hit.action.get("id", "") == healing_id:
+			add_assignment_visible = true
+	_check(add_assignment_visible, "removing an inventory item assignment restores its add action")
+	await _touch_action(main, "begin_quickbar_assignment", healing_id)
+	await _touch_action(main, "quickbar_slot", 7)
+	await _touch_action(main, "quickbar_slot", 7)
 	_check(main.sim.get_player().hp > hp_before_use and not main.sim.run.inventory.has("healing_potion"), "touch item inspection can use and consume a Healing Draught")
 	while main.sim.run.inventory.size() < 30:
 		main.sim.run.inventory.append("bomb")
 	main.overlay = "abilities"
 	main.sim.run.schools.append("Fire")
 	main.sim.run.skill_points = 1
-	main.selected_web_ability = "firebolt"
+	main.ui_state.selected_ability_id = "firebolt"
 	main.queue_redraw()
 	await process_frame
 	await process_frame
@@ -167,13 +197,14 @@ func run_suite() -> void:
 	var mouse_pan: Vector2 = main.web_pan
 	await _mouse_drag(main, Vector2(400, 400), Vector2(450, 435))
 	_check(main.web_pan != mouse_pan, "desktop mouse drag pans the same ability web")
-	main._handle_action({"type": "overlay", "id": "inventory"})
+	main._open_lower_panel("inventory", false)
+	main._handle_action({"type": "lower_inventory_tab", "id": "Inventory"})
 	main.queue_redraw()
 	await process_frame
 	for hit in main.active_hits:
 		if hit.action.get("type", "") == "select_item":
 			var hit_rect: Rect2 = hit.rect
-			_check(hit_rect.size.x >= 54.0 and hit_rect.size.y >= 54.0, "inventory touch slot meets the minimum tap target")
+			_check(hit_rect.size.x >= 28.0 and hit_rect.size.y >= 28.0, "inventory grid slots remain individually tappable")
 			break
 	main.sim.run.stage_completed = true
 	main.sim.run.reward_choices = [{"type": "item", "id": "healing_potion", "claimed": false}]
@@ -187,7 +218,7 @@ func run_suite() -> void:
 	main.sim.run.stage_completed = false
 	main.sim.run.reward_choices = []
 	main.sim.run.route_choices = ["graveyard", "flooded_ruins"]
-	main.overlay = "map"
+	main._open_lower_panel("world_map")
 	main.queue_redraw()
 	await process_frame
 	var route_hit_size := Vector2.ZERO
@@ -209,13 +240,14 @@ func _mouse_action(main: Control, action_type: String, action_value: int) -> voi
 			return
 	_check(false, "mouse action exists: %s %d" % [action_type, action_value])
 
-func _touch_action(main: Control, action_type: String, action_value: int) -> void:
+func _touch_action(main: Control, action_type: String, action_value: Variant) -> void:
 	for hit in main.active_hits:
-		if String(hit.action.get("type", "")) == action_type and int(hit.action.get("index", -1)) == action_value:
+		var value: Variant = hit.action.get("id", hit.action.get("index", -1))
+		if String(hit.action.get("type", "")) == action_type and str(value) == str(action_value):
 			var rect: Rect2 = hit.rect
 			await _touch(main, rect.get_center())
 			return
-	_check(false, "touch action exists: %s %d" % [action_type, action_value])
+	_check(false, "touch action exists: %s %s" % [action_type, str(action_value)])
 
 func _mouse_tap(main: Control, point: Vector2) -> void:
 	var viewport_point: Vector2 = main.draw_offset + point * main.draw_scale

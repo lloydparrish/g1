@@ -64,24 +64,42 @@ func run_flow() -> void:
 	main.sim.run.reward_choices = [{"type": "item", "id": "scale_armor", "claimed": false}]
 	await _tap(main, Vector2(330, 466))
 	_check(main.sim.run.inventory.has("scale_armor"), "production reward control adds its item to the pack")
-	await _tap(main, Vector2(1299, 94))
-	await _tap_action(main, "overlay", "abilities")
+	await _tap_action(main, "close")
+	var dock_digest: String = main.sim.state_digest()
+	await _tap_action(main, "lower_panel", "world_map")
+	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "the world map expands inside the lower dock")
+	await _tap_action(main, "lower_panel", "character")
+	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "character", "the character section switches directly within the lower dock")
+	await _tap_action(main, "lower_panel", "inventory")
+	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "inventory", "inventory expands inside the lower dock")
+	await _tap_action(main, "lower_panel", "spellbook")
+	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "spellbook", "spellbook discovery expands inside the lower dock")
+	await _tap_action(main, "lower_panel", "spellbook")
+	_check(not main.ui_state.lower_dock_expanded and main.sim.state_digest() == dock_digest, "collapsing the dock returns to battle without advancing the simulation")
+	await _tap_action(main, "lower_panel", "character")
+	await _tap_action(main, "lower_character_tab", "Known")
 	if not main.sim.get_progression_graph().any(func(node: Dictionary) -> bool: return String(node.id) == "blink"):
 		_failures_hit("the opening build reveals Arcane mobility progression")
+	await _tap_lower_ability(main, "blink")
+	await _tap_action(main, "learn", "blink")
+	_check(main.sim.run.known.has("blink") and int(main.sim.run.skill_points) == 0, "Character / Abilities spends the first encounter point on a learnable ability")
+	await _tap_action(main, "lower_character_tab", "Character")
+	await _tap_action(main, "overlay", "ability_web")
+	_check(main.overlay == "abilities", "the expandable ability web remains available from Character / Abilities")
 	await _tap_action(main, "web_filter", "Arcane")
 	await _navigate_web_node(main, "blink")
 	await _tap_action(main, "select_web_node", "blink")
-	await _tap_action(main, "learn", "blink")
-	_check(main.sim.run.known.has("blink") and int(main.sim.run.skill_points) == 0, "production progression screen spends the first encounter point on an ability-web choice")
-	await _tap(main, Vector2(1299, 94))
+	_check(main.ui_state.selected_ability_id == "blink", "the ability web still supports selecting a progression node")
+	await _tap_action(main, "close")
 	var armor_index: int = main.sim.run.inventory.size() - 1
-	await _tap_action(main, "overlay", "inventory")
+	await _tap_action(main, "lower_panel", "inventory")
+	await _tap_action(main, "lower_inventory_tab", "Inventory")
 	await _tap_index_action(main, "select_item", armor_index)
 	await _tap_action(main, "equip")
-	_check(main.sim.run.equipment.get("Body", "") == "scale_armor", "production inventory equips the claimed armor")
-	await _tap(main, Vector2(1299, 94))
+	_check(main.sim.run.equipment.get("Body", "") == "scale_armor", "the lower inventory equips the claimed armor")
+	await _tap_action(main, "lower_panel", "inventory")
 	await _tap_action(main, "next_stage")
-	_check(main.overlay == "map", "NEXT STAGE opens the production route map")
+	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "NEXT STAGE expands the production route map")
 	var next_route: String = String(main.sim.run.route_choices[0])
 	await _tap_action(main, "route", next_route)
 	_check(main.sim.run.stage_index == 1 and main.sim.run.stage_id == next_route and not main.sim.get_visible_entities().is_empty(), "production route selection creates the later encounter")
@@ -90,7 +108,7 @@ func run_flow() -> void:
 	main.sim.run.stage_completed = true
 	main.sim.run.route_choices = []
 	await _tap_action(main, "next_stage")
-	_check(main.overlay == "map", "the world map opens again through its action bar")
+	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "the world map opens again through its action bar")
 	await _tap_action(main, "boss")
 	var tyrant_id := ""
 	for entity_id in main.sim.run.entities:
@@ -160,6 +178,19 @@ func _tap_delta_action(main: Control, action_type: String, delta: int) -> void:
 			await _tap(main, hit_rect.get_center())
 			return
 	_failures_hit("production paging control is drawn: %s %d" % [action_type, delta])
+
+func _tap_lower_ability(main: Control, ability_id: String) -> void:
+	var page_count: int = maxi(1, int(ceil(float(main.sim.get_progression_graph().size()) / 4.0)))
+	for _page in range(page_count):
+		main.queue_redraw()
+		await process_frame
+		await process_frame
+		for hit in main.active_hits:
+			if String(hit.action.get("type", "")) == "select_lower_ability" and String(hit.action.get("id", "")) == ability_id:
+				await _tap_action(main, "select_lower_ability", ability_id)
+				return
+		await _tap_delta_action(main, "lower_ability_page", 1)
+	_failures_hit("Character / Abilities lists the progression ability: %s" % ability_id)
 
 func active_hit_types(main: Control) -> Array[String]:
 	var labels: Array[String] = []

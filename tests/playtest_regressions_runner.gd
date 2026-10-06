@@ -146,12 +146,12 @@ func run_suite() -> void:
 	_check(main.target_mode == "", "Android Back request cancels targeting before opening any menu")
 
 	main.sim.run.inventory.append("lesser_key_of_ash")
-	var lesser_ui_index: int = main.sim.run.inventory.size() - 1
-	main._handle_action({"type": "overlay", "id": "inventory"})
+	main._handle_action({"type": "lower_panel", "id": "inventory"})
+	main._handle_action({"type": "lower_inventory_tab", "id": "Spellbooks"})
 	main.queue_redraw()
 	await process_frame
 	await process_frame
-	await _ui_action(main, "select_item", "index", lesser_ui_index, true)
+	await _ui_action(main, "select_lower_book", "id", "lesser_key_of_ash", true)
 	_check(not _has_action(main, "study_book"), "choose-one spellbook keeps Study disabled until its required selection is made")
 	await _ui_action(main, "toggle_book_choice", "index", 0, false)
 	await _ui_action(main, "toggle_book_choice", "index", 2, true)
@@ -169,7 +169,9 @@ func run_suite() -> void:
 	_check(main.overlay == "codex_book" and main.sim.content.items[main.codex_book_id].contents.size() == 3, "Codex opens the full spellbook contents after the run choice")
 
 	main._handle_action({"type": "close"})
-	main._handle_action({"type": "overlay", "id": "abilities"})
+	main._handle_action({"type": "lower_panel", "id": "character"})
+	main._handle_action({"type": "lower_character_tab", "id": "Character"})
+	main._handle_action({"type": "overlay", "id": "ability_web"})
 	main.queue_redraw()
 	await process_frame
 	await process_frame

@@ -14,7 +14,16 @@ $Problems = [System.Collections.Generic.List[string]]::new()
 if (-not (Test-Path -LiteralPath $Godot)) { $Problems.Add('Godot 4.7.2 console editor is missing. Run scripts\arcanist.ps1 Setup.') }
 $Java = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin\java.exe' } else { '' }
 if (-not $Java -or -not (Test-Path -LiteralPath $Java)) { $Problems.Add('OpenJDK 17 is missing. Run scripts\arcanist.ps1 SetupAndroid.') }
-elseif ((& $Java -version 2>&1 | Out-String) -notmatch 'version "(1[7-9]|[2-9][0-9])\.') { $Problems.Add('Android export requires JDK 17 or newer.') }
+else {
+	$PreviousErrorActionPreference = $ErrorActionPreference
+	try {
+		$ErrorActionPreference = 'Continue'
+		$JavaVersionText = (& $Java -version 2>&1 | Out-String)
+	} finally {
+		$ErrorActionPreference = $PreviousErrorActionPreference
+	}
+	if ($JavaVersionText -notmatch 'version "(1[7-9]|[2-9][0-9])\.') { $Problems.Add('Android export requires JDK 17 or newer.') }
+}
 $SdkManager = Join-Path $SdkPath 'cmdline-tools\latest\bin\sdkmanager.bat'
 if (-not (Test-Path -LiteralPath (Join-Path $SdkPath 'platform-tools\adb.exe'))) { $Problems.Add('Android SDK platform-tools are missing. Run scripts\arcanist.ps1 SetupAndroid.') }
 if (-not (Test-Path -LiteralPath $SdkManager)) { $Problems.Add('Android SDK command-line tools are missing. Run scripts\arcanist.ps1 SetupAndroid.') }

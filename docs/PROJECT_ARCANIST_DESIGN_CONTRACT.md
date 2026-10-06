@@ -357,7 +357,7 @@ Landscape first. The supplied UI mockup is a visual target, adapted intelligentl
 
 Windows and Android are both supported. Android landscape is the primary mobile presentation; Windows remains a first-class desktop build.
 
-During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. World map, character/abilities, inventory/equipment, Codex, spellbooks and settings can be separate full-screen interfaces.
+During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. Put routine World Map, Character / Abilities, Inventory / Equipment, and Spellbook / Discovery access in one lower dock; at most one section expands at a time while the other sections remain available as compact headers or summaries. Collapse it to restore battlefield space. The ability web may open as a dedicated large subview. Codex, settings and other infrequent flows may use separate overlays.
 
 Touch model:
 - Tap: select/move/target.
@@ -374,6 +374,8 @@ Use Godot user-data paths for saves on both platforms. Respect Android safe area
 ## Visual direction
 
 Follow the supplied reference image's overall language: dark tactical presentation, crisp panels, strong hierarchy, high contrast, readable symbolic battlefield, restrained neon magical effects, clear targeting, lightweight particles and useful combat feedback.
+
+The production battle layout keeps character resources at left, the battlefield dominant in the center, and turn order plus selected-entity inspection at right. Its action strip contains fixed Move, Weapon, Wait and End Turn actions around exactly eight configurable slots for learned active abilities and usable carried items. Display resource and time costs on actions. Keep playback speed controls off the ordinary HUD and show the movement D-pad only on Android. Use three whole-screen visual comparison passes at 1920×1080 or larger for major UI reconstruction; log findings and fixes in `docs/PROMPT6_VISUAL_QA.md`.
 
 Avoid debug-looking UI, programmer labels, raw IDs, exposed calculations, giant text walls, inconsistent spacing and temporary default Godot controls presented as final UI.
 

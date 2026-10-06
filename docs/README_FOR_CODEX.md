@@ -11,8 +11,9 @@ This bundle accompanies **Codex Prompt 1** supplied separately by the user.
 
 2. `Project_Arcanist_UI_Reference.png`
    - Visual design reference and acceptance target.
-   - Preserve its overall design language rather than blindly reproducing every desktop-sized panel on a phone.
-   - Android landscape gameplay should prioritize battlefield area and use contextual/collapsible panels or separate full-screen menus as needed.
+   - Preserve its overall design language rather than reproducing the static screenshot literally at every size.
+   - The production battle HUD uses a compact lower dock for World Map, Character / Abilities, Inventory / Equipment, and Spellbook / Discovery. Expand one section at a time so the battlefield remains dominant; keep the ability web as a dedicated larger subview.
+   - Android landscape uses the same contextual dock with touch-sized controls and safe-area handling.
 
 ## Priority when resolving ambiguity
 

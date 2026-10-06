@@ -55,11 +55,19 @@ foreach ($CaptureCase in @(
 	@{ Name = 'inventory-full'; Size = '1920x1080'; Scenario = 'full_inventory'; Overlay = 'inventory' },
 	@{ Name = 'inventory-equipment'; Size = '1920x1080'; Scenario = 'selected_equipment'; Overlay = 'inventory' },
 	@{ Name = 'inventory-consumable'; Size = '1920x1080'; Scenario = 'selected_consumable'; Overlay = 'inventory' },
-	@{ Name = 'inventory-assign'; Size = '1920x1080'; Scenario = 'assign_item'; Overlay = 'inventory' }
+	@{ Name = 'inventory-assign'; Size = '1920x1080'; Scenario = 'assign_item'; Overlay = 'inventory' },
+	@{ Name = 'p6-selected-enemy'; Size = '1920x1080'; Scenario = 'selected_enemy' },
+	@{ Name = 'p6-world-map'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'map' },
+	@{ Name = 'p6-character-abilities'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'abilities' },
+	@{ Name = 'p6-inventory-equipment'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'inventory' },
+	@{ Name = 'p6-spellbook-discovery'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'spellbook'; Book = 'lesser_key_of_ash' },
+	@{ Name = 'p6-ability-assignment'; Size = '1920x1080'; Scenario = 'assign_ability'; Overlay = 'abilities' },
+	@{ Name = 'p6-item-assignment'; Size = '1920x1080'; Scenario = 'assign_item'; Overlay = 'inventory' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Name)"
 	$ExtraArguments = @("--capture=$($CaptureCase.Size)", "--capture-dir=$CaseDirectory", "--capture-scenario=$($CaptureCase.Scenario)")
 	if ($CaptureCase.ContainsKey('Overlay')) { $ExtraArguments += "--capture-overlay=$($CaptureCase.Overlay)" }
+	if ($CaptureCase.ContainsKey('Book')) { $ExtraArguments += "--capture-book=$($CaptureCase.Book)" }
 	& $Godot --path $ProjectRoot -- @ExtraArguments
 	if ($LASTEXITCODE -ne 0) { throw "Combat/inventory capture failed: $($CaptureCase.Name)." }
 	$Capture = Join-Path $ProjectRoot "build\visual-qa\$($CaptureCase.Name)\$($CaptureCase.Size).png"

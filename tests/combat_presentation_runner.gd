@@ -2,6 +2,7 @@ extends SceneTree
 
 const SimScript = preload("res://scripts/game_sim.gd")
 const MainScript = preload("res://scripts/main.gd")
+const MainScene = preload("res://scenes/main.tscn")
 
 var checks := 0
 var failures: Array[String] = []
@@ -142,6 +143,20 @@ func run_suite() -> void:
 		root.remove_child(main)
 		main.free()
 	_check(authoritative_digests.size() == 3 and authoritative_digests[0] == authoritative_digests[1] and authoritative_digests[1] == authoritative_digests[2], "Normal, Fast, and Instant presentation modes share one authoritative simulation result")
+
+	var playback_ui = MainScene.instantiate()
+	root.add_child(playback_ui)
+	await process_frame
+	playback_ui.sim.start_run(551239, "jim")
+	playback_ui.page = "battle"
+	playback_ui.playback_mode = "Normal"
+	playback_ui._commit_action(playback_ui.sim.act(move_command))
+	playback_ui.queue_redraw()
+	await process_frame
+	var visible_skip_controls: int = playback_ui.active_hits.filter(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "playback_skip").size()
+	_check(playback_ui.playback_active and visible_skip_controls == 1, "turn playback exposes exactly one skip control")
+	playback_ui._handle_action({"type": "playback_skip"})
+	playback_ui.queue_free()
 
 	print("COMBAT PRESENTATION CHECKS %d · FAILURES %d" % [checks, failures.size()])
 	for failure in failures:
