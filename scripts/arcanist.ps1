@@ -44,6 +44,8 @@ switch ($Mode) {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/mobile_acceptance_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/prompt6a_ui_runner.gd'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/progression_inventory_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/playtest_regressions_runner.gd'
@@ -66,6 +68,8 @@ switch ($Mode) {
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/production_path_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/mobile_acceptance_runner.gd'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/prompt6a_ui_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/progression_inventory_runner.gd'
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

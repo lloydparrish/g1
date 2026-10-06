@@ -5,7 +5,7 @@ $Profile = Join-Path $ProjectRoot '.godot-profile\visual-qa'
 $env:APPDATA = Join-Path $Profile 'Roaming'
 $env:LOCALAPPDATA = Join-Path $Profile 'Local'
 $CaptureDirectory = 'res://build/visual-qa'
-$Sizes = @('1920x1080', '2560x1440', '2400x1080', '2340x1080', '1280x720')
+$Sizes = @('1920x1080', '2560x1440', '1600x900', '2400x1080', '2340x1080', '1280x720')
 
 if (-not (Test-Path -LiteralPath $Godot)) { throw "Godot is missing: $Godot" }
 foreach ($Size in $Sizes) {
@@ -62,7 +62,13 @@ foreach ($CaptureCase in @(
 	@{ Name = 'p6-inventory-equipment'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'inventory' },
 	@{ Name = 'p6-spellbook-discovery'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'spellbook'; Book = 'lesser_key_of_ash' },
 	@{ Name = 'p6-ability-assignment'; Size = '1920x1080'; Scenario = 'assign_ability'; Overlay = 'abilities' },
-	@{ Name = 'p6-item-assignment'; Size = '1920x1080'; Scenario = 'assign_item'; Overlay = 'inventory' }
+	@{ Name = 'p6-item-assignment'; Size = '1920x1080'; Scenario = 'assign_item'; Overlay = 'inventory' },
+	@{ Name = '6a-map-locked'; Size = '1920x1080'; Scenario = 'map_locked'; Overlay = 'map' },
+	@{ Name = '6a-map-ready'; Size = '1920x1080'; Scenario = 'map_ready'; Overlay = 'map' },
+	@{ Name = '6a-abilities-pyromancy'; Size = '1920x1080'; Scenario = 'abilities_pyromancy'; Overlay = 'abilities' },
+	@{ Name = '6a-abilities-arcane'; Size = '1920x1080'; Scenario = 'abilities_arcane'; Overlay = 'abilities' },
+	@{ Name = '6a-equipment'; Size = '1920x1080'; Scenario = 'equipment_desktop'; Overlay = 'inventory' },
+	@{ Name = '6a-ability-tooltip'; Size = '1920x1080'; Scenario = 'ability_tooltip'; Overlay = 'abilities' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Name)"
 	$ExtraArguments = @("--capture=$($CaptureCase.Size)", "--capture-dir=$CaseDirectory", "--capture-scenario=$($CaptureCase.Scenario)")

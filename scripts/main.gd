@@ -62,6 +62,7 @@ var touch_index := -1
 var mouse_press_active := false
 var press_dragged := false
 var active_hits: Array = []
+var active_hit_clip_rect := Rect2()
 var overlay_hit_start := 0
 var last_android_back_msec := -500
 var notice := ""
@@ -78,6 +79,9 @@ var capture_full_web := false
 var screen_size := LOGICAL_SIZE
 var draw_scale := 1.0
 var draw_offset := Vector2.ZERO
+var draw_label_content_offset := Vector2.ZERO
+var hover_position := Vector2(-1, -1)
+var mobile_layout_override := false
 
 const COLORS := {
 	"ink": Color("#071018"), "panel": Color("#0d1722"), "panel_2": Color("#111f2c"),
@@ -146,7 +150,7 @@ func _ready() -> void:
 					"ability_web": overlay = "abilities"
 				match capture_overlay:
 					"inventory": ui_state.selected_inventory_index = 0
-					"map": sim.run.route_choices = ["graveyard", "flooded_ruins"]
+					"map": sim.run.stage_completed = true
 					"rewards":
 						sim.run.stage_completed = true
 						sim.run.reward_choices = [{"type": "artifact", "id": "copper_hare", "claimed": false}, {"type": "item", "id": "healing_potion", "claimed": false}]
@@ -217,7 +221,7 @@ func _handle_back_request() -> void:
 	if playback_active:
 		_finish_presentation()
 		return
-	if OS.get_name() == "Android":
+	if _is_mobile_layout():
 		var now := Time.get_ticks_msec()
 		if now - last_android_back_msec < 400:
 			return
@@ -378,6 +382,7 @@ func _draw() -> void:
 	screen_size = layout.size
 	draw_scale = layout.scale
 	draw_offset = layout.offset
+	draw_label_content_offset = Vector2.ZERO
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	draw_rect(Rect2(Vector2.ZERO, viewport), COLORS.ink)
 	draw_set_transform(draw_offset, 0.0, Vector2(draw_scale, draw_scale))
@@ -386,7 +391,8 @@ func _draw() -> void:
 	var hits_start := active_hits.size()
 	var centered_content := page != "battle" and screen_size.x > LOGICAL_SIZE.x
 	if centered_content:
-		draw_set_transform(draw_offset + Vector2((screen_size.x - LOGICAL_SIZE.x) * 0.5 * draw_scale, 0.0), 0.0, Vector2(draw_scale, draw_scale))
+		draw_label_content_offset = Vector2((screen_size.x - LOGICAL_SIZE.x) * 0.5, 0.0)
+		draw_set_transform(draw_offset + draw_label_content_offset * draw_scale, 0.0, Vector2(draw_scale, draw_scale))
 	if page == "title":
 		_draw_title()
 		if overlay != "":
@@ -397,8 +403,11 @@ func _draw() -> void:
 			_draw_overlay()
 	elif page == "outcome":
 		_draw_outcome()
+	if page == "battle" and overlay == "":
+		_draw_hover_tooltip()
 	if centered_content:
 		_shift_active_hits(hits_start, (screen_size.x - LOGICAL_SIZE.x) * 0.5)
+	draw_label_content_offset = Vector2.ZERO
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_backdrop() -> void:
@@ -447,8 +456,10 @@ func _draw_title() -> void:
 func _battle_layout() -> Dictionary:
 	var active_panel := String(ui_state.active_lower_panel)
 	var panel_height := 0.0
-	if ui_state.lower_dock_expanded:
-		panel_height = 260.0 if active_panel == "inventory" else 220.0
+	if not _is_mobile_layout():
+		panel_height = 260.0
+	elif ui_state.lower_dock_expanded:
+		panel_height = 260.0 if active_panel in ["inventory", "character"] else 220.0
 	var dock_bottom := screen_size.y - 18.0
 	var dock_top := dock_bottom - (panel_height if panel_height > 0.0 else 38.0)
 	var toolbar_height := 88.0
@@ -463,7 +474,7 @@ func _battle_layout() -> Dictionary:
 	var board_size := Vector2(ArcanistSim.WIDTH * tile, ArcanistSim.HEIGHT * tile)
 	var board_rect := Rect2(Vector2(center_rect.position.x + (center_rect.size.x - board_size.x) * 0.5, 58.0), board_size)
 	var dock_header_y := dock_top
-	var dock_header_height := 38.0 if panel_height <= 0.0 else 34.0
+	var dock_header_height := 26.0 if not _is_mobile_layout() else 38.0 if panel_height <= 0.0 else 34.0
 	var panel_content_height := maxf(0.0, panel_height - dock_header_height)
 	var timeline_height := clampf(right_rect.size.y * 0.34, 140.0, 190.0)
 	var group_target_width := minf(screen_size.x * 0.68, 1280.0)
@@ -500,7 +511,7 @@ func _draw_battle() -> void:
 func _draw_player_card() -> void:
 	var player: Dictionary = _display_player()
 	var layout := _battle_layout()
-	var mobile := OS.get_name() == "Android"
+	var mobile := _is_mobile_layout()
 	var displayed_level := int(presentation_state.get("level", sim.run.get("level", 1))) if playback_active else int(sim.run.get("level", 1))
 	var displayed_xp := int(presentation_state.get("xp", sim.run.get("xp", 0))) if playback_active else int(sim.run.get("xp", 0))
 	var rect := Rect2(18.0, 18.0, 216.0, 244.0 if mobile else 392.0)
@@ -829,6 +840,8 @@ func _draw_inspection_card() -> void:
 	var enemy_selected: bool = not enemy.is_empty() and bool(enemy.get("alive", true)) and (playback_active or sim._cell_visible(sim._pos(enemy)))
 	var object: Dictionary = _selected_object()
 	_draw_panel(rect, "ENEMY INSPECTION" if enemy_selected else "FIELD INTELLIGENCE", COLORS.line)
+	if enemy_selected or not object.is_empty():
+		_draw_button(Rect2(rect.end.x - 31.0, rect.position.y + 2.0, 27.0, 26.0), "×", {"type": "clear_inspection"}, false, 9, COLORS.gold)
 	var cursor_y := rect.position.y + 43.0
 	if not object.is_empty():
 		_draw_label(String(object.get("name", "Field object")), content_x, cursor_y, 14, COLORS.cyan if object.get("kind") == "exit" else COLORS.gold)
@@ -875,7 +888,8 @@ func _draw_inspection_card() -> void:
 		cursor_y += 22.0
 	var feed: Array = presentation_history if playback_active else sim.run.get("combat_history", [])
 	var can_show_next: bool = bool(sim.run.get("stage_completed", false))
-	var reserved_bottom := 14.0 + (44.0 if can_show_next else 0.0)
+	var show_next_button: bool = can_show_next and _is_mobile_layout()
+	var reserved_bottom := 14.0 + (44.0 if show_next_button else 0.0)
 	var feed_capacity := maxi(0, int((rect.end.y - reserved_bottom - cursor_y - 30.0) / 14.0))
 	var event_count := mini(mini(6, feed.size()), feed_capacity)
 	var feed_start := maxf(cursor_y + 8.0, rect.end.y - reserved_bottom - (event_count * 14.0) - 26.0)
@@ -885,13 +899,13 @@ func _draw_inspection_card() -> void:
 	for i in range(event_count):
 		var event: Dictionary = feed[feed.size() - 1 - i]
 		_draw_label(_fit_text(_format_combat_event(event), content_width, 8), content_x, feed_start + 18.0 + i * 14.0, 8, COLORS.gold if event.get("type", "") in ["LevelUp", "XPGranted", "KillCredit"] else COLORS.text if i == 0 else COLORS.muted)
-	if can_show_next:
+	if show_next_button:
 		var button_y := rect.end.y - 49.0
 		var transition_action := {"type": "next_stage"}
 		_draw_button(Rect2(content_x, button_y, content_width, 39.0), "NEXT STAGE  ›" if int(sim.run.get("stage_index", 0)) < 5 else "VICTORY", transition_action, true, 10, COLORS.green)
 
 func _draw_side_controls() -> void:
-	if OS.get_name() != "Android":
+	if not _is_mobile_layout():
 		return
 	var layout := _battle_layout()
 	var dpad_y := float(layout.battle_bottom) - 162.0
@@ -952,7 +966,7 @@ func _draw_action_icon_slot(rect: Rect2, glyph: String, label: String, detail: S
 	_draw_label(glyph, rect.get_center().x, rect.position.y + 28.0, 20, accent, HORIZONTAL_ALIGNMENT_CENTER)
 	_draw_label(_fit_text(label, rect.size.x - 6.0, 8), rect.get_center().x, rect.position.y + 43.0, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
 	if detail != "": _draw_label(_fit_text(detail, rect.size.x - 6.0, 7), rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	active_hits.append({"rect": _touch_hit_rect(rect), "action": action})
+	active_hits.append({"rect": _panel_hit_rect(rect), "action": action})
 
 func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -> void:
 	var kind := String(assignment.get("type", "empty"))
@@ -1005,7 +1019,7 @@ func _draw_end_turn_slot(rect: Rect2, action: Dictionary, skip: bool) -> void:
 	_draw_label("▶▶" if skip else "↓", rect.get_center().x, rect.position.y + 29.0, 21, accent, HORIZONTAL_ALIGNMENT_CENTER)
 	_draw_label("SKIP" if skip else "END TURN", rect.get_center().x, rect.position.y + 44.0, 9, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
 	_draw_label("" if skip else "100", rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	active_hits.append({"rect": _touch_hit_rect(rect), "action": action})
+	active_hits.append({"rect": _panel_hit_rect(rect), "action": action})
 
 func _draw_utility_slot(rect: Rect2, icon_key: String, label: String, action: Dictionary, accent: Color) -> void:
 	draw_rect(rect, COLORS.panel)
@@ -1019,6 +1033,7 @@ func _draw_overlay() -> void:
 	var overlay_hit_start_local := active_hits.size()
 	var overlay_offset_x := (screen_size.x - LOGICAL_SIZE.x) * 0.5 if page == "battle" and screen_size.x > LOGICAL_SIZE.x else 0.0
 	if not is_zero_approx(overlay_offset_x):
+		draw_label_content_offset.x = overlay_offset_x
 		draw_set_transform(draw_offset + Vector2(overlay_offset_x * draw_scale, 0.0), 0.0, Vector2(draw_scale, draw_scale))
 	var rect := Rect2(100, 61, 1240, 690)
 	_draw_panel(rect, "", COLORS.gold)
@@ -1043,6 +1058,7 @@ func _draw_overlay() -> void:
 	_draw_corner_marks(rect)
 	if not is_zero_approx(overlay_offset_x):
 		_shift_active_hits(overlay_hit_start_local, overlay_offset_x)
+		draw_label_content_offset.x = 0.0
 		draw_set_transform(draw_offset, 0.0, Vector2(draw_scale, draw_scale))
 
 func _draw_combat_history(rect: Rect2) -> void:
@@ -1445,17 +1461,120 @@ func _draw_button(rect: Rect2, label: String, action: Dictionary, active: bool =
 	else:
 		_draw_label(lines[0], rect.get_center().x, rect.get_center().y - 1, font_size, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
 		_draw_label(lines[1], rect.get_center().x, rect.get_center().y + 21, maxi(9, font_size - 1), COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	active_hits.append({"rect": _touch_hit_rect(rect), "action": action})
+	active_hits.append({"rect": _panel_hit_rect(rect), "action": action})
 
 func _touch_hit_rect(rect: Rect2) -> Rect2:
 	var target_size := Vector2(maxf(rect.size.x, TOUCH_TARGET), maxf(rect.size.y, TOUCH_TARGET))
 	return Rect2(rect.get_center() - target_size * 0.5, target_size)
+
+func _panel_hit_rect(rect: Rect2) -> Rect2:
+	var target := _touch_hit_rect(rect) if _is_mobile_layout() else rect
+	if active_hit_clip_rect.size.x > 0.0 and active_hit_clip_rect.size.y > 0.0:
+		return target.intersection(active_hit_clip_rect)
+	return target
 
 func _draw_dpad_button(rect: Rect2, glyph: String, direction: Vector2i) -> void:
 	draw_rect(rect, COLORS.panel_2)
 	draw_rect(rect, COLORS.line, false, 1)
 	_draw_label(glyph, rect.get_center().x, rect.get_center().y + 5, 14, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
 	active_hits.append({"rect": _touch_hit_rect(rect), "action": {"type": "dpad", "direction": [direction.x, direction.y]}})
+
+func _draw_hover_tooltip() -> void:
+	if capture_requested and capture_scenario == "ability_tooltip":
+		for hit in active_hits:
+			if String(hit.action.get("type", "")) == "select_lower_ability" and String(hit.action.get("id", "")) == "fireball":
+				hover_position = hit.rect.get_center()
+				break
+	if _is_mobile_layout() or hover_position.x < 0.0:
+		return
+	var source: Dictionary = {}
+	for index in range(active_hits.size() - 1, -1, -1):
+		var candidate: Dictionary = active_hits[index]
+		if candidate.rect.has_point(hover_position):
+			source = candidate
+			break
+	if source.is_empty():
+		return
+	var lines: Array[String] = _tooltip_lines_for_action(source.action)
+	if lines.is_empty():
+		return
+	var width := minf(250.0, screen_size.x - 24.0)
+	var height := 12.0 + float(lines.size()) * 15.0
+	var point := hover_position + Vector2(14.0, 16.0)
+	if point.x + width > screen_size.x - 8.0:
+		point.x = hover_position.x - width - 14.0
+	if point.y + height > screen_size.y - 8.0:
+		point.y = hover_position.y - height - 14.0
+	point.x = clampf(point.x, 8.0, screen_size.x - width - 8.0)
+	point.y = clampf(point.y, 8.0, screen_size.y - height - 8.0)
+	var rect := Rect2(point, Vector2(width, height))
+	draw_rect(rect, Color("#08121b"))
+	draw_rect(rect, COLORS.cyan, false, 1.0)
+	for i in range(lines.size()):
+		_draw_label(_fit_text(lines[i], width - 14.0, 8), point.x + 7.0, point.y + 16.0 + float(i) * 15.0, 8, COLORS.text if i == 0 else COLORS.muted)
+
+func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	var kind := String(action.get("type", ""))
+	if kind == "select_lower_ability":
+		var ability_id := String(action.get("id", ""))
+		var ability: Dictionary = sim.content.abilities.get(ability_id, {})
+		if ability.is_empty(): return result
+		result.append(String(ability.get("name", ability_id)))
+		result.append("%s  ·  %d time  ·  %s" % [String(ability.get("school", "Ability")), int(ability.get("time", 0)), _cost_text(ability.get("costs", {}))])
+		result.append(String(ability.get("description", "")))
+		var requirements: Array = ability.get("requires", []).duplicate()
+		requirements.append_array(ability.get("prerequisites", {}).get("all_of", []))
+		if not requirements.is_empty():
+			var names: Array[String] = []
+			for required_id in requirements:
+				names.append(String(sim.content.abilities.get(required_id, {}).get("name", required_id)))
+			result.append("Requires  ·  %s" % ", ".join(names))
+	elif kind == "select_item":
+		var items: Array = sim.run.get("inventory", [])
+		var index := int(action.get("index", -1))
+		if index < 0 or index >= items.size(): return result
+		var item_id := String(items[index])
+		var item: Dictionary = sim.content.items.get(item_id, {})
+		if item.is_empty(): return result
+		result.append(String(item.get("name", item_id)))
+		result.append(String(item.get("type", "item")).capitalize())
+		result.append(String(item.get("description", "")))
+		if item.get("type", "") == "equipment": result.append("Slot  ·  %s" % String(item.get("slot", "")))
+	elif kind == "select_artifact":
+		var artifacts: Array = sim.run.get("artifacts", [])
+		var index := int(action.get("index", -1))
+		if index < 0 or index >= artifacts.size(): return result
+		var artifact_id := String(artifacts[index])
+		var artifact: Dictionary = sim.content.artifacts.get(artifact_id, {})
+		if artifact.is_empty(): return result
+		result.append(String(artifact.get("name", artifact_id)))
+		result.append(String(artifact.get("description", "Persistent run modifier")))
+	elif kind == "select_equipment_slot":
+		var slot := String(action.get("slot", ""))
+		var item_id := String(sim.run.get("equipment", {}).get(slot, ""))
+		var item: Dictionary = sim.content.items.get(item_id, {})
+		result.append(slot)
+		result.append(String(item.get("name", "Empty")))
+		if not item.is_empty(): result.append(String(item.get("description", "")))
+	elif kind == "select_map_node":
+		var node_id := String(action.get("id", ""))
+		var stage: Dictionary = sim.content.enemies.get(node_id, {}) if node_id == "grave_tyrant" else sim.content.stages.get(node_id, {})
+		if stage.is_empty(): return result
+		result.append(String(stage.get("name", node_id)))
+		result.append(String(stage.get("subtitle", "Forest boss" if node_id == "grave_tyrant" else "Connected destination")))
+		if node_id == "grave_tyrant":
+			result.append("Boss  ·  %d HP  ·  %d×%d" % [int(stage.get("hp", 0)), int(stage.get("footprint", 1)), int(stage.get("footprint", 1))])
+		else:
+			result.append("Encounter  ·  %s" % ", ".join(stage.get("objectives", [])))
+	elif kind == "select_lower_book":
+		var book_id := String(action.get("id", ""))
+		var book: Dictionary = sim.content.items.get(book_id, {})
+		if book.is_empty(): return result
+		result.append(String(book.get("name", book_id)))
+		result.append("%s  ·  %s" % [String(book.get("school", "Knowledge")), String(book.get("rarity", "Common"))])
+		result.append(String(book.get("description", "")))
+	return result
 
 static func _calculate_layout(viewport_size: Vector2, safe_area: Rect2) -> Dictionary:
 	var bounds := Rect2(Vector2.ZERO, viewport_size)
@@ -1489,6 +1608,9 @@ func _safe_area_for_viewport(viewport_size: Vector2) -> Rect2:
 func _is_wide_layout() -> bool:
 	return screen_size.x >= WIDE_LAYOUT_MIN_WIDTH
 
+func _is_mobile_layout() -> bool:
+	return mobile_layout_override or OS.get_name() == "Android"
+
 func _board_origin() -> Vector2:
 	return _battle_layout().board_rect.position
 
@@ -1501,6 +1623,19 @@ func _board_rect() -> Rect2:
 func _open_lower_panel(panel_id: String, toggle: bool = true) -> void:
 	if target_mode != "": _cancel_targeting()
 	overlay = ""
+	if not _is_mobile_layout():
+		ui_state.active_lower_panel = panel_id
+		ui_state.lower_dock_expanded = false
+		if panel_id == "character" and String(ui_state.selected_ability_id) == "" and not sim.run.get("known", []).is_empty():
+			ui_state.selected_ability_id = String(sim.run.known[0])
+		if panel_id == "spellbook" and String(ui_state.selected_spellbook_id) == "":
+			for book_id in sim.run.get("inventory", []):
+				if sim.content.items.get(book_id, {}).get("type", "") == "spellbook":
+					ui_state.selected_spellbook_id = String(book_id)
+					ui_state.selected_inventory_index = int(sim.run.inventory.find(book_id))
+					break
+		queue_redraw()
+		return
 	if toggle and ui_state.lower_dock_expanded and String(ui_state.active_lower_panel) == panel_id:
 		ui_state.lower_dock_expanded = false
 	else:
@@ -1527,23 +1662,36 @@ func _shift_active_hits(first_index: int, horizontal_delta: float) -> void:
 		active_hits[index] = hit
 
 func _draw_label(text: String, x: float, y: float, size: int, color: Color, alignment: int = HORIZONTAL_ALIGNMENT_LEFT) -> void:
+	# Rasterize glyphs at integer physical-pixel sizes, then restore the geometry transform.
+	var physical_size := _physical_font_size(size)
+	var measured: Vector2 = ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size)
 	var draw_x := x
-	if alignment != HORIZONTAL_ALIGNMENT_LEFT:
-		var measured: Vector2 = ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
-		if alignment == HORIZONTAL_ALIGNMENT_CENTER:
-			draw_x -= measured.x * 0.5
-		elif alignment == HORIZONTAL_ALIGNMENT_RIGHT:
-			draw_x -= measured.x
-	draw_string(ThemeDB.fallback_font, Vector2(draw_x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, color)
+	if alignment == HORIZONTAL_ALIGNMENT_CENTER:
+		draw_x -= measured.x / maxf(0.1, draw_scale) * 0.5
+	elif alignment == HORIZONTAL_ALIGNMENT_RIGHT:
+		draw_x -= measured.x / maxf(0.1, draw_scale)
+	var logical_position := Vector2(draw_x, y) + draw_label_content_offset
+	var physical_position := (draw_offset + logical_position * draw_scale).round()
+	var restore_offset := draw_offset + draw_label_content_offset * draw_scale
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	draw_string(ThemeDB.fallback_font, physical_position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size, color)
+	draw_set_transform(restore_offset, 0.0, Vector2(draw_scale, draw_scale))
+
+func _physical_font_size(size: int) -> int:
+	var scaled := float(size) * draw_scale
+	var floor_size := 9 if size <= 6 else 10 if size <= 8 else 11 if size <= 10 else 12
+	return maxi(floor_size, roundi(scaled))
 
 func _fit_text(text: String, max_width: float, size: int) -> String:
-	if ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x <= max_width:
+	var physical_limit := max_width * draw_scale
+	var physical_size := _physical_font_size(size)
+	if ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size).x <= physical_limit:
 		return text
 	var shortened := text
 	while not shortened.is_empty():
 		shortened = shortened.substr(0, shortened.length() - 1).strip_edges()
 		var candidate := shortened + "…"
-		if ThemeDB.fallback_font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x <= max_width:
+		if ThemeDB.fallback_font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size).x <= physical_limit:
 			return candidate
 	return "…"
 
@@ -1598,8 +1746,14 @@ func _gui_input(event: InputEvent) -> void:
 			_finish_pointer_press(_logical_position(event.position), false)
 			mouse_press_active = false
 			accept_event()
-	elif event is InputEventMouseMotion and mouse_press_active:
+	elif event is InputEventMouseMotion:
 		var pointer_now := _logical_position(event.position)
+		var hover_changed := hover_position.distance_to(pointer_now) > 0.5
+		hover_position = pointer_now
+		if not mouse_press_active:
+			if hover_changed:
+				queue_redraw()
+			return
 		if web_pan_active:
 			var pan_delta := pointer_now - web_last_pointer
 			web_pan -= pan_delta / maxf(0.1, web_zoom)
@@ -1770,17 +1924,33 @@ func _handle_action(action: Dictionary) -> void:
 			ui_state.character_tab = String(action.get("id", "Abilities"))
 			ui_state.ability_page = 0
 		"lower_inventory_tab":
-			ui_state.inventory_tab = String(action.get("id", "Equipment"))
+			ui_state.inventory_tab = String(action.get("id", "Inventory"))
 			ui_state.inventory_page = 0
+		"select_ability_category":
+			ui_state.selected_ability_category = String(action.get("id", ""))
+			ui_state.ability_page = 0
+			if not String(ui_state.selected_ability_id).is_empty() and not sim.content.abilities.get(ui_state.selected_ability_id, {}).get("categories", []).has(ui_state.selected_ability_category):
+				ui_state.selected_ability_id = ""
+		"ability_category_page":
+			var category_total: int = sim.content.get("ability_categories", {}).size()
+			var category_pages := maxi(1, int(ceil(float(category_total) / 10.0)))
+			ui_state.ability_category_page = posmod(int(ui_state.ability_category_page) + int(action.get("delta", 0)), category_pages)
 		"lower_ability_page":
-			var total_abilities: int = sim.get_progression_graph().size() if ui_state.character_tab == "Known" else sim.run.get("known", []).size()
-			var page_count := maxi(1, int(ceil(float(total_abilities) / 4.0)))
+			var total_abilities: int = sim.get_progression_graph().size() if ui_state.character_tab == "Known" else sim.content.abilities.size()
+			var page_count := maxi(1, int(ceil(float(total_abilities) / 6.0)))
 			ui_state.ability_page = posmod(int(ui_state.ability_page) + int(action.get("delta", 0)), page_count)
 		"inventory_page":
-			var page_count := maxi(1, int(ceil(float(sim.run.get("artifacts", []).size()) / 3.0)))
+			var page_count := maxi(1, int(ceil(float(sim.run.get("artifacts", []).size()) / 18.0)))
 			ui_state.inventory_page = posmod(int(ui_state.inventory_page) + int(action.get("delta", 0)), page_count)
+		"select_artifact":
+			ui_state.selected_artifact_index = int(action.get("index", -1))
 		"select_map_node":
 			ui_state.selected_map_node_id = String(action.get("id", ""))
+		"clear_inspection":
+			selected_enemy = ""
+			selected_object_index = -1
+		"select_equipment_slot":
+			ui_state.selected_equipment_slot = String(action.get("slot", ""))
 		"select_lower_ability":
 			var ability_id := String(action.get("id", ""))
 			ui_state.selected_ability_id = ability_id
@@ -2094,6 +2264,7 @@ func _inspect_cell(cell: Vector2i, detailed: bool) -> void:
 			_show_notice("%s · %s" % [String(object.get("name", "Field object")), String(object.get("kind", "object")).capitalize()])
 		else:
 			selected_object_index = -1
+			selected_enemy = ""
 			_show_notice("%s tile  ·  %s" % [sim.get_stage_name(), sim._terrain_at(cell)])
 	queue_redraw()
 
@@ -2115,7 +2286,7 @@ func _handle_key(event: InputEventKey) -> void:
 		# Android also delivers Back through NOTIFICATION_WM_GO_BACK_REQUEST.
 		# Ignore its Escape key alias so one physical Back cannot dismiss a
 		# context and then continue into the pause menu as a second action.
-		if OS.get_name() == "Android":
+		if _is_mobile_layout():
 			return
 		if playback_active:
 			overlay = "pause"
@@ -2475,6 +2646,28 @@ func _content_display_name(content_id: String) -> String:
 
 func _prepare_capture_scenario() -> void:
 	match capture_scenario:
+		"map_locked":
+			sim.run.stage_completed = false
+			ui_state.active_lower_panel = "world_map"
+		"map_ready":
+			sim.run.stage_completed = true
+			ui_state.active_lower_panel = "world_map"
+		"abilities_pyromancy", "ability_tooltip":
+			ui_state.active_lower_panel = "character"
+			ui_state.character_tab = "Abilities"
+			ui_state.selected_ability_category = "pyromancy"
+			ui_state.selected_ability_id = "fireball"
+		"abilities_arcane":
+			ui_state.active_lower_panel = "character"
+			ui_state.character_tab = "Abilities"
+			ui_state.selected_ability_category = "arcane"
+			ui_state.selected_ability_id = "blink"
+		"equipment_desktop":
+			ui_state.active_lower_panel = "inventory"
+			ui_state.inventory_tab = "Equipment"
+			ui_state.selected_equipment_slot = "Body"
+			sim.run.inventory.append("scale_armor")
+			ui_state.selected_inventory_index = sim.run.inventory.size() - 1
 		"selected_enemy":
 			selected_enemy = _capture_adjacent_enemy()
 		"assign_ability":

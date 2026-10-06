@@ -114,6 +114,7 @@ func run_suite() -> void:
 
 	var main = MainScene.instantiate()
 	main.playback_mode = "Instant"
+	main.mobile_layout_override = true
 	root.add_child(main)
 	await process_frame
 	await process_frame
@@ -215,16 +216,18 @@ func run_suite() -> void:
 	for hit in main.active_hits:
 		if hit.action.get("type", "") == "claim_reward": reward_hit_size = hit.rect.size
 	_check(reward_hit_size.x >= 54.0 and reward_hit_size.y >= 54.0, "reward choice presents a full-size touch action")
-	main.sim.run.stage_completed = false
+	main.sim.run.stage_completed = true
 	main.sim.run.reward_choices = []
-	main.sim.run.route_choices = ["graveyard", "flooded_ruins"]
+	main.overlay = ""
+	var actual_route_choices: Array = main.sim.run.route_choices.duplicate()
 	main._open_lower_panel("world_map")
 	main.queue_redraw()
+	await process_frame
 	await process_frame
 	var route_hit_size := Vector2.ZERO
 	for hit in main.active_hits:
 		if hit.action.get("type", "") == "route": route_hit_size = hit.rect.size
-	_check(route_hit_size.x >= 54.0 and route_hit_size.y >= 54.0, "route selection presents a full-size touch action")
+	_check(not actual_route_choices.is_empty() and route_hit_size.x >= 54.0 and route_hit_size.y >= 54.0, "authored run routes expose a full-size touch-safe travel action")
 	main.queue_free()
 
 	print("PROGRESSION + INVENTORY %d · FAILURES %d" % [checks, failures.size()])

@@ -67,17 +67,18 @@ func run_flow() -> void:
 	await _tap_action(main, "close")
 	var dock_digest: String = main.sim.state_digest()
 	await _tap_action(main, "lower_panel", "world_map")
-	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "the world map expands inside the lower dock")
+	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "the world map remains present in the desktop dock")
 	await _tap_action(main, "lower_panel", "character")
-	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "character", "the character section switches directly within the lower dock")
+	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "character", "the character section switches without collapsing desktop panels")
 	await _tap_action(main, "lower_panel", "inventory")
-	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "inventory", "inventory expands inside the lower dock")
+	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "inventory", "inventory remains independently available in the desktop dock")
 	await _tap_action(main, "lower_panel", "spellbook")
-	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "spellbook", "spellbook discovery expands inside the lower dock")
+	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "spellbook", "spellbook discovery remains independently available in the desktop dock")
 	await _tap_action(main, "lower_panel", "spellbook")
-	_check(not main.ui_state.lower_dock_expanded and main.sim.state_digest() == dock_digest, "collapsing the dock returns to battle without advancing the simulation")
+	_check(not main.ui_state.lower_dock_expanded and main.sim.state_digest() == dock_digest, "switching desktop panels never advances the simulation")
 	await _tap_action(main, "lower_panel", "character")
 	await _tap_action(main, "lower_character_tab", "Known")
+	await _tap_action(main, "select_ability_category", "arcane")
 	if not main.sim.get_progression_graph().any(func(node: Dictionary) -> bool: return String(node.id) == "blink"):
 		_failures_hit("the opening build reveals Arcane mobility progression")
 	await _tap_lower_ability(main, "blink")
@@ -98,8 +99,7 @@ func run_flow() -> void:
 	await _tap_action(main, "equip")
 	_check(main.sim.run.equipment.get("Body", "") == "scale_armor", "the lower inventory equips the claimed armor")
 	await _tap_action(main, "lower_panel", "inventory")
-	await _tap_action(main, "next_stage")
-	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "NEXT STAGE expands the production route map")
+	_check(not main.ui_state.lower_dock_expanded and main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "route"), "connected destinations remain available in the persistent desktop map")
 	var next_route: String = String(main.sim.run.route_choices[0])
 	await _tap_action(main, "route", next_route)
 	_check(main.sim.run.stage_index == 1 and main.sim.run.stage_id == next_route and not main.sim.get_visible_entities().is_empty(), "production route selection creates the later encounter")
@@ -107,8 +107,10 @@ func run_flow() -> void:
 	main.sim.run.stage_index = 4
 	main.sim.run.stage_completed = true
 	main.sim.run.route_choices = []
-	await _tap_action(main, "next_stage")
-	_check(main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "the world map opens again through its action bar")
+	main.queue_redraw()
+	await process_frame
+	await process_frame
+	_check(main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "boss"), "the completed final encounter exposes its boss destination on the persistent map")
 	await _tap_action(main, "boss")
 	var tyrant_id := ""
 	for entity_id in main.sim.run.entities:
@@ -180,7 +182,7 @@ func _tap_delta_action(main: Control, action_type: String, delta: int) -> void:
 	_failures_hit("production paging control is drawn: %s %d" % [action_type, delta])
 
 func _tap_lower_ability(main: Control, ability_id: String) -> void:
-	var page_count: int = maxi(1, int(ceil(float(main.sim.get_progression_graph().size()) / 4.0)))
+	var page_count: int = maxi(1, int(ceil(float(main.sim.content.abilities.size()) / 6.0)))
 	for _page in range(page_count):
 		main.queue_redraw()
 		await process_frame

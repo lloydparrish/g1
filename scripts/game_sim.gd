@@ -38,8 +38,20 @@ func validate_content() -> Array:
 			if seen.has(value):
 				errors.append("%s contains duplicate %s" % [value_registry[0], value])
 			seen[value] = true
+	var ability_categories: Dictionary = content.get("ability_categories", {})
+	if ability_categories.is_empty():
+		errors.append("ability_categories must define at least one category")
+	for category_id in ability_categories:
+		if String(ability_categories[category_id].get("name", "")).strip_edges() == "":
+			errors.append("ability category %s has no display name" % category_id)
 	for ability_id in content.get("abilities", {}):
 		var ability: Dictionary = content.abilities[ability_id]
+		var category_ids: Array = ability.get("categories", [])
+		if category_ids.is_empty():
+			errors.append("%s has no ability category metadata" % ability_id)
+		for category_id in category_ids:
+			if not ability_categories.has(category_id):
+				errors.append("%s uses unknown ability category %s" % [ability_id, category_id])
 		if String(ability.get("name", "")) == "":
 			errors.append("%s has no display name" % ability_id)
 		if String(ability.get("description", "")).strip_edges() == "":

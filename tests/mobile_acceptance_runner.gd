@@ -12,6 +12,7 @@ func _initialize() -> void:
 func run_suite() -> void:
 	var mobile = MainScene.instantiate()
 	mobile.playback_mode = "Instant"
+	mobile.mobile_layout_override = true
 	root.add_child(mobile)
 	await process_frame
 	await process_frame
@@ -54,6 +55,8 @@ func run_suite() -> void:
 	if not mobile.sim.run.known.has("arcane_bolt"):
 		mobile.sim.run.known.append("arcane_bolt")
 	await _touch_action(mobile, "lower_panel", "character")
+	var character_layout: Dictionary = mobile._battle_layout()
+	_check(int(character_layout.panel_content_height) >= 220, "mobile ability details keep a dedicated footer below the ability cards")
 	await _touch_action(mobile, "select_lower_ability", "arcane_bolt")
 	await _touch_action(mobile, "begin_quickbar_assignment", "arcane_bolt")
 	_check(mobile.quickbar_assign_mode and int(mobile.sim.run.time) == time_before_cancel, "touch starts ability-bar assignment without consuming a turn")
@@ -70,11 +73,15 @@ func run_suite() -> void:
 	_check(mobile.playback_mode == "Fast", "the internal presentation-speed setting remains callable")
 	mobile._handle_action({"type": "playback_speed", "mode": normal_mode})
 	var speed_action_visible := false
+	var mobile_dpad_visible := false
 	var desktop_dpad_visible := false
 	for hit in mobile.active_hits:
 		if String(hit.action.get("type", "")) == "playback_speed": speed_action_visible = true
+		if String(hit.action.get("type", "")) == "dpad": mobile_dpad_visible = true
+	for hit in desktop.active_hits:
 		if String(hit.action.get("type", "")) == "dpad": desktop_dpad_visible = true
-	_check(not speed_action_visible and not desktop_dpad_visible, "desktop combat has no playback-speed control or movement D-pad")
+	_check(mobile_dpad_visible and not desktop_dpad_visible, "movement D-pad is shown on Android layout and omitted from desktop")
+	_check(not speed_action_visible, "playback-speed control is kept out of the ordinary HUD")
 
 	for entity_id in mobile.sim.run.entities.keys():
 		if entity_id != "player":
@@ -95,13 +102,17 @@ func run_suite() -> void:
 	_check(resumed.resume_run() and JSON.stringify(resumed.run) == JSON.stringify(mobile.sim.run), "the lifecycle save resumes to the same deterministic run state")
 
 	mobile.target_mode = "arcane_bolt"
+	mobile.last_android_back_msec = -500
 	mobile._handle_back_request()
 	_check(mobile.target_mode == "" and mobile.page == "battle" and mobile.overlay == "", "the first Android Back cancels targeting without opening a menu")
 	mobile._open_lower_panel("inventory", false)
+	mobile.last_android_back_msec = -500
 	mobile._handle_back_request()
 	_check(mobile.overlay == "" and not mobile.ui_state.lower_dock_expanded, "Android Back collapses inventory before opening a menu")
+	mobile.last_android_back_msec = -500
 	mobile._handle_back_request()
 	_check(mobile.overlay == "pause", "Android Back opens pause instead of exiting from gameplay")
+	mobile.last_android_back_msec = -500
 	mobile._handle_back_request()
 	_check(mobile.overlay == "exit_confirm", "a second Back from pause asks before exiting")
 	mobile._handle_action({"type": "close"})
@@ -150,6 +161,7 @@ func run_suite() -> void:
 		elif hit_rect.size.x < 54.0 or hit_rect.size.y < 54.0:
 			target_sizes_ok = false
 	_check(target_sizes_ok, "visible inventory and action hit regions have at least 54 logical pixels per dimension")
+	mobile.last_android_back_msec = -500
 	mobile._handle_back_request()
 	_check(not mobile.ui_state.lower_dock_expanded, "Back collapses the active inventory section")
 	mobile.queue_redraw()

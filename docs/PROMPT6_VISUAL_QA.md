@@ -61,3 +61,7 @@ The full automated suite passed: 55 core, 27 production flow, 30 mobile acceptan
 Android touch acceptance was exercised on the installed build: all four lower sections opened; tapping a skeleton displayed its enemy inspection panel; D-pad movement updated the player turn; an ability was assigned to a vacant quick slot; and the Healing Draught changed from REMOVE BAR to ADD TO BAR when removed, then was assigned to another vacant slot. Ending a turn displayed exactly one SKIP control during enemy playback. The Android HUD shows the D-pad, while the desktop capture does not; neither capture exposes playback-speed controls. Touch captures are in `build/visual-qa/android-emulator/`, including `android-resumed-final.png`, `android-item-postfix.png`, `android-item-removed-postfix.png`, `android-item-assigned-postfix.png`, and `android-playback-postfix.png`.
 
 Godot emitted a Windows root-certificate-store warning during its runs, and Android export reported that it selected build tools 35.0.1 for the configured target. Both builds completed successfully; the APK passed metadata and signature verification.
+
+## Prompt 6A follow-up
+
+The one-section-at-a-time desktop dock described in this historical Prompt 6 record is superseded by Prompt 6A. Windows now keeps all four management panels visible together; Android retains the contextual dock and uses the full lower width for its selected panel. See [`PROMPT6A_VISUAL_QA.md`](PROMPT6A_VISUAL_QA.md) for the updated typography diagnosis, resolution review, touch-flow checks, and three follow-up comparison passes.
