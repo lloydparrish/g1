@@ -119,6 +119,8 @@ func _ready() -> void:
 			capture_book = arg.trim_prefix("--capture-book=")
 		elif arg.begins_with("--capture-scenario="):
 			capture_scenario = arg.trim_prefix("--capture-scenario=")
+		elif arg == "--capture-mobile":
+			mobile_layout_override = true
 		elif arg == "--capture-full-web":
 			capture_full_web = true
 		elif arg.begins_with("--capture-web-pan="):
@@ -134,7 +136,7 @@ func _ready() -> void:
 				capture_path = capture_directory.path_join("%dx%d.png" % [capture_size.x, capture_size.y])
 				capture_requested = true
 				page = "battle"
-				var capture_character := "aldren" if capture_scenario == "summon" else "mara"
+				var capture_character := "aldren" if capture_scenario == "summon" else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
 				sim.start_run(912041, capture_character)
 				sim.save_run()
 				overlay = capture_overlay
@@ -518,11 +520,11 @@ func _draw_battle() -> void:
 
 func _draw_player_card() -> void:
 	var player: Dictionary = _display_player()
-	var layout := _battle_layout()
 	var mobile := _is_mobile_layout()
+	var card_layout := _player_card_layout(player, mobile)
+	var rect: Rect2 = card_layout.rect
 	var displayed_level := int(presentation_state.get("level", sim.run.get("level", 1))) if playback_active else int(sim.run.get("level", 1))
 	var displayed_xp := int(presentation_state.get("xp", sim.run.get("xp", 0))) if playback_active else int(sim.run.get("xp", 0))
-	var rect := Rect2(18.0, 18.0, 216.0, 244.0 if mobile else 392.0)
 	_draw_panel(rect, "", COLORS.line)
 	var level_label := "LV %d" % displayed_level
 	var level_width := ThemeDB.fallback_font.get_string_size(level_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13).x
@@ -539,27 +541,15 @@ func _draw_player_card() -> void:
 	draw_rect(Rect2(31, 88, 190, 4), Color("#22272b"))
 	draw_rect(Rect2(31, 88, 190.0 * clampf(float(displayed_xp) / xp_required, 0.0, 1.0), 4), COLORS.gold)
 	_draw_bar(Rect2(31, 98, 190, 20), "HP", player.hp, player.max_hp, COLORS.red)
-	var has_mana_actions: bool = not sim.run.get("schools", []).is_empty()
-	for ability_id in sim.run.get("known", []):
-		if sim.content.abilities.has(ability_id) and int(sim.content.abilities[ability_id].get("costs", {}).get("Mana", 0)) > 0: has_mana_actions = true
-	var command_is_relevant := int(player.get("resources", {}).get("Command", [0, 0])[0]) > 0
-	for ability_id in sim.run.get("known", []):
-		for effect in sim.content.abilities.get(ability_id, {}).get("effects", []):
-			if effect.get("type") == "summon": command_is_relevant = true
-	var resource_rows: Array = [["STA", player.resources.get("Stamina", [0, 0]), COLORS.green]]
-	if has_mana_actions: resource_rows.append(["MP", player.resources.get("Mana", [0, 0]), COLORS.blue])
-	var blood: Array = player.resources.get("Blood", [0, 0])
-	if int(blood[1]) > 0: resource_rows.append(["BLOOD", blood, COLORS.blood])
-	if command_is_relevant: resource_rows.append(["CMD", player.resources.get("Command", [0, 0]), COLORS.purple])
-	var resource_y := 126.0 if mobile else 130.0
-	var resource_step := 17.0 if mobile else 19.0
+	var resource_rows: Array = card_layout.resource_rows
+	var resource_y: float = card_layout.resource_y
+	var resource_step: float = card_layout.resource_step
+	var resource_height := 16.0 if mobile else 18.0
 	for resource_index in range(resource_rows.size()):
-		if resource_index >= 4:
-			break
 		var resource = resource_rows[resource_index]
 		var resource_color: Color = resource[2]
-		_draw_bar(Rect2(31.0, resource_y + float(resource_index) * resource_step, 190.0, 16.0 if mobile else 18.0), String(resource[0]), int(resource[1][0]), int(resource[1][1]), resource_color)
-	var attributes_y := 184.0 if mobile else 224.0
+		_draw_bar(Rect2(31.0, resource_y + float(resource_index) * resource_step, 190.0, resource_height), String(resource[0]), int(resource[1][0]), int(resource[1][1]), resource_color)
+	var attributes_y: float = card_layout.attributes_y
 	_draw_line(31, attributes_y - 10, 221, attributes_y - 10, COLORS.line_soft)
 	var attributes: Dictionary = presentation_state.get("attributes", sim.run.attributes) if playback_active else sim.run.attributes
 	var names: Array = ["Might", "Dexterity", "Vitality", "Intelligence", "Willpower", "Perception"]
@@ -569,21 +559,80 @@ func _draw_player_card() -> void:
 		var stat_x := 31 + column * 96
 		var stat_y := attributes_y + 12 + row * (14.0 if mobile else 17.0)
 		_draw_label("%s  %d" % [String(names[i]).substr(0, 3).to_upper(), int(attributes.get(names[i], 10))], stat_x, stat_y, 8 if mobile else 9, COLORS.text)
-	var status_y := 244.0 if mobile else 313.0
+	var status_y: float = card_layout.status_y
 	_draw_line(31, status_y - 12, 221, status_y - 12, COLORS.line_soft)
 	_draw_label("ACTIVE EFFECTS", 31, status_y, 9, COLORS.gold)
-	var status_index := 0
-	for status_id in player.get("statuses", {}):
-		if status_index >= (1 if mobile else 4):
-			break
+	var status_ids: Array = card_layout.status_ids
+	var status_font_size: int = card_layout.status_font_size
+	for status_index in range(status_ids.size()):
+		var status_id: Variant = status_ids[status_index]
 		var status: Dictionary = player.statuses[status_id]
 		var duration := int(status.get("duration", status.get("turns", 0)))
 		var suffix := " (%d)" % int(status.get("stacks", 1))
 		if duration > 0: suffix += " · %d" % duration
-		_draw_label("✦  %s%s" % [String(status_id).replace("_", " "), suffix], 34, status_y + 18 + status_index * 16, 8 if mobile else 10, COLORS.cyan if status_id in ["Haste", "Empowered"] else COLORS.orange)
-		status_index += 1
-	if status_index == 0:
-		_draw_label("No active effects", 34, status_y + 18, 8 if mobile else 10, COLORS.muted)
+		var baseline: float = card_layout.status_baselines[status_index]
+		var effect_text := "✦  %s%s" % [String(status_id).replace("_", " "), suffix]
+		_draw_label(_fit_text(effect_text, 183.0, status_font_size), 34, baseline, status_font_size, COLORS.cyan if status_id in ["Haste", "Empowered"] else COLORS.orange)
+	if status_ids.is_empty():
+		_draw_label("No active effects", 34, float(card_layout.status_baselines[0]), status_font_size, COLORS.muted)
+
+func _player_card_layout(player: Dictionary, mobile: bool) -> Dictionary:
+	var resource_rows := _player_resource_rows(player)
+	var resource_y := 126.0 if mobile else 130.0
+	var resource_step := 17.0 if mobile else 19.0
+	var resource_height := 16.0 if mobile else 18.0
+	var resource_end_y := resource_y + float(maxi(0, resource_rows.size() - 1)) * resource_step + resource_height
+	var attributes_y := 184.0 if mobile else 224.0
+	var attribute_step := 14.0 if mobile else 17.0
+	attributes_y = maxf(attributes_y, resource_end_y + 8.0 - 12.0)
+	var first_attribute_baseline := attributes_y + 12.0
+	var last_attribute_baseline := attributes_y + 12.0 + 2.0 * attribute_step
+	var status_y := maxf(244.0 if mobile else 313.0, last_attribute_baseline + 20.0)
+	var status_font_size := 8 if mobile else 10
+	var status_step := maxf(16.0, _text_line_height(status_font_size) + 3.0)
+	var status_ids: Array = player.get("statuses", {}).keys()
+	var status_baselines: Array[float] = []
+	var visible_status_count := maxi(1, status_ids.size())
+	for status_index in range(visible_status_count):
+		status_baselines.append(status_y + 18.0 + float(status_index) * status_step)
+	var bottom_padding := maxf(12.0, _text_line_height(status_font_size) + 6.0)
+	var content_bottom: float = status_baselines.back() + bottom_padding
+	var card_height := maxf(244.0 if mobile else 392.0, content_bottom - 18.0)
+	return {
+		"rect": Rect2(18.0, 18.0, 216.0, card_height),
+		"resource_rows": resource_rows,
+		"resource_y": resource_y,
+		"resource_step": resource_step,
+		"resource_end_y": resource_end_y,
+		"attributes_y": attributes_y,
+		"first_attribute_baseline": first_attribute_baseline,
+		"status_y": status_y,
+		"status_ids": status_ids,
+		"status_step": status_step,
+		"status_font_size": status_font_size,
+		"status_baselines": status_baselines,
+		"bottom_padding": bottom_padding
+	}
+
+func _player_resource_rows(player: Dictionary) -> Array:
+	var has_mana_actions: bool = not sim.run.get("schools", []).is_empty()
+	for ability_id in sim.run.get("known", []):
+		if sim.content.abilities.has(ability_id) and int(sim.content.abilities[ability_id].get("costs", {}).get("Mana", 0)) > 0:
+			has_mana_actions = true
+	var command_is_relevant := int(player.get("resources", {}).get("Command", [0, 0])[0]) > 0
+	for ability_id in sim.run.get("known", []):
+		for effect in sim.content.abilities.get(ability_id, {}).get("effects", []):
+			if effect.get("type") == "summon":
+				command_is_relevant = true
+	var resource_rows: Array = [["STA", player.resources.get("Stamina", [0, 0]), COLORS.green]]
+	if has_mana_actions:
+		resource_rows.append(["MP", player.resources.get("Mana", [0, 0]), COLORS.blue])
+	var blood: Array = player.resources.get("Blood", [0, 0])
+	if int(blood[1]) > 0:
+		resource_rows.append(["BLOOD", blood, COLORS.blood])
+	if command_is_relevant:
+		resource_rows.append(["CMD", player.resources.get("Command", [0, 0]), COLORS.purple])
+	return resource_rows
 
 func _display_player() -> Dictionary:
 	if playback_active and presentation_state.get("entities", {}).has("player"):
@@ -924,6 +973,15 @@ func _draw_side_controls() -> void:
 	var layout := _battle_layout()
 	var dpad_y := float(layout.battle_bottom) - 162.0
 	var dpad_x := 18.0 + (216.0 - 162.0) * 0.5
+	var dpad_rect := Rect2(dpad_x, dpad_y, 162.0, 108.0)
+	var player_rect: Rect2 = _player_card_layout(_display_player(), true).rect
+	if dpad_rect.intersects(player_rect):
+		# An expanded touch dock leaves little vertical room. Move the pad over the
+		# board's lower-left margin instead of covering character information.
+		dpad_rect.position.x = float(layout.center_rect.position.x) + 8.0
+		dpad_rect.position.y = maxf(18.0, float(layout.battle_bottom) - 110.0)
+	dpad_x = dpad_rect.position.x
+	dpad_y = dpad_rect.position.y
 	_draw_dpad_button(Rect2(dpad_x + 54.0, dpad_y, 54.0, 54.0), "▲", Vector2i(0, -1))
 	_draw_dpad_button(Rect2(dpad_x, dpad_y + 54.0, 54.0, 54.0), "◀", Vector2i(-1, 0))
 	_draw_dpad_button(Rect2(dpad_x + 54.0, dpad_y + 54.0, 54.0, 54.0), "▼", Vector2i(0, 1))
@@ -2822,6 +2880,35 @@ func _prepare_capture_scenario() -> void:
 			ui_state.character_tab = "Abilities"
 			ui_state.selected_ability_category = "arcane"
 			ui_state.selected_ability_id = "blink"
+		"abilities_cleave":
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Abilities"
+			ui_state.selected_ability_category = "heavy_weapons"
+			ui_state.selected_ability_id = "cleave"
+		"passives":
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Passives"
+			ui_state.selected_ability_id = "iron_resolve"
+		"known":
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Known"
+			ui_state.selected_ability_id = "cleave"
+		"mobile_character_no_effects":
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Character"
+		"mobile_character_effects":
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Character"
+			sim.run.entities.player.statuses = {
+				"Haste": {"stacks": 1, "duration": 3},
+				"Guard": {"stacks": 1, "duration": 2},
+				"Empowered": {"stacks": 1, "duration": 3}
+			}
 		"equipment_desktop":
 			ui_state.active_lower_panel = "inventory"
 			ui_state.inventory_tab = "Equipment"

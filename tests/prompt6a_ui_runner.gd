@@ -202,6 +202,11 @@ func run_suite() -> void:
 	_check(desktop.sim.start_boss(), "the final destination opens through the authoritative boss progression API")
 	var sixth_map: Dictionary = desktop.lower_dock._persistent_journey()
 	_check(int(desktop.sim.run.stage_index) == 5 and sixth_map.history.size() == 6 and sixth_map.history == desktop.sim.run.route and not bool(sixth_map.has_unknown) and String(sixth_map.history.back()) == String(desktop.sim.run.stage_id), "the 6/6 map shows the ordered chosen route and omits an inappropriate unknown node")
+	var icon_card := Rect2(30.0, 40.0, 130.0, 44.0)
+	for icon_size in [11, 15]:
+		var icon_layout: Dictionary = desktop.lower_dock._ability_card_icon_layout(desktop, icon_card, desktop.sim.content.abilities.cleave, icon_size)
+		_check(float(icon_layout.text_rect.position.x) >= float(icon_layout.icon_right) + float(icon_layout.gap), "ability card text reserves the measured icon slot at font size %d (text %.2f, icon %.2f, gap %.2f)" % [icon_size, icon_layout.text_rect.position.x, icon_layout.icon_right, icon_layout.gap])
+		_check(icon_layout.text_rect.end.x <= icon_card.end.x - 8.0, "ability card text remains inside the right padding at font size %d" % icon_size)
 
 	var mobile = MainScene.instantiate()
 	mobile.playback_mode = "Instant"
@@ -244,6 +249,24 @@ func run_suite() -> void:
 		_check(mobile.overlay == "destinations", "mobile objective completion opens the dedicated destination picker")
 		await _touch_action(mobile, "destination_route", mobile_route)
 	_check(String(mobile.sim.run.stage_id) == mobile_route and not mobile.ui_state.lower_dock_expanded and mobile.overlay == "", "mobile destination choice travels through the dedicated picker")
+	var empty_player_layout: Dictionary = mobile._player_card_layout(mobile.sim.get_player(), true)
+	var empty_status_baseline: float = empty_player_layout.status_baselines[0]
+	_check(float(empty_player_layout.rect.end.y) >= empty_status_baseline + float(empty_player_layout.bottom_padding), "mobile character card reserves bottom padding after the no-effects line")
+	_check(float(empty_player_layout.resource_end_y) + 6.0 <= float(empty_player_layout.first_attribute_baseline), "mobile resource bars finish before the attributes begin")
+	mobile.sim.run.entities.player.statuses = {
+		"Haste": {"stacks": 1, "duration": 3},
+		"Guard": {"stacks": 1, "duration": 2},
+		"Empowered": {"stacks": 1, "duration": 3}
+	}
+	var effects_player_layout: Dictionary = mobile._player_card_layout(mobile.sim.get_player(), true)
+	var final_effect_baseline: float = effects_player_layout.status_baselines.back()
+	_check(effects_player_layout.status_ids.size() == 3 and effects_player_layout.status_baselines.size() == 3, "mobile character layout allocates a visible line for each active effect")
+	_check(float(effects_player_layout.rect.end.y) >= final_effect_baseline + float(effects_player_layout.bottom_padding), "mobile character card grows through the final effect and bottom padding")
+	await _touch_action(mobile, "lower_panel", "character")
+	var mobile_dpad_rects: Array[Rect2] = []
+	for hit in mobile.active_hits:
+		if hit.action.get("type", "") == "dpad": mobile_dpad_rects.append(hit.rect)
+	_check(mobile_dpad_rects.size() == 4 and mobile_dpad_rects.all(func(dpad_rect: Rect2) -> bool: return not dpad_rect.intersects(effects_player_layout.rect)), "mobile movement controls avoid the expanded character information card")
 
 	desktop.queue_free()
 	mobile.queue_free()

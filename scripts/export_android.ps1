@@ -45,8 +45,8 @@ if ($Problems.Count -gt 0) {
     exit 2
 }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $ProjectRoot 'build\android') | Out-Null
-$ApkPath = Join-Path $ProjectRoot 'build\android\ProjectArcanist.apk'
+New-Item -ItemType Directory -Force -Path (Join-Path $ProjectRoot 'build\android\current') | Out-Null
+$ApkPath = Join-Path $ProjectRoot 'build\android\current\ProjectArcanist.apk'
 & $Godot --headless --path $ProjectRoot --export-debug 'Android' $ApkPath
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (-not (Test-Path -LiteralPath $ApkPath)) { throw 'Godot completed without creating the expected Android APK.' }

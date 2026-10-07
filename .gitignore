@@ -1,7 +1,8 @@
+# Generated local builds and QA captures. The explicitly tracked release APK lives in /releases/.
+/build/
 /.godot/
 /.godot-profile/
 /.tools/
-/build/
 /export_templates/
 /script_templates/
 /text_editor_themes/

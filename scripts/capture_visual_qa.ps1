@@ -89,6 +89,7 @@ foreach ($CaptureCase in @(
 	if ($CaptureCase.ContainsKey('Overlay')) { $ExtraArguments += "--capture-overlay=$($CaptureCase.Overlay)" }
 	if ($CaptureCase.ContainsKey('Target')) { $ExtraArguments += "--capture-target=$($CaptureCase.Target)" }
 	if ($CaptureCase.ContainsKey('Book')) { $ExtraArguments += "--capture-book=$($CaptureCase.Book)" }
+	if ($CaptureCase.ContainsKey('Mobile') -and $CaptureCase.Mobile) { $ExtraArguments += '--capture-mobile' }
 	& $Godot --path $ProjectRoot -- @ExtraArguments
 	if ($LASTEXITCODE -ne 0) { throw "Combat/inventory capture failed: $($CaptureCase.Name)." }
 	$Capture = Join-Path $ProjectRoot "build\visual-qa\$($CaptureCase.Name)\$($CaptureCase.Size).png"

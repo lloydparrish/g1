@@ -1,6 +1,6 @@
 # Project Arcanist — Codex Reference Bundle
 
-This bundle accompanies **Codex Prompt 1** supplied separately by the user.
+This bundle accompanies the Project Arcanist prompts supplied separately by the user.
 
 ## Authoritative files
 
@@ -12,7 +12,7 @@ This bundle accompanies **Codex Prompt 1** supplied separately by the user.
 2. `Project_Arcanist_UI_Reference.png`
    - Visual design reference and acceptance target.
    - Preserve its overall design language rather than reproducing the static screenshot literally at every size.
-   - The Prompt 6C desktop battle HUD keeps exactly three persistent lower sections: World Map, Character / Abilities, and Inventory / Equipment. Spellbooks remain reachable through the Inventory tabs. The persistent map records only the chosen journey, with an unknown `?` node until the final encounter; the post-objective picker alone reveals future choices.
+   - The Prompt 6 desktop battle HUD keeps exactly three persistent lower sections: World Map, Character / Abilities, and Inventory / Equipment. Spellbooks remain reachable through the Inventory tabs. The persistent map records only the chosen journey, with an unknown `?` node until the final encounter; the post-objective picker alone reveals future choices.
    - Android landscape keeps a contextual three-section dock with touch-sized controls and safe-area handling. The ability web remains a dedicated larger subview.
 
 ## Priority when resolving ambiguity
@@ -22,3 +22,12 @@ This bundle accompanies **Codex Prompt 1** supplied separately by the user.
 3. The UI reference for presentation intent.
 
 Do not silently contradict an established design rule. If implementation constraints require a deviation, document the deviation and choose the narrowest solution that preserves future extensibility.
+
+## BUILD ARTIFACT POLICY
+
+- Git stores historical source states; generated executables are not long-term version history.
+- Keep the latest verified Windows build at `build/windows/current/ProjectArcanist.exe` and Android APK at `build/android/current/ProjectArcanist.apk`.
+- Keep at most two immediately preceding verified build sets when they help comparison or regression testing. Delete older redundant executables, APKs, duplicate export folders, and temporary QA outputs after verification.
+- Old versions are reproduced by checking out their Git commit and rebuilding.
+- `releases/ProjectArcanist.apk` is the explicitly designated, tracked release artifact and is exempt from generated-build cleanup.
+- Preserve screenshots cited by permanent QA documents. Keep uncited captures and temporary logs only while they are needed for active verification.

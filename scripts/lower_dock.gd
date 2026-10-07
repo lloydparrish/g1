@@ -245,8 +245,8 @@ func _draw_character_desktop(rect: Rect2) -> void:
 		var row := int(local_index / 3)
 		var item_rect := Rect2(rect.position.x + 2.0 + float(column) * (card_width + 2.0), list_top + float(row) * 31.0, card_width, 28.0)
 		host._draw_panel(item_rect, "", host.COLORS.gold if host.ui_state.selected_ability_id == ability_id else color if unlocked else host.COLORS.line_soft)
-		host._draw_label(host._ability_glyph(ability), item_rect.position.x + 9.0, item_rect.position.y + 19.0, 11, color)
-		host._draw_label(host._fit_text(String(ability.get("name", ability_id)), item_rect.size.x - 21.0, 7), item_rect.position.x + 19.0, item_rect.position.y + 18.0, 7, host.COLORS.text if unlocked else host.COLORS.muted)
+		var label_rect := _draw_ability_card_leading(host, item_rect, ability, color, 11, item_rect.position.y + 19.0)
+		host._draw_label(host._fit_text(String(ability.get("name", ability_id)), label_rect.size.x, 7), label_rect.position.x, item_rect.position.y + 18.0, 7, host.COLORS.text if unlocked else host.COLORS.muted)
 		host.active_hits.append({"rect": item_rect, "action": {"type": "select_lower_ability", "id": ability_id}})
 	if page_count > 1:
 		host._draw_button(Rect2(rect.position.x + 2.0, rect.end.y - 27.0, 27.0, 23.0), "‹", {"type": "lower_ability_page", "delta": -1}, true, 10)
@@ -433,9 +433,9 @@ func _draw_character(rect: Rect2) -> void:
 		var card := Rect2(x + float(column) * (card_width + 6.0), y + float(row) * 58.0, card_width, 44.0)
 		var active := String(host.ui_state.selected_ability_id) == ability_id
 		host._draw_panel(card, "", host.COLORS.gold if active else color if learned or progress.get("learnable", false) else host.COLORS.line_soft)
-		host._draw_label(host._ability_glyph(ability), card.position.x + 14.0, card.position.y + 23.0, 15, color)
-		host._draw_label(host._fit_text(String(ability.get("name", ability_id)), card.size.x - 28.0, 7), card.position.x + 27.0, card.position.y + 17.0, 7, host.COLORS.text)
-		host._draw_label(state, card.position.x + 27.0, card.position.y + 33.0, 6, host.COLORS.green if equipped or learned else host.COLORS.gold if progress.get("learnable", false) else host.COLORS.muted)
+		var label_rect := _draw_ability_card_leading(host, card, ability, color, 15, card.position.y + 23.0)
+		host._draw_label(host._fit_text(String(ability.get("name", ability_id)), label_rect.size.x, 7), label_rect.position.x, card.position.y + 17.0, 7, host.COLORS.text)
+		host._draw_label(host._fit_text(state, label_rect.size.x, 6), label_rect.position.x, card.position.y + 33.0, 6, host.COLORS.green if equipped or learned else host.COLORS.gold if progress.get("learnable", false) else host.COLORS.muted)
 		var selection_rect := card
 		if column == 1:
 			selection_rect.size.x = minf(selection_rect.size.x, 60.0)
@@ -459,6 +459,28 @@ func _draw_character(rect: Rect2) -> void:
 		host._draw_label("%d / %d" % [int(host.ui_state.ability_page) + 1, page_count], x + 52.0, rect.end.y - 5.0, 7, host.COLORS.muted)
 		host._draw_button(Rect2(x + 91.0, rect.end.y - 51.0, 54.0, 32.0), "›", {"type": "lower_ability_page", "delta": 1}, true, 12)
 	# Ability Web remains available from the Character tab beside the three persistent sections.
+
+func _draw_ability_card_leading(draw_host, card: Rect2, ability: Dictionary, color: Color, icon_font_size: int, icon_baseline: float) -> Rect2:
+	var layout := _ability_card_icon_layout(draw_host, card, ability, icon_font_size)
+	draw_host._draw_label(String(layout.glyph), float(layout.icon_x), icon_baseline, icon_font_size, color)
+	return layout.text_rect
+
+func _ability_card_icon_layout(draw_host, card: Rect2, ability: Dictionary, icon_font_size: int) -> Dictionary:
+	var glyph: String = draw_host._ability_glyph(ability)
+	var physical_size: int = draw_host._physical_font_size(icon_font_size)
+	var measured_icon_width := ThemeDB.fallback_font.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size).x / maxf(0.1, draw_host.draw_scale)
+	var icon_slot_width := maxf(float(icon_font_size) + 2.0, measured_icon_width + 1.0)
+	var padding := 8.0
+	var gap := maxf(5.0, ceil(float(icon_font_size) * 0.45))
+	var text_x := card.position.x + padding + icon_slot_width + gap
+	var text_right := card.end.x - padding
+	return {
+		"glyph": glyph,
+		"icon_x": card.position.x + padding,
+		"icon_right": card.position.x + padding + measured_icon_width,
+		"gap": gap,
+		"text_rect": Rect2(text_x, card.position.y, maxf(0.0, text_right - text_x), card.size.y)
+	}
 
 func _draw_inventory(rect: Rect2) -> void:
 	var sim = host.sim

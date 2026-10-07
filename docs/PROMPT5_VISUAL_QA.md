@@ -1,10 +1,11 @@
 # Prompt 5 Visual QA
 
 The production capture set was generated with `scripts/capture_visual_qa.ps1`.
-It contains 44 PNG captures under `build/visual-qa/`, covering the baseline and
-representative combat, quickbar, inventory, history, progression, reward, route,
-pause, and mobile landscape states. These generated captures are local build
-artifacts and are not committed.
+It contained 44 PNG captures under `build/visual-qa/` at the time, covering the
+baseline and representative combat, quickbar, inventory, history, progression,
+reward, route, pause, and mobile landscape states. These generated captures are
+local build artifacts and are not committed; the current retention policy keeps
+the evidence linked below when it is present and prunes uncited iteration output.
 
 ## Layout review
 
