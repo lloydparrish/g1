@@ -35,15 +35,15 @@ func run_suite() -> void:
 	_check(inventory_tabs == ["Inventory", "Equipment", "Artifacts", "Spellbooks"], "inventory sub-tabs use the requested order")
 	_check(not desktop_dpad, "desktop omits the touch movement D-pad")
 	var all_abilities: int = desktop.sim.content.abilities.size()
-	_check(all_abilities == 32 and desktop.sim.validate_content().is_empty() and desktop.sim.content.abilities.values().all(func(ability: Dictionary) -> bool: return not ability.get("categories", []).is_empty()), "every authored ability has validated category metadata")
+	_check(all_abilities == 34 and desktop.sim.validate_content().is_empty() and desktop.sim.content.abilities.values().all(func(ability: Dictionary) -> bool: return not ability.get("categories", []).is_empty()), "every authored ability has validated category metadata")
 	_check(desktop.sim.content.ability_categories.has("pyromancy") and desktop.sim.content.ability_categories.has("mobility") and desktop.sim.content.ability_categories.has("nature"), "category registry includes core and authored-school groups")
 	var jim_category_ids: Array[String] = []
 	for category in desktop.sim.get_visible_ability_categories(): jim_category_ids.append(String(category.id))
 	_check(not jim_category_ids.has("arcane") and not jim_category_ids.has("pyromancy"), "the category list hides schools Jim has not entered")
-	desktop.sim.run.schools.append("Arcane")
+	desktop.sim.run.known.append("magic_missile")
 	desktop.queue_redraw()
 	await process_frame
-	_check(desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "select_ability_category" and hit.action.get("id", "") == "arcane"), "discovering a school adds its category from run state")
+	_check(desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "select_ability_category" and hit.action.get("id", "") == "arcane"), "learning direct Arcane magic adds its ability category without a spell school")
 	desktop._handle_action({"type": "select_ability_category", "id": "arcane"})
 	desktop.queue_redraw()
 	await process_frame
@@ -51,7 +51,7 @@ func run_suite() -> void:
 	var filtered_fire := false
 	for hit in desktop.active_hits:
 		if hit.action.get("type", "") == "select_lower_ability":
-			filtered_arcane = filtered_arcane or String(hit.action.get("id", "")) == "arcane_bolt"
+			filtered_arcane = filtered_arcane or String(hit.action.get("id", "")) == "magic_missile"
 			filtered_fire = filtered_fire or String(hit.action.get("id", "")) == "firebolt"
 	_check(filtered_arcane and not filtered_fire, "the selected ability category filters from definition metadata")
 	var ability_action := {"type": "select_lower_ability", "id": "arcane_bolt"}
@@ -150,6 +150,9 @@ func run_suite() -> void:
 	targeting.playback_mode = "Instant"
 	root.add_child(targeting)
 	await process_frame
+	var test_unlocks: Array = targeting.sim.profile.get("unlocked_character_ids", [])
+	if not test_unlocks.has("sylvi"): test_unlocks.append("sylvi")
+	targeting.sim.profile["unlocked_character_ids"] = test_unlocks
 	targeting.sim.start_run(60261007, "sylvi")
 	targeting.page = "battle"
 	var target_player: Dictionary = targeting.sim.get_player()

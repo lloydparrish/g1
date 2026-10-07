@@ -5,24 +5,178 @@ const WIDTH := 25
 const HEIGHT := 16
 const SAVE_PATH := "user://run_save.json"
 const CODEX_PATH := "user://codex.json"
+const PROFILE_PATH := "user://profile.json"
+const ContentRegistry = preload("res://scripts/content_registry.gd")
 const DIRECTIONS := [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
 const STAGE_ORDER := ["ruined_village", "graveyard", "flooded_ruins", "goblin_warrens", "thornwood"]
 
 var content: Dictionary = {}
 var run: Dictionary = {}
+var profile: Dictionary = {}
+var content_registry
+var package_load_errors: Array[String] = []
 var codex: Dictionary = {"creatures": [], "abilities": [], "spellbooks": [], "artifacts": [], "schools": []}
 var _rng := RandomNumberGenerator.new()
 var _recording_presentation := false
 var _action_presentation_events: Array = []
 
 func _init() -> void:
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
-	if parsed is Dictionary:
-		content = parsed
+	content_registry = ContentRegistry.new()
+	var loaded: Dictionary = content_registry.load_from_disk([])
+	content = loaded.get("content", {})
+	package_load_errors = loaded.get("errors", [])
+	_load_profile()
+	var enabled_packages: Array = profile.get("enabled_package_ids", [])
+	if not enabled_packages.is_empty():
+		loaded = content_registry.load_from_disk(enabled_packages)
+		content = loaded.get("content", content)
+		package_load_errors = loaded.get("errors", [])
+	_load_profile()
+	if not enabled_packages.is_empty():
+		var package_content_errors := validate_content()
+		if not package_content_errors.is_empty():
+			var invalid_errors := package_content_errors.duplicate()
+			loaded = content_registry.load_from_disk([])
+			content = loaded.get("content", content)
+			package_load_errors = invalid_errors
 	_load_codex()
+
+func _load_profile() -> void:
+	profile = {"version": 1, "unlocked_character_ids": [], "pending_character_reveals": [], "enabled_package_ids": []}
+	if FileAccess.file_exists(PROFILE_PATH):
+		var parsed = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
+		if parsed is Dictionary:
+			profile.merge(parsed, true)
+	var starters: Array[String] = []
+	for character_id in content.get("characters", {}):
+		if bool(content.characters[character_id].get("starting", false)):
+			starters.append(String(character_id))
+	starters.sort()
+	var unlocked: Array = profile.get("unlocked_character_ids", [])
+	for character_id in starters:
+		if not unlocked.has(character_id): unlocked.append(character_id)
+	profile["unlocked_character_ids"] = unlocked
+	profile["pending_character_reveals"] = profile.get("pending_character_reveals", [])
+	profile["enabled_package_ids"] = profile.get("enabled_package_ids", [])
+
+func save_profile() -> bool:
+	var file := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
+	if file == null: return false
+	file.store_string(JSON.stringify(profile))
+	file.close()
+	return true
+
+func get_starting_character_ids() -> Array[String]:
+	var result: Array[String] = []
+	for character_id in content.get("characters", {}):
+		if bool(content.characters[character_id].get("starting", false)):
+			result.append(String(character_id))
+	result.sort_custom(func(a: String, b: String) -> bool:
+		return int(content.characters[a].get("selection_order", 99)) < int(content.characters[b].get("selection_order", 99))
+	)
+	return result
+
+func get_unlocked_character_ids() -> Array[String]:
+	var result: Array[String] = []
+	for character_id in content.get("characters", {}):
+		if is_character_unlocked(String(character_id)):
+			result.append(String(character_id))
+	result.sort_custom(func(a: String, b: String) -> bool:
+		return int(content.characters[a].get("selection_order", 99)) < int(content.characters[b].get("selection_order", 99))
+	)
+	return result
+
+func is_character_unlocked(character_id: String) -> bool:
+	return profile.get("unlocked_character_ids", []).has(character_id) and content.get("characters", {}).has(character_id)
+
+func unlock_character(character_id: String) -> bool:
+	if not content.get("characters", {}).has(character_id): return false
+	var unlocked: Array = profile.get("unlocked_character_ids", [])
+	if unlocked.has(character_id): return false
+	unlocked.append(character_id)
+	profile["unlocked_character_ids"] = unlocked
+	var reveals: Array = profile.get("pending_character_reveals", [])
+	if not reveals.has(character_id): reveals.append(character_id)
+	profile["pending_character_reveals"] = reveals
+	save_profile()
+	return true
+
+func consume_character_reveal(character_id: String) -> void:
+	var reveals: Array = profile.get("pending_character_reveals", [])
+	reveals.erase(character_id)
+	profile["pending_character_reveals"] = reveals
+	save_profile()
+
+func get_pending_character_reveal() -> String:
+	var reveals: Array = profile.get("pending_character_reveals", [])
+	for character_id in reveals:
+		if is_character_unlocked(String(character_id)):
+			return String(character_id)
+	return ""
+
+func get_character_unlock_requirement(character_id: String) -> String:
+	var definition: Dictionary = content.get("characters", {}).get(character_id, {})
+	return String(definition.get("unlock_requirement", "Not yet defined."))
+
+func try_unlock_character(character_id: String, requirements: Variant) -> Dictionary:
+	if not content.get("characters", {}).has(character_id):
+		return {"ok": false, "reason": "Unknown character."}
+	var result: Dictionary = evaluate_prerequisites(requirements)
+	if not result.eligible:
+		return {"ok": false, "reason": String(result.get("reason", "Requirements are not met."))}
+	var unlocked := unlock_character(character_id)
+	return {"ok": unlocked, "reason": "" if unlocked else "Character is already unlocked."}
+
+func check_authored_character_unlocks() -> Array[String]:
+	var newly_unlocked: Array[String] = []
+	if run.is_empty():
+		return newly_unlocked
+	for character_id in content.get("characters", {}):
+		if is_character_unlocked(String(character_id)):
+			continue
+		var definition: Dictionary = content.characters[character_id]
+		var unlock_definition: Variant = definition.get("unlock", {})
+		if unlock_definition is Dictionary and unlock_definition.is_empty():
+			continue
+		var result: Dictionary = evaluate_prerequisites(unlock_definition)
+		if bool(result.get("eligible", false)) and unlock_character(String(character_id)):
+			newly_unlocked.append(String(character_id))
+	return newly_unlocked
+
+func set_package_enabled(package_id: String, enabled: bool) -> Dictionary:
+	var requested: Array = profile.get("enabled_package_ids", []).duplicate()
+	var package_result: Dictionary = content_registry.get_package_enable_closure(package_id, requested) if enabled else content_registry.get_package_disable_closure(package_id, requested)
+	if not bool(package_result.get("ok", false)):
+		return package_result
+	var loaded: Dictionary = content_registry.load_from_disk(package_result.get("enabled", []))
+	if not loaded.get("errors", []).is_empty():
+		return {"ok": false, "enabled": requested, "error": "Package validation failed. Review the development log for details."}
+	var previous_content: Dictionary = content
+	var previous_errors: Array[String] = package_load_errors
+	content = loaded.get("content", {})
+	package_load_errors = loaded.get("errors", [])
+	var content_errors := validate_content()
+	if not content_errors.is_empty():
+		content = previous_content
+		package_load_errors = previous_errors
+		return {"ok": false, "enabled": requested, "error": "Package validation failed. Review the development log for details."}
+	profile["enabled_package_ids"] = package_result.get("enabled", [])
+	var unlocked_ids: Array = profile.get("unlocked_character_ids", [])
+	for starter_id in _starting_ids_for(loaded.get("content", {})):
+		if not unlocked_ids.has(starter_id): unlocked_ids.append(starter_id)
+	profile["unlocked_character_ids"] = unlocked_ids
+	save_profile()
+	return {"ok": true, "enabled": profile.enabled_package_ids, "error": ""}
+
+func _starting_ids_for(definitions: Dictionary) -> Array:
+	var result: Array = []
+	for character_id in definitions.get("characters", {}):
+		if bool(definitions.characters[character_id].get("starting", false)): result.append(character_id)
+	return result
 
 func validate_content() -> Array:
 	var errors: Array = []
+	errors.append_array(package_load_errors)
 	var types: Array = content.get("damage_types", [])
 	var valid_slots := ["Weapon", "Offhand", "Head", "Body", "Hands", "Feet", "Ring 1", "Ring 2", "Amulet"]
 	var valid_targets := ["self", "enemy", "area", "tile", "passive"]
@@ -75,12 +229,14 @@ func validate_content() -> Array:
 		for resource in ability.get("costs", {}):
 			if not content.get("resources", []).has(resource):
 				errors.append("%s uses unknown resource %s" % [ability_id, resource])
-		var all_prerequisites: Array = ability.get("requires", []).duplicate()
-		all_prerequisites.append_array(ability.get("prerequisites", {}).get("all_of", []))
-		all_prerequisites.append_array(ability.get("prerequisites", {}).get("any_of", []))
-		for prerequisite in all_prerequisites:
+		for prerequisite in ability.get("requires", []):
 			if not content.get("abilities", {}).has(prerequisite):
 				errors.append("%s requires unknown ability %s" % [ability_id, prerequisite])
+		if ability.has("evolution"):
+			var evolution: Dictionary = ability.evolution
+			if not content.get("abilities", {}).has(evolution.get("from", "")):
+				errors.append("%s evolves from an unknown ability %s" % [ability_id, String(evolution.get("from", ""))])
+			if int(evolution.get("min_level", 1)) < 1: errors.append("%s has an invalid evolution ability level" % ability_id)
 		for modifier_id in ability.get("modifiers", {}):
 			if not (ability.modifiers[modifier_id] is int or ability.modifiers[modifier_id] is float):
 				errors.append("%s has a non-numeric passive modifier %s" % [ability_id, modifier_id])
@@ -140,10 +296,24 @@ func validate_content() -> Array:
 			probability_sum += probability
 		if probability_sum > 1.0:
 			errors.append("%s terrain weights exceed one" % stage_id)
+		var exploration: Dictionary = stage.get("exploration_loot", {})
+		if int(exploration.get("min_count", 0)) < 0 or int(exploration.get("max_count", 0)) < int(exploration.get("min_count", 0)):
+			errors.append("%s has invalid exploration loot counts" % stage_id)
+		for loot_type in exploration.get("types", []):
+			if String(loot_type) not in ["chest", "skill_book", "item"]: errors.append("%s uses invalid exploration loot type %s" % [stage_id, String(loot_type)])
 	for character_id in content.get("characters", {}):
 		var character: Dictionary = content.characters[character_id]
+		for school in character.get("schools", []):
+			if not content.get("progression", {}).get("schools", []).has(school): errors.append("%s starts with unknown magic school %s" % [character_id, String(school)])
+		for discipline in character.get("disciplines", []):
+			if discipline != "" and not content.get("progression", {}).get("disciplines", []).has(discipline): errors.append("%s starts with unknown discipline %s" % [character_id, String(discipline)])
+		for tag in character.get("affinities", {}):
+			if not content.get("tag_registry", {}).has(String(tag)): errors.append("%s has an unknown affinity tag %s" % [character_id, String(tag)])
 		if not content.weapons.has(character.get("weapon", "")):
 			errors.append("%s starts with unknown weapon" % character_id)
+		var portrait_path := String(character.get("portrait_path", ""))
+		if portrait_path != "" and not FileAccess.file_exists(portrait_path) and not ResourceLoader.exists(portrait_path):
+			errors.append("%s references missing portrait asset %s" % [character_id, portrait_path])
 		for ability_id in character.get("known", []):
 			if not content.abilities.has(ability_id):
 				errors.append("%s starts with unknown ability %s" % [character_id, ability_id])
@@ -166,7 +336,135 @@ func validate_content() -> Array:
 				errors.append("%s trigger applies an unknown status" % trigger_id)
 			if effect.get("type") == "summon" and not content.get("enemies", {}).has(effect.get("id", "")) and not content.get("summons", {}).has(effect.get("id", "")):
 				errors.append("%s trigger summons an unknown creature" % trigger_id)
+	errors.append_array(_validate_definition_metadata())
 	return errors
+
+func _validate_definition_metadata() -> Array[String]:
+	var found: Array[String] = []
+	for section_name in content:
+		if String(section_name) in ["tag_registry", "progression"] or not content[section_name] is Dictionary:
+			continue
+		for definition_id in content[section_name]:
+			var definition: Variant = content[section_name][definition_id]
+			if not definition is Dictionary:
+				found.append("%s has a malformed content definition in section %s" % [String(definition_id), String(section_name)])
+				continue
+			if definition.has("tags"):
+				if not definition.tags is Array:
+					found.append("%s has malformed content tags" % String(definition_id))
+				else:
+					for tag in definition.tags:
+						if not content.get("tag_registry", {}).has(String(tag)):
+							found.append("%s references unknown content tag %s" % [String(definition_id), String(tag)])
+			for prerequisite_key in ["prerequisites", "unlock"]:
+				if definition.has(prerequisite_key):
+					found.append_array(_validate_prerequisite_definition(definition[prerequisite_key], String(definition_id)))
+			if definition.has("evolution"):
+				var evolution: Variant = definition.evolution
+				if not evolution is Dictionary:
+					found.append("%s has malformed evolution metadata" % String(definition_id))
+				elif evolution.has("prerequisites"):
+					found.append_array(_validate_prerequisite_definition(evolution.prerequisites, String(definition_id)))
+	return found
+
+func _validate_prerequisite_definition(requirements: Variant, owner_id: String) -> Array[String]:
+	var found: Array[String] = []
+	if requirements == null or (requirements is Dictionary and requirements.is_empty()): return found
+	if not requirements is Dictionary:
+		found.append("%s has malformed prerequisite metadata" % owner_id)
+		return found
+	for list_key in ["tags", "requires", "all_of", "any_of", "schools", "disciplines", "characters", "artifacts", "conditions"]:
+		if requirements.has(list_key) and not requirements[list_key] is Array:
+			found.append("%s has a malformed '%s' prerequisite list" % [owner_id, list_key])
+	if not found.is_empty(): return found
+	for dictionary_key in ["school_ranks", "discipline_ranks", "resources"]:
+		if requirements.has(dictionary_key) and not requirements[dictionary_key] is Dictionary:
+			found.append("%s has malformed '%s' prerequisite values" % [owner_id, dictionary_key])
+			return found
+	for tag in requirements.get("tags", []):
+		if not content.get("tag_registry", {}).has(String(tag)):
+			found.append("%s requires unknown content tag %s" % [owner_id, String(tag)])
+	for ability_key in ["requires", "all_of", "any_of"]:
+		for ability_id in requirements.get(ability_key, []):
+			if not content.get("abilities", {}).has(ability_id):
+				found.append("%s requires unknown ability %s" % [owner_id, String(ability_id)])
+	var progression: Dictionary = content.get("progression", {})
+	for school in requirements.get("schools", []):
+		if not progression.get("schools", []).has(school): found.append("%s requires unknown magic school %s" % [owner_id, String(school)])
+	for school in requirements.get("school_ranks", {}):
+		if not progression.get("schools", []).has(school): found.append("%s has a rank requirement for unknown magic school %s" % [owner_id, String(school)])
+	for discipline in requirements.get("disciplines", []):
+		if not progression.get("disciplines", []).has(discipline): found.append("%s requires unknown discipline %s" % [owner_id, String(discipline)])
+	for discipline in requirements.get("discipline_ranks", {}):
+		if not progression.get("disciplines", []).has(discipline): found.append("%s has a rank requirement for unknown discipline %s" % [owner_id, String(discipline)])
+	for rank in requirements.get("school_ranks", {}).values():
+		if int(rank) < 1: found.append("%s has an invalid school rank requirement" % owner_id)
+	for rank in requirements.get("discipline_ranks", {}).values():
+		if int(rank) < 1: found.append("%s has an invalid discipline rank requirement" % owner_id)
+	for character_id in requirements.get("characters", []):
+		if not content.get("characters", {}).has(character_id): found.append("%s requires unknown character %s" % [owner_id, String(character_id)])
+	for artifact_id in requirements.get("artifacts", []):
+		if not content.get("artifacts", {}).has(artifact_id): found.append("%s requires unknown artifact %s" % [owner_id, String(artifact_id)])
+	for resource_id in requirements.get("resources", {}):
+		if not content.get("resources", []).has(resource_id): found.append("%s requires unknown resource %s" % [owner_id, String(resource_id)])
+		elif int(requirements.resources[resource_id]) < 0: found.append("%s has an invalid amount for resource %s" % [owner_id, String(resource_id)])
+	for condition in requirements.get("conditions", []):
+		var condition_error := _validate_condition_definition(condition, owner_id)
+		if condition_error != "": found.append(condition_error)
+	return found
+
+func _validate_condition_definition(condition: Variant, owner_id: String) -> String:
+	if not condition is Dictionary:
+		return "%s has a malformed prerequisite condition" % owner_id
+	for operator in ["all", "any"]:
+		if condition.has(operator):
+			if not condition[operator] is Array: return "%s has a malformed '%s' prerequisite list" % [owner_id, operator]
+			for nested in condition.get(operator, []):
+				var nested_error := _validate_condition_definition(nested, owner_id)
+				if nested_error != "": return nested_error
+			return ""
+	if condition.has("not"):
+		return _validate_condition_definition(condition.get("not"), owner_id)
+	var condition_type := String(condition.get("type", ""))
+	var content_id := String(condition.get("id", ""))
+	if condition_type == "tags":
+		for tag in condition.get("ids", []):
+			if not content.get("tag_registry", {}).has(String(tag)): return "%s requires unknown content tag %s" % [owner_id, String(tag)]
+		return ""
+	if condition_type == "owned_tags":
+		if not condition.get("ids", []) is Array or condition.get("ids", []).is_empty(): return "%s has an empty owned-tag prerequisite" % owner_id
+		for tag in condition.get("ids", []):
+			if not content.get("tag_registry", {}).has(String(tag)): return "%s requires unknown content tag %s" % [owner_id, String(tag)]
+		return ""
+	if condition_type == "tag":
+		return "" if content.get("tag_registry", {}).has(content_id) else "%s requires unknown content tag %s" % [owner_id, content_id]
+	if condition_type == "ability" and not content.get("abilities", {}).has(content_id): return "%s requires unknown ability %s" % [owner_id, content_id]
+	if condition_type in ["item", "equipment"] and not content.get("items", {}).has(content_id): return "%s requires unknown item %s" % [owner_id, content_id]
+	if condition_type == "weapon" and not content.get("weapons", {}).has(content_id): return "%s requires unknown weapon %s" % [owner_id, content_id]
+	if condition_type == "stat" and content_id not in ["Might", "Dexterity", "Vitality", "Intelligence", "Willpower", "Perception"]: return "%s requires unknown attribute %s" % [owner_id, content_id]
+	if condition_type == "stat" and int(condition.get("minimum", condition.get("value", 0))) < 1: return "%s has an invalid stat threshold" % owner_id
+	if condition_type == "summon_count":
+		if int(condition.get("minimum", 0)) < 1: return "%s has an invalid summon-count threshold" % owner_id
+		if String(condition.get("owner", "player")) not in ["player", "any"]: return "%s has an invalid summon owner prerequisite" % owner_id
+		var required_faction := String(condition.get("faction", ""))
+		if required_faction == "": return "%s has an empty summon faction prerequisite" % owner_id
+		var faction_exists := false
+		for creature in content.get("enemies", {}).values():
+			if String(creature.get("faction", "")) == required_faction: faction_exists = true
+		for creature in content.get("summons", {}).values():
+			if String(creature.get("faction", "")) == required_faction: faction_exists = true
+		if not faction_exists: return "%s requires unknown summon faction %s" % [owner_id, required_faction]
+	if condition_type in ["artifact", "relic"] and not content.get("artifacts", {}).has(content_id): return "%s requires unknown artifact %s" % [owner_id, content_id]
+	if condition_type == "character" and not content.get("characters", {}).has(content_id): return "%s requires unknown character %s" % [owner_id, content_id]
+	if condition_type == "package" and not content_registry._package_is_available(content_id): return "%s requires unavailable package %s" % [owner_id, content_id]
+	if condition_type == "school" and not content.get("progression", {}).get("schools", []).has(content_id): return "%s requires unknown magic school %s" % [owner_id, content_id]
+	if condition_type == "discipline" and not content.get("progression", {}).get("disciplines", []).has(content_id): return "%s requires unknown discipline %s" % [owner_id, content_id]
+	if condition_type == "resource" and not content.get("resources", []).has(content_id): return "%s requires unknown resource %s" % [owner_id, content_id]
+	if condition_type == "level" and int(condition.get("value", condition.get("level", 1))) < 1: return "%s has an invalid level prerequisite" % owner_id
+	if condition_type == "resource" and int(condition.get("amount", condition.get("value", 1))) < 0: return "%s has an invalid resource prerequisite" % owner_id
+	if condition_type == "discovery" and String(condition.get("id", "")).strip_edges() == "": return "%s has an empty discovery prerequisite" % owner_id
+	if condition_type not in ["ability", "item", "equipment", "weapon", "stat", "stage_completed", "summon_count", "owned_tags", "artifact", "relic", "character", "package", "level", "school", "discipline", "discovery", "resource"]: return "%s uses unknown prerequisite type %s" % [owner_id, condition_type]
+	return ""
 
 func _duplicate_json_keys(source: String) -> Array[String]:
 	var duplicates: Array[String] = []
@@ -204,7 +502,7 @@ func _duplicate_json_keys(source: String) -> Array[String]:
 	return duplicates
 
 func start_run(seed_value: int, character_id: String) -> bool:
-	if not content.get("characters", {}).has(character_id):
+	if not is_character_unlocked(character_id):
 		return false
 	_rng.seed = seed_value
 	var definition: Dictionary = content.characters[character_id]
@@ -219,15 +517,16 @@ func start_run(seed_value: int, character_id: String) -> bool:
 		"character": definition.name, "aura": definition.aura, "discipline": definition.discipline,
 		"schools": definition.schools.duplicate(), "disciplines": definition.get("disciplines", [definition.get("discipline", "")]).duplicate(),
 		"discoveries": [], "school_ranks": {}, "discipline_ranks": {}, "attributes": definition.attributes.duplicate(true),
+		"character_affinities": definition.get("affinities", {}).duplicate(true), "build_tag_counts": {},
 		"entities": {}, "grid": [], "visible": [], "explored": [], "objects": [], "corpses": [],
 		"equipment": equipment, "inventory": inventory, "artifacts": [], "known": definition.known.duplicate(),
 		"temporary_abilities": {}, "xp": 0, "level": 1, "skill_points": 0, "kills": 0, "assists": 0,
 		"growth_milestones": 0, "quickbar": [], "quickbar_customized": false,
 		"combat_history": [], "combat_contributions": {}, "combat_event_sequence": 0,
 		"time": 0, "turn": 0, "stage_index": 0, "encounters_completed": 0,
-		"stage_id": "", "objective": {}, "stage_completed": false, "reward_choices": [], "reward_choice_resolved": false, "reward_chosen_index": -1,
+		"stage_id": "", "objective": {}, "stage_completed": false, "stage_prompt_dismissed": false, "reward_choices": [], "reward_choice_resolved": false, "reward_chosen_index": -1,
 		"route_choices": [], "route": ["ruined_village"], "outcome": "", "log": ["The March stirs beyond the gate."],
-		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "spellbook_resolutions": {}, "trigger_counts": {}
+		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "spellbook_resolutions": {}, "trigger_counts": {}, "ability_states": {}
 	}
 	for ability_id in definition.known:
 		if content.abilities.get(ability_id, {}).get("kind", "active") != "passive" and run.quickbar.size() < 8:
@@ -244,6 +543,7 @@ func start_run(seed_value: int, character_id: String) -> bool:
 	_new_stage("ruined_village", false)
 	_recompute_armor()
 	_save_codex()
+	save_profile()
 	return true
 
 func resume_run() -> bool:
@@ -253,6 +553,19 @@ func resume_run() -> bool:
 	if not (parsed is Dictionary) or int(parsed.get("version", 0)) != 1:
 		return false
 	run = _canonicalize(parsed)
+	var saved_character_id := String(run.get("character_id", "jim"))
+	if content.get("characters", {}).has(saved_character_id):
+		if not is_character_unlocked(saved_character_id):
+			# Keep an existing expedition playable when an older save predates profile unlock data.
+			unlock_character(saved_character_id)
+		run["character"] = String(content.characters[saved_character_id].get("name", saved_character_id))
+		run["character_affinities"] = content.characters[saved_character_id].get("affinities", {}).duplicate(true)
+		if run.get("entities", {}).has("player"):
+			run.entities.player["name"] = run.character
+	run["build_tag_counts"] = run.get("build_tag_counts", {})
+	run["character_affinities"] = run.get("character_affinities", content.get("characters", {}).get(saved_character_id, {}).get("affinities", {})).duplicate(true)
+	run["stage_prompt_dismissed"] = bool(run.get("stage_prompt_dismissed", false))
+	run["ability_states"] = run.get("ability_states", {})
 	run["assists"] = int(run.get("assists", 0))
 	run["growth_milestones"] = int(run.get("growth_milestones", maxi(0, int((int(run.get("level", 1)) - 1) / 2))))
 	if not (run.get("quickbar", []) is Array) or run.get("quickbar", []).is_empty():
@@ -263,9 +576,11 @@ func resume_run() -> bool:
 	run["combat_contributions"] = run.get("combat_contributions", {})
 	run["combat_event_sequence"] = int(run.get("combat_event_sequence", 0))
 	run["disciplines"] = run.get("disciplines", [run.get("discipline", "")])
+	run["schools"] = run.get("schools", [])
 	run["discoveries"] = run.get("discoveries", [])
 	run["school_ranks"] = run.get("school_ranks", {})
 	run["discipline_ranks"] = run.get("discipline_ranks", {})
+	run["schools"].erase("Arcane")
 	run["spellbook_resolutions"] = run.get("spellbook_resolutions", {})
 	for book_id in run.get("discovered_books", []):
 		if not run.spellbook_resolutions.has(book_id):
@@ -550,6 +865,9 @@ func act(command: Dictionary) -> Dictionary:
 		"interact": result = _interact(_as_cell(command.get("target", [0, 0])))
 	if result.get("ok", false):
 		_update_vision()
+		var newly_unlocked := check_authored_character_unlocks()
+		if not newly_unlocked.is_empty():
+			result["unlocked_characters"] = newly_unlocked
 		save_run()
 		result["presentation_before"] = display_before
 		result["presentation_events"] = _action_presentation_events.duplicate(true)
@@ -565,9 +883,11 @@ func learn_ability(ability_id: String) -> bool:
 		return false
 	var definition: Dictionary = content.abilities[ability_id]
 	run.known.append(ability_id)
+	_record_build_tags(definition.get("tags", []))
 	run.skill_points -= 1
 	_recompute_armor()
 	_record_codex("abilities", ability_id)
+	check_authored_character_unlocks()
 	_add_log("Learned %s." % definition.name)
 	save_run()
 	return true
@@ -621,7 +941,8 @@ func get_ability_progress(ability_id: String) -> Dictionary:
 				break
 		if not any_parent:
 			missing.append("one of %s" % ", ".join(any_of.map(func(value: String) -> String: return String(content.abilities.get(value, {}).get("name", value)))))
-	var identity_known: bool = run.get("disciplines", [run.get("discipline", "")]).has(school) or is_discovered_school
+	var arcane_technique_known: bool = school == "Arcane" and run.get("known", []).any(func(known_id: String) -> bool: return content.get("abilities", {}).get(known_id, {}).get("tags", []).has("arcane"))
+	var identity_known: bool = run.get("disciplines", [run.get("discipline", "")]).has(school) or is_discovered_school or arcane_technique_known
 	var visible: bool = learned or (identity_known or learned_parent) and not (ability.get("discovery_required", false) and not is_discovered_school)
 	for required_school in prerequisites.get("schools", []):
 		if not run.get("schools", []).has(required_school):
@@ -652,6 +973,10 @@ func get_ability_progress(ability_id: String) -> Dictionary:
 		var resource: Array = get_player().get("resources", {}).get(resource_name, [0, 0])
 		if int(resource[0]) < int(prerequisites.resources[resource_name]):
 			missing.append("%d %s" % [int(prerequisites.resources[resource_name]), resource_name])
+	for condition in prerequisites.get("conditions", []):
+		var condition_result: Dictionary = _evaluate_condition(condition)
+		if not condition_result.eligible:
+			missing.append(String(condition_result.get("reason", "Additional requirements are unmet.")))
 	if not visible:
 		return {"visible": false, "learned": learned, "learnable": false, "reason": "Knowledge has not been discovered."}
 	if learned:
@@ -870,12 +1195,14 @@ func claim_reward(index: int) -> bool:
 		return false
 	if reward.get("type") == "artifact":
 		_acquire_artifact(String(reward.id))
+		_record_build_tags(content.get("artifacts", {}).get(String(reward.id), {}).get("tags", []))
 		reward.claimed = true
 	else:
 		if run.inventory.size() >= 30:
 			_add_log("Your pack is full. Discard an item before claiming this.")
 			return false
 		run.inventory.append(String(reward.id))
+		_record_build_tags(content.get("items", {}).get(String(reward.id), {}).get("tags", []))
 		_add_log("Packed %s." % content.items[reward.id].name)
 		reward.claimed = true
 	run.reward_choice_resolved = true
@@ -885,6 +1212,7 @@ func claim_reward(index: int) -> bool:
 		choice["available"] = false
 		if choice_index == index:
 			choice["claimed"] = true
+	check_authored_character_unlocks()
 	save_run()
 	return true
 
@@ -957,6 +1285,7 @@ func equip_item(index: int) -> bool:
 	if old_weapon == "" and slot != "Weapon":
 		pass
 	_recompute_armor()
+	check_authored_character_unlocks()
 	_add_log("Equipped %s." % item.name)
 	save_run()
 	return true
@@ -1098,6 +1427,7 @@ func study_spellbook(index: int, choice_indices: Variant = null) -> bool:
 	run.discoveries = discoveries
 	for ability_id in granted:
 		run.known.append(ability_id)
+		_record_build_tags(content.abilities[ability_id].get("tags", []))
 	if not run.discovered_books.has(item_id):
 		run.discovered_books.append(item_id)
 	run.spellbook_resolutions[item_id] = {"abilities": granted.duplicate(), "mode": mode, "choice_count": granted.size()}
@@ -1114,6 +1444,7 @@ func study_spellbook(index: int, choice_indices: Variant = null) -> bool:
 	var consume_on_study := bool(learning.get("consume_on_study", false))
 	if consume_on_study:
 		run.inventory.remove_at(index)
+	check_authored_character_unlocks()
 	save_run()
 	return true
 
@@ -1158,6 +1489,7 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 	run.corpses = []
 	run.objective = {}
 	run.stage_completed = false
+	run.stage_prompt_dismissed = false
 	run.reward_choices = []
 	run.reward_choice_resolved = false
 	run.reward_chosen_index = -1
@@ -1222,6 +1554,7 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 			_spawn_enemy(enemy_id, position, false)
 		run.route_choices = _make_route_choices(stage_id)
 		_add_log("%s: %s." % [stage.name, get_objective_text()])
+	_spawn_exploration_loot(stage)
 	run.explored = _bool_grid(false)
 	_update_vision()
 	_record_codex("creatures", "")
@@ -1238,41 +1571,288 @@ func _make_route_choices(current_stage: String) -> Array:
 		choices.append(selected)
 	return choices
 
+func _spawn_exploration_loot(stage: Dictionary) -> void:
+	var settings: Dictionary = stage.get("exploration_loot", {})
+	var minimum := maxi(0, int(settings.get("min_count", 0)))
+	var maximum := maxi(minimum, int(settings.get("max_count", minimum)))
+	var types: Array = settings.get("types", [])
+	if types.is_empty() or maximum <= 0: return
+	var count := _rng.randi_range(minimum, maximum)
+	var spellbooks: Array = []
+	for item_id in content.get("items", {}):
+		if content.items[item_id].get("type", "") == "spellbook" and _content_prerequisites_met(content.items[item_id].get("prerequisites", {})):
+			spellbooks.append(String(item_id))
+	for index in range(count):
+		var kind := String(types[_rng.randi_range(0, types.size() - 1)])
+		if kind not in ["chest", "skill_book", "item"]: continue
+		var item_id := ""
+		if kind == "skill_book":
+			if spellbooks.is_empty(): continue
+			item_id = String(spellbooks[_rng.randi_range(0, spellbooks.size() - 1)])
+		elif kind == "item":
+			var ordinary_candidates := get_reward_candidates(false)
+			if ordinary_candidates.is_empty(): continue
+			item_id = String(_pick_weighted_candidate(ordinary_candidates).get("id", ""))
+		var position := _find_spawn(Vector2i(3 + (index * 5) % 19, 3 + (index * 7) % 10))
+		var attempts := 0
+		while position.x >= 0 and _object_index_at(position) >= 0 and attempts < 25:
+			position = _find_spawn(Vector2i(_rng.randi_range(2, WIDTH - 3), _rng.randi_range(2, HEIGHT - 3)))
+			attempts += 1
+		if position.x < 0 or _object_index_at(position) >= 0: continue
+		var object_name := "Travel Chest" if kind == "chest" else "Skill Book" if kind == "skill_book" else "Field Supplies"
+		var field_object := {"id": "exploration_%d_%d" % [run.objects.size(), index], "kind": kind, "name": object_name, "pos": [position.x, position.y], "hp": 1, "max_hp": 1}
+		if item_id != "": field_object["item_id"] = item_id
+		run.objects.append(field_object)
+
 func _make_rewards() -> void:
-	var candidates: Array = []
-	for item_id in content.items:
-		var item: Dictionary = content.items[item_id]
-		if item_id in ["healing_potion", "mana_potion", "bomb", "fireball_scroll", "lesser_key_of_ash", "cinder_primer", "storm_ledger", "sword", "dagger", "greatsword", "spear", "bow", "crossbow", "staff", "wand", "iron_shield", "leather_armor", "scale_armor", "copper_ring"]:
-			var weight := 1.0
-			var tags: Array = item.get("tags", [])
-			if tags.has("martial") and run.discipline == "Swordsmanship":
-				weight += 1.4
-			if run.get("schools", []).has(item.get("school", "")) or tags.has(String(item.get("school", "")).to_lower()):
-				weight += 1.0
-			candidates.append({"type": "item", "id": item_id, "weight": weight, "claimed": false})
-	for artifact_id in content.artifacts:
-		if not run.artifacts.has(artifact_id):
-			candidates.append({"type": "artifact", "id": artifact_id, "weight": 0.55, "claimed": false})
+	var candidates := get_reward_candidates(true)
 	run.reward_choices = []
 	run.reward_choice_resolved = false
 	run.reward_chosen_index = -1
 	for choice_index in range(3):
 		if candidates.is_empty():
 			break
-		var total_weight := 0.0
-		for candidate in candidates:
-			total_weight += float(candidate.weight)
-		var roll := _rng.randf() * total_weight
-		var selected_index := 0
-		for candidate_index in range(candidates.size()):
-			roll -= float(candidates[candidate_index].weight)
-			if roll <= 0.0:
-				selected_index = candidate_index
-				break
-		var selected: Dictionary = candidates.pop_at(selected_index)
+		var selected: Dictionary = _pick_weighted_candidate(candidates)
+		candidates.erase(selected)
 		selected.erase("weight")
 		selected["available"] = true
 		run.reward_choices.append(selected)
+
+func get_reward_candidates(include_artifacts: bool = true) -> Array:
+	var candidates: Array = []
+	for item_id in content.get("items", {}):
+		var item: Dictionary = content.items[item_id]
+		if item.get("type", "") not in ["consumable", "scroll", "spellbook", "equipment"]:
+			continue
+		if not _content_prerequisites_met(item.get("prerequisites", {})):
+			continue
+		candidates.append({"type": "item", "id": String(item_id), "weight": get_content_weight(item), "claimed": false})
+	if include_artifacts:
+		for artifact_id in content.get("artifacts", {}):
+			var artifact: Dictionary = content.artifacts[artifact_id]
+			if run.get("artifacts", []).has(artifact_id) or not _content_prerequisites_met(artifact.get("prerequisites", {})):
+				continue
+			candidates.append({"type": "artifact", "id": String(artifact_id), "weight": get_content_weight(artifact) * 0.55, "claimed": false})
+	return candidates
+
+func get_content_weight(definition: Dictionary) -> float:
+	var weight := maxf(0.05, float(definition.get("drop_weight", 1.0)))
+	var tags: Array = definition.get("tags", [])
+	var affinities: Dictionary = run.get("character_affinities", {})
+	var affinity_factor := 1.0
+	for tag in tags:
+		var affinity := float(affinities.get(String(tag), 1.0))
+		affinity_factor = maxf(affinity_factor, 1.0 + maxf(0.0, affinity - 1.0) * 0.45)
+	weight *= affinity_factor
+	var build_bonus := 0.0
+	var build_tags: Dictionary = run.get("build_tag_counts", {})
+	for tag in tags:
+		build_bonus += minf(0.18, float(build_tags.get(String(tag), 0)) * 0.035)
+	weight *= 1.0 + minf(0.75, build_bonus)
+	return maxf(0.05, weight)
+
+func _pick_weighted_candidate(candidates: Array) -> Dictionary:
+	if candidates.is_empty(): return {}
+	var total_weight := 0.0
+	for candidate in candidates: total_weight += maxf(0.05, float(candidate.get("weight", 1.0)))
+	var roll := _rng.randf() * total_weight
+	for candidate in candidates:
+		roll -= maxf(0.05, float(candidate.get("weight", 1.0)))
+		if roll <= 0.0: return candidate.duplicate(true)
+	return candidates.back().duplicate(true)
+
+func _record_build_tags(tags: Array, count: int = 1) -> void:
+	if run.is_empty(): return
+	var counts: Dictionary = run.get("build_tag_counts", {})
+	for tag in tags:
+		var tag_id := String(tag)
+		if tag_id != "": counts[tag_id] = int(counts.get(tag_id, 0)) + count
+	run["build_tag_counts"] = counts
+
+func evaluate_prerequisites(requirements: Variant) -> Dictionary:
+	if requirements == null or (requirements is Dictionary and requirements.is_empty()):
+		return {"eligible": true, "reason": ""}
+	if not requirements is Dictionary:
+		return {"eligible": false, "reason": "Prerequisites must be a content condition object."}
+	var conditions: Array = requirements.get("conditions", []).duplicate()
+	for ability_id in requirements.get("requires", []):
+		conditions.append({"type": "ability", "id": String(ability_id)})
+	for ability_id in requirements.get("all_of", []):
+		conditions.append({"type": "ability", "id": String(ability_id)})
+	if not requirements.get("any_of", []).is_empty():
+		conditions.append({"any": requirements.get("any_of", []).map(func(value: Variant) -> Dictionary: return {"type": "ability", "id": String(value)})})
+	if not requirements.get("tags", []).is_empty():
+		conditions.append({"type": "tags", "ids": requirements.get("tags", [])})
+	for condition in conditions:
+		var result: Dictionary = _evaluate_condition(condition)
+		if not bool(result.get("eligible", false)):
+			return result
+	return {"eligible": true, "reason": ""}
+
+func _content_prerequisites_met(requirements: Variant) -> bool:
+	if requirements is Dictionary and not requirements.has("conditions") and requirements.keys().all(func(key: Variant) -> bool: return key in ["tags", "requires", "all_of", "any_of"]):
+		return bool(evaluate_prerequisites(requirements).get("eligible", false))
+	return bool(evaluate_prerequisites(requirements).get("eligible", false))
+
+func _evaluate_condition(condition: Variant) -> Dictionary:
+	if not condition is Dictionary:
+		return {"eligible": false, "reason": "A prerequisite condition is malformed."}
+	if condition.has("all"):
+		for nested in condition.get("all", []):
+			var nested_result: Dictionary = _evaluate_condition(nested)
+			if not nested_result.eligible: return nested_result
+		return {"eligible": true, "reason": ""}
+	if condition.has("any"):
+		var reasons: Array[String] = []
+		for nested in condition.get("any", []):
+			var nested_result: Dictionary = _evaluate_condition(nested)
+			if nested_result.eligible: return nested_result
+			reasons.append(String(nested_result.get("reason", "")))
+		return {"eligible": false, "reason": "Requires one of: " + "; ".join(reasons)}
+	if condition.has("not"):
+		var nested_result: Dictionary = _evaluate_condition(condition.get("not"))
+		return {"eligible": not bool(nested_result.eligible), "reason": "A conflicting prerequisite is present." if nested_result.eligible else ""}
+	var condition_type := String(condition.get("type", ""))
+	var content_id := String(condition.get("id", ""))
+	var eligible := false
+	var reason := ""
+	match condition_type:
+		"tag":
+			eligible = int(run.get("build_tag_counts", {}).get(content_id, 0)) > 0
+			reason = "Requires the %s tag." % content_id
+		"tags":
+			var missing: Array[String] = []
+			for tag in condition.get("ids", []):
+				if int(run.get("build_tag_counts", {}).get(String(tag), 0)) <= 0: missing.append(String(tag))
+			eligible = missing.is_empty()
+			reason = "Requires tags: %s." % ", ".join(missing)
+		"owned_tags":
+			var owned_tags := _owned_content_tag_counts()
+			var missing_owned: Array[String] = []
+			for tag in condition.get("ids", []):
+				if int(owned_tags.get(String(tag), 0)) <= 0: missing_owned.append(String(tag))
+			eligible = missing_owned.is_empty()
+			reason = "Requires owned content with tags: %s." % ", ".join(missing_owned)
+		"ability":
+			eligible = run.get("known", []).has(content_id)
+			reason = "Requires ability %s." % content.get("abilities", {}).get(content_id, {}).get("name", content_id)
+		"item", "equipment":
+			eligible = run.get("inventory", []).has(content_id) or run.get("equipment", {}).values().has(content_id)
+			reason = "Requires item %s." % content.get("items", {}).get(content_id, {}).get("name", content_id)
+		"weapon":
+			eligible = String(run.get("equipment", {}).get("Weapon", "")) == content_id
+			reason = "Requires an equipped %s." % content.get("weapons", {}).get(content_id, {}).get("name", content_id)
+		"stat":
+			var attribute_value := int(run.get("attributes", {}).get(content_id, 0))
+			var minimum := int(condition.get("minimum", condition.get("value", 0)))
+			eligible = attribute_value >= minimum
+			reason = "Requires %s %d." % [content_id, minimum]
+		"stage_completed":
+			eligible = bool(run.get("stage_completed", false))
+			reason = "Requires a completed stage."
+		"summon_count":
+			var required_count := int(condition.get("minimum", 1))
+			var actual_count := _count_controlled_summons(String(condition.get("faction", "")), String(condition.get("owner", "player")))
+			eligible = actual_count >= required_count
+			reason = "Requires control of %d living %s summons at once." % [required_count, String(condition.get("faction", "summoned")).to_lower()]
+		"artifact", "relic":
+			eligible = run.get("artifacts", []).has(content_id)
+			reason = "Requires %s." % content.get("artifacts", {}).get(content_id, {}).get("name", content_id)
+		"character":
+			eligible = String(run.get("character_id", "")) == content_id
+			reason = "Requires a different character."
+		"package":
+			eligible = content_registry.load_order.has(content_id)
+			reason = "Requires the %s content package." % content_id
+		"level":
+			var required_level := int(condition.get("value", condition.get("level", 1)))
+			eligible = int(run.get("level", 1)) >= required_level
+			reason = "Requires level %d." % required_level
+		"school":
+			eligible = run.get("schools", []).has(content_id)
+			reason = "Requires %s knowledge." % content_id
+		"discipline":
+			eligible = run.get("disciplines", []).has(content_id)
+			reason = "Requires %s training." % content_id
+		"discovery":
+			eligible = run.get("discoveries", []).has(content_id)
+			reason = "Requires a discovery."
+		"resource":
+			var resource_values: Array = get_player().get("resources", {}).get(content_id, [0, 0])
+			var required_amount := int(condition.get("amount", condition.get("value", 1)))
+			eligible = int(resource_values[0]) >= required_amount
+			reason = "Requires %d %s." % [required_amount, content_id]
+		_:
+			return {"eligible": false, "reason": "Unknown prerequisite type '%s'." % condition_type}
+	return {"eligible": eligible, "reason": "" if eligible else reason}
+
+func _owned_content_tag_counts() -> Dictionary:
+	var counts: Dictionary = {}
+	if run.is_empty():
+		return counts
+	for ability_id in run.get("known", []):
+		_add_tags_to_count(counts, content.get("abilities", {}).get(String(ability_id), {}).get("tags", []))
+	for item_id in run.get("inventory", []):
+		_add_tags_to_count(counts, content.get("items", {}).get(String(item_id), {}).get("tags", []))
+	for artifact_id in run.get("artifacts", []):
+		_add_tags_to_count(counts, content.get("artifacts", {}).get(String(artifact_id), {}).get("tags", []))
+	for slot in run.get("equipment", {}):
+		var equipped_id := String(run.equipment[slot])
+		if equipped_id in ["", "occupied"]:
+			continue
+		if String(slot) == "Weapon":
+			_add_tags_to_count(counts, content.get("weapons", {}).get(equipped_id, {}).get("tags", []))
+		else:
+			_add_tags_to_count(counts, content.get("items", {}).get(equipped_id, {}).get("tags", []))
+	return counts
+
+func _add_tags_to_count(counts: Dictionary, tags: Array) -> void:
+	for tag in tags:
+		var tag_id := String(tag)
+		if tag_id != "":
+			counts[tag_id] = int(counts.get(tag_id, 0)) + 1
+
+func _count_controlled_summons(faction: String, owner: String) -> int:
+	var count := 0
+	for entity in run.get("entities", {}).values():
+		if not entity is Dictionary or String(entity.get("kind", "")) != "summon" or not bool(entity.get("is_summon", false)) or not bool(entity.get("alive", false)):
+			continue
+		if owner != "any" and String(entity.get("owner", "")) != owner:
+			continue
+		var summon_id := String(entity.get("enemy_id", ""))
+		var definition: Dictionary = content.get("enemies", {}).get(summon_id, content.get("summons", {}).get(summon_id, {}))
+		if faction == "" or String(definition.get("faction", "")) == faction:
+			count += 1
+	return count
+
+func get_evolution_eligibility(ability_id: String) -> Dictionary:
+	var ability: Dictionary = content.get("abilities", {}).get(ability_id, {})
+	var evolution: Dictionary = ability.get("evolution", {})
+	if ability.is_empty() or evolution.is_empty():
+		return {"eligible": false, "reason": "This ability has no evolution definition."}
+	var base_id := String(evolution.get("from", ""))
+	if base_id == "" or not run.get("known", []).has(base_id):
+		return {"eligible": false, "reason": "Requires the base ability."}
+	var required_level := int(evolution.get("min_level", 1))
+	if int(run.get("ability_states", {}).get(base_id, {}).get("level", 1)) < required_level:
+		return {"eligible": false, "reason": "Requires base ability level %d." % required_level}
+	var result: Dictionary = evaluate_prerequisites(evolution.get("prerequisites", {}))
+	return {"eligible": bool(result.eligible), "reason": String(result.get("reason", ""))}
+
+func evolve_ability(ability_id: String) -> bool:
+	var eligibility: Dictionary = get_evolution_eligibility(ability_id)
+	if not eligibility.eligible: return false
+	var evolution: Dictionary = content.abilities[ability_id].evolution
+	var base_id := String(evolution.from)
+	run.known.erase(base_id)
+	if not run.known.has(ability_id): run.known.append(ability_id)
+	var states: Dictionary = run.get("ability_states", {})
+	states[ability_id] = {"state": "evolved", "from": base_id, "level": 1}
+	run["ability_states"] = states
+	_record_build_tags(content.abilities[ability_id].get("tags", []))
+	run["quickbar"] = _normalize_quickbar(run.get("quickbar", []))
+	save_run()
+	return true
 
 func _spawn_enemy(enemy_id: String, cell: Vector2i, is_boss: bool) -> String:
 	var definition: Dictionary = content.enemies.get(enemy_id, {})
@@ -1655,12 +2235,40 @@ func _interact(target: Vector2i) -> Dictionary:
 	if object_index < 0:
 		return {"ok": false, "message": "There is nothing to interact with here."}
 	var object: Dictionary = run.objects[object_index]
+	if _dist(_pos(get_player()), target) > 1:
+		return {"ok": false, "message": "Move beside it first."}
 	if object.get("kind") == "exit":
-		if _dist(_pos(get_player()), target) > 1:
-			return {"ok": false, "message": "Move beside the road exit first."}
 		get_player().pos = [target.x, target.y]
 		_check_objective_at_player()
 		return _spend_player_time(60, "You reach the March road.")
+	if object.get("kind") == "chest":
+		if run.inventory.size() >= 30:
+			return {"ok": false, "message": "Your pack is full. Make room before opening the chest."}
+		var candidates := get_reward_candidates(true)
+		if candidates.is_empty(): return {"ok": false, "message": "The chest is empty."}
+		var reward := _pick_weighted_candidate(candidates)
+		run.objects[object_index]["contents"] = {"type": reward.type, "id": reward.id}
+		run.objects[object_index]["opened"] = true
+		run.objects[object_index]["hp"] = 0
+		if reward.type == "artifact":
+			_acquire_artifact(String(reward.id))
+			_record_build_tags(content.artifacts[reward.id].get("tags", []))
+			_add_log("The chest yields %s." % content.artifacts[reward.id].name)
+		else:
+			run.inventory.append(String(reward.id))
+			_record_build_tags(content.items[reward.id].get("tags", []))
+			_add_log("The chest yields %s." % content.items[reward.id].name)
+		return _spend_player_time(60, "You open the chest.")
+	if object.get("kind") in ["skill_book", "item", "loot"]:
+		if run.inventory.size() >= 30:
+			return {"ok": false, "message": "Your pack is full. Discard an item before picking this up."}
+		var item_id := String(object.get("item_id", ""))
+		if not content.get("items", {}).has(item_id): return {"ok": false, "message": "This loot has no valid item."}
+		run.inventory.append(item_id)
+		run.objects[object_index]["hp"] = 0
+		_record_build_tags(content.items[item_id].get("tags", []))
+		_add_log("Picked up %s." % content.items[item_id].get("name", item_id))
+		return _spend_player_time(45, "You collect the field loot.")
 	return {"ok": false, "message": "That object cannot be used yet."}
 
 func use_item(index: int, target: Vector2i = Vector2i(-1, -1)) -> Dictionary:
@@ -2018,6 +2626,16 @@ func _on_death(entity_id: String, source: String, source_id: String = "") -> voi
 		contributions_after_kill.erase(entity_id)
 		run.combat_contributions = contributions_after_kill
 	_add_log("%s falls." % entity.get("name", "A creature"))
+	if not entity.get("is_summon", false) and entity.get("kind", "enemy") != "boss" and _rng.randf() < 0.12:
+		var loot_candidates := get_reward_candidates(false)
+		if not loot_candidates.is_empty():
+			var dropped: Dictionary = _pick_weighted_candidate(loot_candidates)
+			var drop_pos := _pos(entity)
+			if _object_index_at(drop_pos) >= 0:
+				drop_pos = _find_spawn(drop_pos)
+			if drop_pos.x >= 0 and _object_index_at(drop_pos) < 0:
+				run.objects.append({"id": "enemy_loot_%03d" % run.objects.size(), "kind": "loot", "name": "Dropped Loot", "item_id": String(dropped.get("id", "")), "pos": [drop_pos.x, drop_pos.y], "hp": 1, "max_hp": 1, "marker": "star"})
+				_add_log("A star marks a useful drop nearby.")
 	if entity.get("kind") == "boss":
 		run.outcome = "victory"
 		_complete_stage()
@@ -2157,6 +2775,8 @@ func _complete_stage() -> void:
 	if run.get("stage_completed", false):
 		return
 	run.stage_completed = true
+	run.stage_prompt_dismissed = false
+	check_authored_character_unlocks()
 	_emit_combat_event("EncounterComplete", "player", "", {"stage": String(run.get("stage_id", ""))})
 	run.encounters_completed = int(run.encounters_completed) + 1
 	var clear_xp := 15 + mini(int(run.stage_index), 4) * 3

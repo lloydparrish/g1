@@ -90,7 +90,8 @@ func run_suite() -> void:
 
 	var bar = SimScript.new()
 	bar.start_run(551236, "jim")
-	_check(bar.run.quickbar.size() == 8 and bar.run.quickbar.filter(func(slot: Dictionary) -> bool: return slot.get("type", "") == "empty").size() == 1, "quickbar is always eight slots and fills from starting actives and usable items")
+	bar.run.known.append_array(["lunge", "guard"])
+	_check(bar.run.quickbar.size() == 8 and bar.run.quickbar.filter(func(slot: Dictionary) -> bool: return slot.get("type", "") == "empty").size() == 4, "quickbar is always eight slots and fills from starting usable items while starter abilities stay empty")
 	_check(bar.assign_quickbar(7, "ability", "lunge") and bar.run.quickbar[7].id == "lunge", "learned active abilities can be assigned by stable ability ID")
 	_check(bar.run.quickbar.count({"type": "ability", "id": "lunge"}) == 1, "reassigning an ability clears its previous duplicate slot")
 	_check(bar.assign_quickbar(7, "ability", "guard") and bar.run.quickbar[7].id == "guard" and bar.run.quickbar.count({"type": "ability", "id": "lunge"}) == 0, "replacing a slot preserves its selected position and clears old assignment")

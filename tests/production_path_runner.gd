@@ -14,12 +14,19 @@ func run_flow() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
+	main.sim.profile["unlocked_character_ids"] = main.sim.get_starting_character_ids().duplicate()
+	main.sim.profile["pending_character_reveals"] = []
+	main.sim.save_profile()
 	_check(main.page == "title" and not main.active_hits.is_empty(), "production scene draws the character selection screen")
+	_check(main.sim.get_starting_character_ids() == ["jim", "archer", "apprentice", "defender"] and main.sim.get_unlocked_character_ids() == main.sim.get_starting_character_ids(), "a fresh profile exposes exactly the four starting classes")
 	await _mouse_action(main, "select_character", "jim")
 	_check(main.selected_character == "jim", "Windows mouse can select a character in the production UI")
-
+	_check(not main.active_hits.any(func(hit: Dictionary) -> bool: return String(hit.action.get("type", "")) == "select_character" and String(hit.action.get("id", "")) == "aldren"), "locked character identity has no selectable card action")
+	main._handle_action({"type": "unlock_character", "id": "aldren"})
+	_check(main.overlay == "character_reveal" and main.sim.is_character_unlocked("aldren"), "an unlock produces a persistent character reveal")
+	await _tap_action(main, "close")
 	await _tap_action(main, "select_character", "aldren")
-	_check(main.selected_character == "aldren", "character card is selected through the production input handler")
+	_check(main.selected_character == "aldren", "unlocked character can be selected through the production input handler")
 	await _touch(main, Vector2(635, 725))
 	await process_frame
 	_check(main.page == "battle" and main.sim.run.character_id == "aldren", "production start control enters a generated run")
@@ -65,6 +72,17 @@ func run_flow() -> void:
 	await _tap(main, Vector2(330, 466))
 	_check(main.sim.run.inventory.has("scale_armor"), "production reward control adds its item to the pack")
 	await _tap_action(main, "close")
+	main.sim.run.objects = []
+	for entity_id in main.sim.run.entities:
+		if entity_id != "player": main.sim.run.entities[entity_id].alive = false
+	main.sim.run.visible = main.sim._bool_grid(true)
+	main.sim.run.explored = main.sim._bool_grid(true)
+	main.sim._set_grid(Vector2i(14, 8), "floor")
+	main.sim._set_grid(Vector2i(15, 8), "floor")
+	await _tap(main, _cell_center(Vector2i(14, 8)))
+	_check(main.overlay == "" and main.sim.run.stage_prompt_dismissed, "declining the transition dismisses the prompt after the first ordinary move")
+	await _tap(main, _cell_center(Vector2i(15, 8)))
+	_check(main.overlay == "" and main.sim._pos(main.sim.get_player()) == Vector2i(15, 8), "subsequent movement does not reopen the declined prompt")
 	var dock_digest: String = main.sim.state_digest()
 	await _tap_action(main, "lower_panel", "world_map")
 	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "world_map", "the world map remains present in the desktop dock")

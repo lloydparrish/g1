@@ -29,6 +29,13 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Keep natural progression distinct from discovery. Schoolbooks and other authored sources record discovery flags and show their contents before study; unrelated knowledge remains hidden until found.
 - Keep progression data-driven and extensible: prerequisites are graph relationships and hidden branches stay hidden until discovered. The interface must pan and zoom through the graph instead of limiting its size.
 - Treat martial disciplines as complete build paths with active techniques and meaningful passives. A viable build must not require magic.
+- New profiles start with The Mundane, The Archer, The Apprentice and The Defender as intentionally weak, mostly empty builds. The Mundane has zero character-driven reward weighting; other starter affinities are hidden probability preferences, never class restrictions.
+- Arcane is school-less direct use of magical energy, not a branch that evolves into other schools.
+- Use stable IDs for definitions, profiles and save references. Moving official package content into Core preserves its IDs; package definitions use the same shape as Core. Read [`docs/CONTENT_FOUNDATION.md`](docs/CONTENT_FOUNDATION.md) before modifying package loading, prerequisites, weighting, exploration loot, unlocks or related saves.
+- Rewards, prerequisites and evolutions are data-driven simulation rules. Tags allow multi-theme hybrid content. Character/build tags adjust probabilities without eliminating off-build choices. Skill-book learning is run-specific; enemy drops are occasional and marked with a star.
+- Advanced classes keep stable IDs aldren, mara, brakka, orin and sylvi while displaying The Spellblade, The Bloodletter, The Warrior, The Necromancer and The Ranger. Their current unlocks require, respectively: a completed stage with owned Sword + Arcane tags; owned Blood + Dagger tags; a completed stage with Greatsword equipped and Might at least 14; five individual living player-controlled Undead summons simultaneously; a completed stage with owned Bow + Nature tags. An authored unlock may await future content; never substitute an unrelated temporary condition. Locked cards show a large ?, Unknown Character and the actual requirement, hiding name and portrait; unlocked characters show a concise reveal.
+- Use static Treatment A portraits across all nine current classes: crude/charming clean stick figures with readable equipment and restrained accents. Treatment B is not the production direction.
+- Do not invent major classes, characters, spell schools, signature abilities, currencies, core combat systems, expansion themes, lore or large progression families to fill gaps. Ask the user when a substantial game-design decision is not already documented; choose minor implementation and balance details autonomously.
 
 ## Player-facing design
 
@@ -77,3 +84,4 @@ The full authoritative contract is in [`docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md
 - Cover deterministic rules, save/resume, content references, AI/factions, objectives, rewards, equipment and summon behavior with headless checks; exercise a representative production-path playthrough and death.
 - Launch the real game, inspect screenshots at desktop and phone landscape sizes, and fix visible layout or readability defects.
 - Mark environment/device or platform checks as pending when they have not been performed. A simulator or headless test does not count as native Android acceptance.
+- Keep generated artifacts in predictable current-build paths, preserve named releases and needed QA evidence, and remove only stale generated outputs safe to regenerate. See [`docs/README_FOR_CODEX.md`](docs/README_FOR_CODEX.md).

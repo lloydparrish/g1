@@ -1,0 +1,10 @@
+{
+  "id": "core",
+  "name": "Core",
+  "version": "1.0.0",
+  "kind": "core",
+  "description": "The base game content registry.",
+  "content_file": "content.json",
+  "dependencies": [],
+  "assets": []
+}

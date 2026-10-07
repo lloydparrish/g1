@@ -16,10 +16,13 @@ func run_suite() -> void:
 	root.add_child(mobile)
 	await process_frame
 	await process_frame
-	await _touch_action(mobile, "select_character", "aldren")
-	_check(mobile.selected_character == "aldren", "touch selects a character on the production title screen")
+	mobile.sim.profile["unlocked_character_ids"] = mobile.sim.get_starting_character_ids().duplicate()
+	mobile.sim.profile["pending_character_reveals"] = []
+	mobile.sim.save_profile()
+	await _touch_action(mobile, "select_character", "archer")
+	_check(mobile.selected_character == "archer", "touch selects a starting class on the production title screen")
 	await _touch(mobile, Vector2(635, 725))
-	_check(mobile.page == "battle" and mobile.sim.run.character_id == "aldren", "touch begins a run from character selection")
+	_check(mobile.page == "battle" and mobile.sim.run.character_id == "archer", "touch begins a run from character selection")
 
 	var desktop = MainScene.instantiate()
 	desktop.playback_mode = "Instant"
@@ -147,7 +150,7 @@ func run_suite() -> void:
 	if not is_equal_approx(float(inset_layout.offset.x), 98.0) or inset_layout.size.x < 1440.0:
 		layout_ok = false
 	_check(layout_ok, "desktop, wide-phone and smaller viewports preserve the 16:9 playfield with no wide-panel overlap")
-	var fitted_name: String = mobile._fit_text("Aldren, Exiled Battlemage", 150.0, 15)
+	var fitted_name: String = mobile._fit_text("The Bloodletter", 150.0, 15)
 	_check(ThemeDB.fallback_font.get_string_size(fitted_name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x <= 150.0, "long character names fit beside the level label on compact screens")
 
 	mobile.page = "battle"

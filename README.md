@@ -27,7 +27,7 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - Seeded, serializable simulation with a deterministic initiative timeline and no real time player decision clock.
 - Data defined actors, factions, weapons, abilities, resources, status effects, stage definitions, objectives, rewards, artifacts and spellbooks in `data/content.json`.
 - Square battlefield generation, eight direction movement, walk/path checks, line of sight, visible/explored fog and multi tile occupancy.
-- Six selectable character definitions, eleven enemies, stage-aware enemy threat bands, an extensible damage/status registry and reusable terrain rules.
+- Four weak starting classes (The Mundane, The Archer, The Apprentice and The Defender) plus five advanced classes discovered through profile unlocks; eleven enemies, stage-aware threat bands, an extensible damage/status registry and reusable terrain rules.
 - Weapons with different range, time and stamina behavior; target based spells; skeleton and owner bound phantom blade summons; the 2x2 Grave Tyrant encounter.
 - 32 currently playable abilities and passives (29 active, 3 passive) span martial, magical, hybrid and discovery paths. The prerequisite graph is data-driven and larger than the visible UI; its interface pans, filters and zooms, with no viewport-based node cap.
 - A compact 6×5 inventory grid, contextual item inspection, all nine equipment slots, two-handed hand reservation, 30 item capacity, rewards, consumables, branching routes, codex discoveries, pause/resume save and death/victory screens.
@@ -41,13 +41,13 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - `data/content.json` defines the starter content and effect/trigger rules.
 - `scripts/main.gd` renders the simulation and maps touch, mouse and keyboard input to game commands.
 - `scenes/main.tscn` is the normal game entry point.
-- `tests/test_runner.gd`, `tests/progression_inventory_runner.gd`, `tests/balance_runner.gd` and `tests/combat_presentation_runner.gd` cover headless rules; `tests/production_path_runner.gd` and `tests/mobile_acceptance_runner.gd` exercise mouse and touch through the production scene.
+- `tests/content_foundation_runner.gd` and the existing headless suites cover content, progression and save rules; production-flow and mobile suites exercise mouse and touch through the production scene.
 - `docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md` and `docs/Project_Arcanist_UI_Reference.png` retain the source design materials.
 - [`DESIGN_RULES.md`](DESIGN_RULES.md) keeps the non negotiable architecture and product rules visible for later work.
 
 ## Windows build
 
-`scripts\arcanist.ps1 Build` writes `build/windows-p5/ProjectArcanist.exe` as a self-contained debug export. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly. The Prompt 5 output folder allows a fresh build while another game session still holds the earlier version open.
+`scripts\arcanist.ps1 Build` writes the self-contained debug export to `build/windows/current/ProjectArcanist.exe`, replacing the current development build. It uses the Godot 4.7.2 template from project-local profile state. Start it with `scripts\arcanist.ps1 Run` to check the development project, or launch the exported EXE directly. Retain only named comparison/release builds and current QA artifacts; see the [build-output policy](docs/CONTENT_FOUNDATION.md#build-output-policy).
 
 ## Android setup and export
 
@@ -57,13 +57,13 @@ For a fresh Windows checkout:
 
 1. Run `scripts\arcanist.ps1 Setup` to install the project-local Godot 4.7.2 executable and export templates.
 2. Run `scripts\arcanist.ps1 SetupAndroid`. This downloads Temurin JDK 17 and Google's command-line tools, installs the SDK packages required by Godot 4.7, accepts those SDK package licenses, creates the local debug key, and configures the ignored project-local Godot profile. It does not configure machine-global Java or Android settings.
-3. Run `scripts\arcanist.ps1 Android` to export `build/android/ProjectArcanist.apk`, inspect the package name and app label, and verify its debug signature.
+3. Run `scripts\arcanist.ps1 Android` to export `build/android/current/ProjectArcanist.apk`, inspect the package name and app label, and verify its debug signature.
 
 The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Android Platform 35, command-line tools, CMake 3.10.2.4988404 and NDK 28.1.13356709. Godot's 4.7.2 Android template emits an APK with compile/target API 36; the local exporter reports its documented Build Tools fallback to 35.0.1. The resulting APK is signed, package-inspected and installed/launched in the Android emulator. Godot's export requirements are listed in its [Android export guide](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_android.html). `BuildAll` runs all test suites, exports Windows, then exports and inspects the Android APK. Generated SDK, JDK, keystore, Godot profile and build files stay ignored by Git.
 
 ## Verification and visual QA
 
-`scripts\arcanist.ps1 Test` runs 55 simulation checks, 20 production-flow checks, 22 mobile acceptance checks, 44 progression/inventory checks, 40 playtest regression checks, 6 balance checks, and 36 combat-presentation checks (223 total). The combat suite checks deterministic transcripts, hidden-event filtering, XP participation credit, growth milestones, stable quickbar persistence and identical authoritative outcomes across playback speeds. Balance samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Playtest regressions cover one-choice rewards, generic spellbooks, Command feedback, canonical creature glyphs and targeting cancellation.
+`scripts\arcanist.ps1 Test` runs nine suites: core 62, production flow 35, mobile acceptance 32, Prompt 6A UI 64, progression/inventory 52, playtest regressions 43, balance 6, combat presentation 37, and content foundation 109 (440 checks total). `BuildAll` runs these suites and exports the current Windows and Android development builds. Balance samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Content foundation coverage includes packages, tags, character unlocks, rewards, exploration loot, saves and the declined-stage regression.
 
 `scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, a panned ability branch, action palette, spellbook inventory and Codex, targeting, route, reward, pause, encounter-history, sequential enemy/damage/summon/level-up playback, all three speed modes, customized/unavailable quickbars, and selected/full inventory states. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel and action tray while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
 

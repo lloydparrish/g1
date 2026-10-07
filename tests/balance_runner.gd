@@ -10,7 +10,7 @@ func _initialize() -> void:
 	call_deferred("run_suite")
 
 func run_suite() -> void:
-	var chars: Array = ["jim", "aldren", "mara", "brakka", "sylvi", "orin"]
+	var chars: Array = ["jim", "archer", "apprentice", "defender", "aldren", "mara", "brakka", "sylvi", "orin"]
 	var opening_valid := true
 	var first_stage_xp_ready := true
 	var opening_enemy_total := 0
@@ -21,17 +21,20 @@ func run_suite() -> void:
 	var max_initial_ranged := 0
 	for seed_index in range(OPENING_SEEDS):
 		var sim = SimScript.new()
-		sim.start_run(910000 + seed_index, chars[seed_index % chars.size()])
+		var character_id := String(chars[seed_index % chars.size()])
+		_allow_character(sim, character_id)
+		sim.start_run(910000 + seed_index, character_id)
 		var enemies: Array = _hostiles(sim)
 		var player: Dictionary = sim.get_player()
-		opening_valid = opening_valid and enemies.size() == 2 and int(player.armor) >= 2
+		var expected_armor: int = int({"jim": 0, "archer": 0, "apprentice": 0, "defender": 3, "aldren": 2, "mara": 2, "brakka": 4, "sylvi": 3, "orin": 2}.get(character_id, 0))
+		var sample_valid := enemies.size() == 2 and int(player.armor) == expected_armor
 		opening_enemy_total += enemies.size()
 		max_opening_enemies = maxi(max_opening_enemies, enemies.size())
 		var stage: Dictionary = sim.content.stages[sim.run.stage_id]
 		for entity in enemies:
 			var id: String = entity.enemy_id
 			var definition: Dictionary = sim.content.enemies[id]
-			opening_valid = opening_valid and int(definition.get("tier", 0)) == 0 and int(definition.range) == 1
+			sample_valid = sample_valid and int(definition.get("tier", 0)) == 0 and int(definition.range) == 1
 			opening_hp_total += int(entity.hp)
 			var raw_rate := float(entity.damage) / maxf(1.0, float(entity.time))
 			raw_attack_rate += raw_rate
@@ -41,6 +44,7 @@ func run_suite() -> void:
 				max_initial_ranged += 1
 		var expected_clear_xp := int(sim.run.get("stage_index", 0)) * 3 + 12
 		first_stage_xp_ready = first_stage_xp_ready and expected_clear_xp >= 12 and stage.has("enemy_count_curve")
+		opening_valid = opening_valid and sample_valid
 	_check(opening_valid, "%d seeded stage-one starts have two basic melee enemies and worn protection" % OPENING_SEEDS)
 	_check(max_opening_enemies == 2 and max_initial_ranged == 0, "the opening generator prevents a third simultaneous enemy and ranged opening pressure")
 	_check(first_stage_xp_ready, "stage completion grants deterministic experience toward the first build choice")
@@ -98,6 +102,7 @@ func run_suite() -> void:
 	_check(curve_valid and curve_totals == [160, 240, 320, 400, 400], "encounter size and enemy tier bands rise gradually across the five non-boss stages")
 
 	var reward = SimScript.new()
+	_allow_character(reward, "mara")
 	reward.start_run(930001, "mara")
 	reward._award_xp(24)
 	reward._complete_stage()
@@ -119,6 +124,7 @@ func _hostiles(sim) -> Array:
 
 func _simulate_opening(seed_value: int, character_id: String) -> Dictionary:
 	var sim = SimScript.new()
+	_allow_character(sim, character_id)
 	sim.start_run(seed_value, character_id)
 	var actions := 0
 	var damage_taken := 0
@@ -171,3 +177,8 @@ func _check(condition: bool, title: String) -> void:
 	checks += 1
 	if not condition:
 		failures.append(title)
+
+func _allow_character(sim, character_id: String) -> void:
+	var unlocked: Array = sim.profile.get("unlocked_character_ids", [])
+	if not unlocked.has(character_id): unlocked.append(character_id)
+	sim.profile["unlocked_character_ids"] = unlocked

@@ -14,9 +14,11 @@ const POINTER_DRAG_SLOP := 18.0
 var sim: ArcanistSim
 var ui_state
 var lower_dock
+var portrait_texture_cache: Dictionary = {}
 var page := "title"
 var overlay := ""
 var selected_character := "jim"
+var reveal_character_id := ""
 var selected_enemy := ""
 
 var selected_object_index := -1
@@ -75,6 +77,8 @@ var capture_overlay := ""
 var capture_target := ""
 var capture_book := ""
 var capture_scenario := ""
+var capture_page := "battle"
+var capture_fresh_profile := false
 var capture_full_web := false
 var screen_size := LOGICAL_SIZE
 var draw_scale := 1.0
@@ -119,6 +123,10 @@ func _ready() -> void:
 			capture_book = arg.trim_prefix("--capture-book=")
 		elif arg.begins_with("--capture-scenario="):
 			capture_scenario = arg.trim_prefix("--capture-scenario=")
+		elif arg == "--capture-fresh-profile":
+			capture_fresh_profile = true
+		elif arg.begins_with("--capture-page="):
+			capture_page = arg.trim_prefix("--capture-page=")
 		elif arg == "--capture-mobile":
 			mobile_layout_override = true
 		elif arg == "--capture-full-web":
@@ -135,36 +143,65 @@ func _ready() -> void:
 				capture_size = Vector2i(int(dimensions[0]), int(dimensions[1]))
 				capture_path = capture_directory.path_join("%dx%d.png" % [capture_size.x, capture_size.y])
 				capture_requested = true
-				page = "battle"
-				var capture_character := "aldren" if capture_scenario == "summon" else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
-				sim.start_run(912041, capture_character)
-				sim.save_run()
-				overlay = capture_overlay
-				match capture_overlay:
-					"map":
-						overlay = ""
-						ui_state.active_lower_panel = "world_map"
-						ui_state.lower_dock_expanded = true
-					"character", "abilities":
-						overlay = ""
-						ui_state.active_lower_panel = "character"
-						ui_state.lower_dock_expanded = true
-						ui_state.character_tab = "Abilities"
-					"inventory": _open_lower_panel("inventory", false)
-					"spellbook", "discovery":
-						overlay = ""
-						ui_state.active_lower_panel = "inventory"
-						ui_state.lower_dock_expanded = true
-						ui_state.inventory_tab = "Spellbooks"
-					"ability_web": overlay = "abilities"
-				match capture_overlay:
-					"inventory": ui_state.selected_inventory_index = 0
-					"map": sim.run.stage_completed = true
-					"destinations": sim.run.stage_completed = true
-					"rewards":
-						sim.run.stage_completed = true
-						sim.run.reward_choices = [{"type": "artifact", "id": "copper_hare", "claimed": false}, {"type": "item", "id": "healing_potion", "claimed": false}]
-				if capture_book != "" and sim.content.items.has(capture_book):
+				if capture_page == "title":
+					page = "title"
+					overlay = capture_overlay
+					if capture_fresh_profile:
+						sim.profile = {"version": 1, "unlocked_character_ids": sim.get_starting_character_ids(), "pending_character_reveals": [], "enabled_package_ids": []}
+						sim.save_profile()
+					if capture_scenario == "title_reveal":
+						sim.unlock_character("aldren")
+						reveal_character_id = "aldren"
+						overlay = "character_reveal"
+					elif capture_scenario.begins_with("title_reveal_"):
+						var reveal_ids := {"spellblade": "aldren", "bloodletter": "mara", "warrior": "brakka", "necromancer": "orin", "ranger": "sylvi"}
+						var requested_reveal := String(reveal_ids.get(capture_scenario.trim_prefix("title_reveal_"), ""))
+						if requested_reveal != "":
+							sim.unlock_character(requested_reveal)
+							reveal_character_id = requested_reveal
+							overlay = "character_reveal"
+					elif capture_scenario == "title_all_unlocked":
+						var capture_unlocks: Array = sim.profile.get("unlocked_character_ids", []).duplicate()
+						for capture_id in ["aldren", "mara", "brakka", "orin", "sylvi"]:
+							if not capture_unlocks.has(capture_id): capture_unlocks.append(capture_id)
+						sim.profile["unlocked_character_ids"] = capture_unlocks
+						sim.save_profile()
+				else:
+					page = "battle"
+					var capture_character := "aldren" if capture_scenario == "summon" else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
+					if not sim.is_character_unlocked(capture_character): sim.profile.unlocked_character_ids.append(capture_character)
+					sim.start_run(912041, capture_character)
+					sim.save_run()
+					overlay = capture_overlay
+					match capture_overlay:
+						"map":
+							overlay = ""
+							ui_state.active_lower_panel = "world_map"
+							ui_state.lower_dock_expanded = true
+						"character", "abilities":
+							overlay = ""
+							ui_state.active_lower_panel = "character"
+							ui_state.lower_dock_expanded = true
+							ui_state.character_tab = "Abilities"
+						"inventory": _open_lower_panel("inventory", false)
+						"spellbook", "discovery":
+							overlay = ""
+							ui_state.active_lower_panel = "inventory"
+							ui_state.lower_dock_expanded = true
+							ui_state.inventory_tab = "Spellbooks"
+						"ability_web": overlay = "abilities"
+					match capture_overlay:
+						"inventory": ui_state.selected_inventory_index = 0
+						"map": sim.run.stage_completed = true
+						"destinations": sim.run.stage_completed = true
+						"rewards":
+							sim.run.stage_completed = true
+							sim.run.reward_choices = [
+								{"type": "artifact", "id": "copper_hare", "claimed": false},
+								{"type": "item", "id": "healing_potion", "claimed": false},
+								{"type": "item", "id": "cinder_primer", "claimed": false}
+							]
+				if capture_page != "title" and capture_book != "" and sim.content.items.has(capture_book):
 					sim.run.inventory.append(capture_book)
 					ui_state.selected_inventory_index = sim.run.inventory.size() - 1
 					codex_book_id = capture_book
@@ -173,9 +210,9 @@ func _ready() -> void:
 						var book_options: Dictionary = sim.get_spellbook_options(captured_book_index)
 						var book_choices: Array = [0] if book_options.get("mode") == "choose" else []
 						sim.study_spellbook(captured_book_index, book_choices)
-				if capture_full_web:
+				if capture_page != "title" and capture_full_web:
 					sim.run.disciplines = sim.content.progression.disciplines.duplicate()
-					sim.run.schools = ["Fire", "Frost", "Storm", "Earth", "Nature", "Arcane", "Holy", "Shadow", "Necromancy", "Summoning", "Spirit", "Blood"]
+					sim.run.schools = ["Fire", "Frost", "Storm", "Earth", "Nature", "Holy", "Shadow", "Necromancy", "Summoning", "Spirit", "Blood"]
 					sim.run.skill_points = 12
 					for ability_id in ["firebolt", "fireball", "frostbolt", "lightning_bolt", "aimed_shot", "parry", "dagger_flurry", "lunge"]:
 						if not sim.run.known.has(ability_id): sim.run.known.append(ability_id)
@@ -186,12 +223,12 @@ func _ready() -> void:
 						var book_choices: Array = [0] if book_options.get("mode") == "choose" else []
 						sim.study_spellbook(book_index, book_choices)
 					ui_state.selected_ability_id = "storm_arrow"
-				if capture_overlay == "action_palette":
+				if capture_page != "title" and capture_overlay == "action_palette":
 					var capture_abilities: Array = sim.get_available_abilities()
 					selected_ability = String(capture_abilities[0]) if not capture_abilities.is_empty() else ""
-				if capture_target != "":
+				if capture_page != "title" and capture_target != "":
 					target_mode = capture_target
-				if capture_overlay in ["abilities", "character", "ability_web"]:
+				if capture_page != "title" and capture_overlay in ["abilities", "character", "ability_web"]:
 					if ui_state.selected_ability_id == "":
 						ui_state.selected_ability_id = String(sim.run.known.back()) if not sim.run.known.is_empty() else ""
 					ability_filter = String(sim.content.abilities.get(ui_state.selected_ability_id, {}).get("school", "All"))
@@ -206,6 +243,9 @@ func _ready() -> void:
 	if capture_requested:
 		OS.low_processor_usage_mode = false
 		call_deferred("_capture_after_draw")
+	elif page == "title" and sim.get_pending_character_reveal() != "":
+		reveal_character_id = sim.get_pending_character_reveal()
+		overlay = "character_reveal"
 	queue_redraw()
 
 func _notification(what: int) -> void:
@@ -354,6 +394,9 @@ func _finish_presentation() -> void:
 	if pending_outcome_overlay != "": overlay = pending_outcome_overlay
 	pending_outcome_page = ""
 	pending_outcome_overlay = ""
+	if overlay == "" and page == "battle" and sim.get_pending_character_reveal() != "":
+		reveal_character_id = sim.get_pending_character_reveal()
+		overlay = "character_reveal"
 	queue_redraw()
 	if notice == "" and floating_events.is_empty(): set_process(false)
 
@@ -437,31 +480,146 @@ func _draw_title() -> void:
 	_draw_label("A tactical roguelike of steel, spellcraft and hard choices", 58, 187, 17, COLORS.muted)
 	_draw_panel(Rect2(47, 202, 1346, 458), "CHOOSE YOUR BEGINNING", COLORS.line)
 	var characters: Array = sim.content.characters.keys()
-	characters.sort_custom(func(a: String, b: String) -> bool: return int(sim.content.characters[a].get("selection_order", 99)) < int(sim.content.characters[b].get("selection_order", 99)))
+	characters.sort_custom(func(a: String, b: String) -> bool:
+		var order_a := int(sim.content.characters[a].get("selection_order", 99))
+		var order_b := int(sim.content.characters[b].get("selection_order", 99))
+		return order_a < order_b if order_a != order_b else String(a) < String(b)
+	)
 	for character_index in range(characters.size()):
 		var character_id: String = characters[character_index]
 		var definition: Dictionary = sim.content.characters[character_id]
 		var col := character_index % 3
 		var row := int(character_index / 3)
-		var rect := Rect2(70 + col * 437, 230 + row * 208, 414, 196)
+		var rect := Rect2(70 + col * 437, 234 + row * 140, 414, 136)
+		var presentation := _character_card_presentation(character_id)
+		var unlocked := bool(presentation.get("unlocked", false))
 		var active: bool = character_id == selected_character
-		_draw_panel(rect, "", COLORS.gold if active else COLORS.line_soft)
-		_draw_label(String(definition.name), rect.position.x + 16, rect.position.y + 28, 16, COLORS.text)
-		_draw_label(String(definition.subtitle), rect.position.x + 16, rect.position.y + 49, 11, COLORS.muted)
-		_draw_label("%s  ·  %s" % [definition.discipline, sim.content.weapons[definition.weapon].name], rect.position.x + 16, rect.position.y + 80, 12, COLORS.cyan)
-		_draw_label("AURA  ·  %s" % ("Open progression" if definition.aura == "None" else definition.aura), rect.position.x + 16, rect.position.y + 105, 11, COLORS.gold)
-		var identities: Array = definition.get("schools", []).duplicate()
-		identities.append_array(definition.get("disciplines", []))
-		_draw_label(_fit_text("BUILD  ·  " + "  /  ".join(identities), rect.size.x - 30, 11), rect.position.x + 16, rect.position.y + 130, 11, COLORS.muted)
-		_draw_label("HP %d    MANA %d    STA %d" % [definition.resources.Health[1], definition.resources.Mana[1], definition.resources.Stamina[1]], rect.position.x + 16, rect.position.y + 151, 11, COLORS.text)
-		active_hits.append({"rect": rect, "action": {"type": "select_character", "id": character_id}})
-		_draw_button(Rect2(rect.position.x + 15, rect.position.y + 165, rect.size.x - 30, 25), "SELECTED" if active else "CHOOSE", {"type": "select_character", "id": character_id}, active, 10)
+		_draw_panel(rect, "", COLORS.gold if active else COLORS.line_soft if unlocked else Color("#3a454d"))
+		var portrait_rect := Rect2(rect.position.x + 12, rect.position.y + 14, 66, 78)
+		if unlocked:
+			_draw_character_portrait(portrait_rect, definition)
+			var weapon: Dictionary = sim.content.weapons.get(String(definition.get("weapon", "")), {})
+			var equipment_name := String(weapon.get("name", "Basic equipment"))
+			if definition.get("starting_equipment", {}).has("Offhand"):
+				equipment_name += " + " + String(sim.content.items.get(definition.starting_equipment.Offhand, {}).get("name", "Shield"))
+			var title := String(presentation.get("class_title", "Newly Unlocked Class"))
+			_draw_label(_fit_text(title, 300, 16), rect.position.x + 91, rect.position.y + 24, 16, COLORS.text)
+			var class_description := String(presentation.get("class_description", "A distinct path with room to grow."))
+			_draw_label(_fit_text(class_description, 300, 10), rect.position.x + 91, rect.position.y + 43, 10, COLORS.muted)
+			_draw_label(_fit_text("BASIC GEAR  ·  " + equipment_name, 300, 10), rect.position.x + 91, rect.position.y + 64, 10, COLORS.cyan)
+			_draw_label("HP %d  ·  MANA %d  ·  STA %d" % [definition.resources.Health[1], definition.resources.Mana[1], definition.resources.Stamina[1]], rect.position.x + 91, rect.position.y + 82, 9, COLORS.gold)
+			var button_rect := Rect2(rect.position.x + 90, rect.position.y + 100, rect.size.x - 104, 25)
+			_draw_button(button_rect, "SELECTED" if active else "CHOOSE", {"type": "select_character", "id": character_id}, active, 10)
+			active_hits.append({"rect": portrait_rect, "action": {"type": "select_character", "id": character_id}})
+			active_hits.append({"rect": Rect2(rect.position.x + 84, rect.position.y + 2, rect.size.x - 89, 93), "action": {"type": "select_character", "id": character_id}})
+		else:
+			_draw_panel(portrait_rect, "", COLORS.gold)
+			_draw_label("?", portrait_rect.get_center().x, portrait_rect.position.y + 53, 42, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
+			_draw_label("Unknown Character", rect.position.x + 91, rect.position.y + 43, 13, COLORS.text)
+			_draw_label("Unlock Requirement", rect.position.x + 91, rect.position.y + 75, 9, COLORS.gold)
+			var requirement := String(presentation.get("requirement", ""))
+			var requirement_lines := _wrap_text_to_width(requirement, rect.size.x - 105, 9, 2)
+			for line_index in range(requirement_lines.size()):
+				_draw_label(String(requirement_lines[line_index]), rect.position.x + 91, rect.position.y + 92 + line_index * 12, 9, COLORS.muted)
 	_draw_button(Rect2(481, 690, 310, 70), "BEGIN THE MARCH", {"type": "start"}, true, 18)
 	if sim.has_saved_run():
 		_draw_button(Rect2(805, 690, 235, 70), "RESUME RUN", {"type": "resume"}, false, 17)
 	_draw_button(Rect2(1053, 690, 310, 70), "CODEX  ·  %d discoveries" % _codex_count(), {"type": "title_codex"}, false, 16)
-	_draw_label("Landscape first  ·  Touch or mouse  ·  No timer while you decide", 56, 745, 13, COLORS.muted)
+	_draw_button(Rect2(70, 690, 310, 70), "CONTENT / MODS", {"type": "content_mods"}, false, 15)
+	_draw_label("Landscape first  ·  Touch or mouse  ·  No timer while you decide", 56, 680, 13, COLORS.muted)
 	_draw_corner_marks(Rect2(47, 215, 1346, 450))
+
+func _draw_character_portrait(rect: Rect2, definition: Dictionary) -> void:
+	var portrait_path := String(definition.get("portrait_path", ""))
+	var texture := _load_portrait_texture(portrait_path) if portrait_path != "" else null
+	if texture is Texture2D:
+		draw_rect(rect, Color("#0b141b"))
+		var portrait_box := rect.grow(-3.0)
+		var source_size := texture.get_size()
+		var portrait_scale := minf(portrait_box.size.x / source_size.x, portrait_box.size.y / source_size.y)
+		var fitted_size := source_size * portrait_scale
+		var fitted_rect := Rect2(portrait_box.position + (portrait_box.size - fitted_size) * 0.5, fitted_size)
+		draw_texture_rect(texture, fitted_rect, false)
+		return
+	_draw_panel(rect, "", COLORS.line_soft)
+	var key := String(definition.get("portrait_key", ""))
+	var symbol: String = String({"mundane": "⚔", "archer": "➶", "apprentice": "◈", "defender": "⛨"}.get(key, "◇"))
+	_draw_label(String(symbol), rect.get_center().x, rect.get_center().y + 7, 26, COLORS.cyan, HORIZONTAL_ALIGNMENT_CENTER)
+
+func _load_portrait_texture(portrait_path: String) -> Texture2D:
+	if portrait_texture_cache.has(portrait_path):
+		return portrait_texture_cache[portrait_path] as Texture2D
+	var texture: Texture2D = load(portrait_path) as Texture2D if ResourceLoader.exists(portrait_path) else null
+	if texture == null and FileAccess.file_exists(portrait_path):
+		var portrait_image := Image.new()
+		if portrait_image.load(portrait_path) == OK:
+			texture = ImageTexture.create_from_image(portrait_image)
+	if texture != null:
+		portrait_texture_cache[portrait_path] = texture
+	return texture
+
+func _character_card_presentation(character_id: String) -> Dictionary:
+	var definition: Dictionary = sim.content.get("characters", {}).get(character_id, {})
+	if definition.is_empty():
+		return {}
+	if not sim.is_character_unlocked(character_id):
+		return {"unlocked": false, "requirement": sim.get_character_unlock_requirement(character_id)}
+	return {
+		"unlocked": true,
+		"class_title": String(definition.get("class_title", "Newly Unlocked Class")),
+		"class_description": String(definition.get("class_description", definition.get("subtitle", "A distinct path with room to grow."))),
+		"portrait_path": String(definition.get("portrait_path", ""))
+	}
+
+func _draw_content_mods(_rect: Rect2) -> void:
+	_draw_label("CONTENT / MODS", 131, 106, 22, COLORS.text)
+	_draw_label("Choose which installed content packages are active for new runs.", 132, 132, 12, COLORS.muted)
+	var packages: Array = sim.content_registry.available_packages
+	var official: Array = packages.filter(func(package: Dictionary) -> bool: return String(package.get("kind", "")) in ["core", "official"])
+	var mods: Array = packages.filter(func(package: Dictionary) -> bool: return String(package.get("kind", "")) == "mod")
+	var groups: Array = [{"title": "OFFICIAL CONTENT", "entries": official, "x": 130.0}, {"title": "MODS", "entries": mods, "x": 730.0}]
+	for group in groups:
+		var x := float(group.x)
+		var column := Rect2(x, 168, 576, 430)
+		_draw_panel(column, String(group.title), COLORS.line_soft)
+		var values: Array = group.entries
+		if values.is_empty():
+			_draw_label("No installed packages", x + 20, 224, 13, COLORS.muted)
+		else:
+			for index in range(values.size()):
+				var package: Dictionary = values[index]
+				var row := Rect2(x + 14, 205 + index * 72, column.size.x - 28, 62)
+				_draw_panel(row, "", COLORS.line_soft)
+				_draw_label(_fit_text(String(package.get("name", "Content")), row.size.x - 154, 13), row.position.x + 12, row.position.y + 23, 13, COLORS.text)
+				if not package.get("dependencies", []).is_empty():
+					_draw_label("Needs other installed content", row.position.x + 12, row.position.y + 43, 9, COLORS.muted)
+				var toggle_rect := Rect2(row.end.x - 119, row.position.y + 11, 105, 38)
+				if package.get("required", false):
+					draw_rect(toggle_rect, Color("#14221f"))
+					draw_rect(toggle_rect, COLORS.green, false, 1.0)
+					_draw_label("ALWAYS ON", toggle_rect.get_center().x, toggle_rect.get_center().y + 4, 9, COLORS.green, HORIZONTAL_ALIGNMENT_CENTER)
+				else:
+					_draw_button(toggle_rect, "DISABLE" if package.get("enabled", false) else "ENABLE", {"type": "package_toggle", "id": package.id, "enabled": not bool(package.get("enabled", false))}, false, 10)
+	_draw_panel(Rect2(130, 615, 1176, 45), "", COLORS.line_soft)
+	_draw_label("Core content is always active.", 150, 643, 10, COLORS.muted)
+	_draw_button(Rect2(128, 675, 180, TOUCH_TARGET), "RETURN", {"type": "close"}, false, 12)
+
+func _draw_character_reveal(_rect: Rect2) -> void:
+	var character_id := reveal_character_id if reveal_character_id != "" else sim.get_pending_character_reveal()
+	var definition: Dictionary = sim.content.get("characters", {}).get(character_id, {})
+	_draw_label("A NEW CLASS IS AVAILABLE", 131, 107, 12, COLORS.gold)
+	_draw_character_portrait(Rect2(142, 164, 210, 260), definition)
+	var title := String(definition.get("class_title", "Newly Unlocked Class"))
+	var description := String(definition.get("class_description", "A new path has joined your roster."))
+	var fitted_title := _fit_text(title, 780, 27)
+	_draw_label(fitted_title, 395, 223, 27, COLORS.text)
+	_draw_label("CLASS DISCOVERED", 397, 251, 10, COLORS.cyan)
+	var description_lines := _wrap(description, 64)
+	for line_index in range(mini(4, description_lines.size())):
+		_draw_label(String(description_lines[line_index]), 397, 292 + line_index * 23, 13, COLORS.muted)
+	_draw_panel(Rect2(395, 390, 760, 60), "", COLORS.line_soft)
+	_draw_label("This unlock is saved permanently to your profile.", 417, 426, 12, COLORS.text)
+	_draw_button(Rect2(961, 675, 245, TOUCH_TARGET), "CONTINUE", {"type": "close"}, true, 13)
 
 func _battle_layout() -> Dictionary:
 	var active_panel := String(ui_state.active_lower_panel)
@@ -711,6 +869,15 @@ func _draw_board() -> void:
 		if object.get("kind") == "exit":
 			draw_circle(center, 11, Color(0.2, 0.62, 0.9, 0.4))
 			_draw_label("⇢", center.x, center.y + 7, 19, COLORS.cyan, HORIZONTAL_ALIGNMENT_CENTER)
+		elif object.get("kind") == "chest":
+			draw_circle(center, 11, Color(0.72, 0.45, 0.12, 0.3))
+			_draw_label("▣", center.x, center.y + 6, 17, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
+		elif object.get("kind") == "skill_book":
+			draw_circle(center, 10, Color(0.51, 0.33, 0.75, 0.3))
+			_draw_label("▤", center.x, center.y + 6, 15, COLORS.purple, HORIZONTAL_ALIGNMENT_CENTER)
+		elif object.get("kind") in ["loot", "item"]:
+			draw_circle(center, 10, Color(0.23, 0.56, 0.48, 0.26))
+			_draw_label("★" if object.get("marker", "") == "star" else "✦", center.x, center.y + 5, 13, COLORS.gold if object.get("marker", "") == "star" else COLORS.cyan, HORIZONTAL_ALIGNMENT_CENTER)
 		else:
 			draw_circle(center, 12, Color(0.59, 0.14, 0.2, 0.3))
 			_draw_label("◆", center.x, center.y + 6, 15, COLORS.red, HORIZONTAL_ALIGNMENT_CENTER)
@@ -906,12 +1073,15 @@ func _draw_inspection_card() -> void:
 		_draw_button(Rect2(rect.end.x - 31.0, rect.position.y + 2.0, 27.0, 26.0), "×", {"type": "clear_inspection"}, false, 9, COLORS.gold)
 	var cursor_y := content_top
 	if not object.is_empty():
-		_draw_label(String(object.get("name", "Field object")), content_x, cursor_y, 14, COLORS.cyan if object.get("kind") == "exit" else COLORS.gold)
-		_draw_label("%s  ·  %d / %d HP" % [String(object.get("kind", "object")).capitalize(), int(object.get("hp", 1)), int(object.get("max_hp", 1))], content_x, cursor_y + 22.0, 10, COLORS.text)
+		var object_kind := String(object.get("kind", "object"))
+		var can_interact := object_kind in ["exit", "chest", "skill_book", "loot", "item"]
+		_draw_label(String(object.get("name", "Field object")), content_x, cursor_y, 14, COLORS.cyan if object_kind == "exit" else COLORS.gold)
+		var object_description: String = String({"chest": "Contents unknown until opened", "skill_book": "Run-specific ability learning", "loot": "A useful drop marked with a star", "item": "A field reward", "exit": "Stage exit", "ward": "%d / %d HP" % [int(object.get("hp", 1)), int(object.get("max_hp", 1))]}.get(object_kind, object_kind.capitalize()))
+		_draw_label(_fit_text(String(object_description), content_width, 10), content_x, cursor_y + 22.0, 10, COLORS.text)
 		var object_cell := Vector2i(int(object.pos[0]), int(object.pos[1]))
 		_draw_label("Distance  ·  %d tiles" % sim._dist(sim._pos(sim.get_player()), object_cell), content_x, cursor_y + 42.0, 9, COLORS.muted)
-		var object_action := {"type": "interact"} if object.get("kind") == "exit" else {"type": "target_object"}
-		var object_label := "INTERACT" if object.get("kind") == "exit" else "TARGET WARD"
+		var object_action := {"type": "interact"} if can_interact else {"type": "target_object"}
+		var object_label := "INTERACT" if object_kind == "exit" else "OPEN CHEST" if object_kind == "chest" else "PICK UP" if object_kind in ["skill_book", "loot", "item"] else "TARGET WARD"
 		_draw_button(Rect2(content_x, cursor_y + 54.0, content_width, 46.0), object_label, object_action, false, 10)
 		cursor_y += 110.0
 	elif enemy_selected:
@@ -1126,7 +1296,11 @@ func _draw_overlay() -> void:
 	var rect := Rect2(100, 61, 1240, 690)
 	_draw_panel(rect, "", COLORS.gold)
 	overlay_hit_start = active_hits.size()
-	if overlay == "abilities":
+	if overlay == "content_mods":
+		_draw_content_mods(rect)
+	elif overlay == "character_reveal":
+		_draw_character_reveal(rect)
+	elif overlay == "abilities":
 		_draw_abilities(rect)
 	elif overlay == "action_palette":
 		_draw_action_palette(rect)
@@ -2095,13 +2269,15 @@ func _handle_action(action: Dictionary) -> void:
 			selected_character = String(action.id)
 		"start":
 			var seed_value := int(Time.get_unix_time_from_system())
-			sim.start_run(seed_value, selected_character)
-			sim.save_run()
-			page = "battle"
-			overlay = ""
-			selected_enemy = ""
-			selected_object_index = -1
-			target_mode = ""
+			if sim.start_run(seed_value, selected_character):
+				sim.save_run()
+				page = "battle"
+				overlay = ""
+				selected_enemy = ""
+				selected_object_index = -1
+				target_mode = ""
+			else:
+				_show_notice("Choose an unlocked character to begin.")
 		"resume":
 			if sim.resume_run():
 				page = "battle" if sim.run.get("outcome", "") == "" else "outcome"
@@ -2114,6 +2290,21 @@ func _handle_action(action: Dictionary) -> void:
 			sim._load_codex()
 			page = "title"
 			overlay = "codex"
+		"content_mods":
+			overlay = "content_mods"
+		"package_toggle":
+			var package_result: Dictionary = sim.set_package_enabled(String(action.get("id", "")), bool(action.get("enabled", false)))
+			if package_result.get("ok", false):
+				if not sim.is_character_unlocked(selected_character):
+					selected_character = sim.get_starting_character_ids()[0]
+				queue_redraw()
+			else:
+				_show_notice(String(package_result.get("error", "This package could not be changed.")))
+		"unlock_character":
+			var unlock_id := String(action.get("id", ""))
+			if sim.unlock_character(unlock_id):
+				reveal_character_id = unlock_id
+				overlay = "character_reveal"
 		"overlay":
 			var overlay_id := String(action.id)
 			if overlay_id in ["map", "inventory", "spellbook"]:
@@ -2147,6 +2338,19 @@ func _handle_action(action: Dictionary) -> void:
 				palette_filter = "All"
 		"close":
 			if overlay != "":
+				if overlay in ["rewards", "destinations"] and sim.run.get("stage_completed", false):
+					sim.run["stage_prompt_dismissed"] = true
+					sim.save_run()
+					var pending_reveal := sim.get_pending_character_reveal()
+					if pending_reveal != "" and page == "battle":
+						reveal_character_id = pending_reveal
+						overlay = "character_reveal"
+						queue_redraw()
+						return
+				if overlay == "character_reveal":
+					var revealed_id := reveal_character_id if reveal_character_id != "" else sim.get_pending_character_reveal()
+					if revealed_id != "": sim.consume_character_reveal(revealed_id)
+					reveal_character_id = ""
 				overlay = "pause" if overlay == "exit_confirm" else "codex" if overlay == "codex_book" else ""
 			else:
 				ui_state.lower_dock_expanded = false
@@ -2243,7 +2447,11 @@ func _handle_action(action: Dictionary) -> void:
 		"equip":
 			if sim.equip_item(ui_state.selected_inventory_index):
 				ui_state.selected_inventory_index = -1
-				_show_notice("Equipment updated.")
+				if sim.get_pending_character_reveal() != "":
+					reveal_character_id = sim.get_pending_character_reveal()
+					overlay = "character_reveal"
+				else:
+					_show_notice("Equipment updated.")
 		"discard":
 			if sim.discard_item(ui_state.selected_inventory_index):
 				ui_state.selected_inventory_index = -1
@@ -2266,7 +2474,11 @@ func _handle_action(action: Dictionary) -> void:
 				var book: Dictionary = sim.content.items.get(book_id, {})
 				var school_name := String(book.get("school", ""))
 				var immediate_result := ", ".join(chosen_names) if not chosen_names.is_empty() else "%s knowledge unlocked" % school_name if school_name != "" else "knowledge recorded"
-				_show_notice("Knowledge recorded: %s." % immediate_result)
+				if sim.get_pending_character_reveal() != "":
+					reveal_character_id = sim.get_pending_character_reveal()
+					overlay = "character_reveal"
+				else:
+					_show_notice("Knowledge recorded: %s." % immediate_result)
 		"toggle_book_choice":
 			var option_index := int(action.index)
 			if selected_book_abilities.has(option_index):
@@ -2407,7 +2619,11 @@ func _handle_action(action: Dictionary) -> void:
 			if sim.learn_ability(String(action.id)):
 				ui_state.selected_ability_id = String(action.id)
 				_center_web_on(ui_state.selected_ability_id)
-				_show_notice("Ability learned.")
+				if sim.get_pending_character_reveal() != "":
+					reveal_character_id = sim.get_pending_character_reveal()
+					overlay = "character_reveal"
+				else:
+					_show_notice("Ability learned.")
 		"codex_book":
 			codex_book_id = String(action.id)
 			overlay = "codex_book"
@@ -2585,7 +2801,7 @@ func _commit_action(result: Dictionary) -> void:
 		target_mode = ""
 		ui_state.lower_dock_expanded = false
 		pending_outcome_page = "outcome" if sim.run.get("outcome", "") != "" else ""
-		pending_outcome_overlay = "rewards" if sim.run.get("stage_completed", false) and sim.run.get("outcome", "") == "" else ""
+		pending_outcome_overlay = "rewards" if sim.run.get("stage_completed", false) and not sim.run.get("stage_prompt_dismissed", false) and sim.run.get("outcome", "") == "" else ""
 		var events: Array = result.get("presentation_events", [])
 		if not events.is_empty() and playback_mode != "Instant":
 			playback_active = true
@@ -2603,8 +2819,11 @@ func _commit_action(result: Dictionary) -> void:
 			if sim.run.get("outcome", "") != "":
 				page = "outcome"
 				overlay = ""
-			elif sim.run.get("stage_completed", false) and overlay == "":
+			elif sim.run.get("stage_completed", false) and not sim.run.get("stage_prompt_dismissed", false) and overlay == "":
 				overlay = "rewards"
+			elif sim.get_pending_character_reveal() != "" and overlay == "":
+				reveal_character_id = sim.get_pending_character_reveal()
+				overlay = "character_reveal"
 	else:
 		_show_notice(String(result.get("message", "That action could not be completed.")))
 	queue_redraw()
@@ -2858,6 +3077,20 @@ func _content_display_name(content_id: String) -> String:
 
 func _prepare_capture_scenario() -> void:
 	match capture_scenario:
+		"exploration_chest", "exploration_book", "exploration_star":
+			var player_cell: Vector2i = sim._pos(sim.get_player())
+			var chest_cell := player_cell + Vector2i(2, 0)
+			var book_cell := player_cell + Vector2i(0, 2)
+			var star_cell := player_cell + Vector2i(1, 2)
+			for cell in [chest_cell, book_cell, star_cell]: sim._set_grid(cell, "floor")
+			sim.run.visible = sim._bool_grid(true)
+			sim.run.explored = sim._bool_grid(true)
+			sim.run.objects = [
+				{"id": "qa_chest", "kind": "chest", "name": "Travel Chest", "pos": [chest_cell.x, chest_cell.y], "hp": 1, "max_hp": 1, "opened": false},
+				{"id": "qa_book", "kind": "skill_book", "name": "Cinder Primer", "item_id": "cinder_primer", "pos": [book_cell.x, book_cell.y], "hp": 1, "max_hp": 1},
+				{"id": "qa_star", "kind": "loot", "name": "Field Draught", "item_id": "healing_potion", "marker": "star", "pos": [star_cell.x, star_cell.y], "hp": 1, "max_hp": 1}
+			]
+			selected_object_index = 0 if capture_scenario == "exploration_chest" else 1 if capture_scenario == "exploration_book" else 2
 		"map_locked":
 			sim.run.stage_completed = false
 			ui_state.active_lower_panel = "world_map"
@@ -2994,12 +3227,12 @@ func _prepare_capture_scenario() -> void:
 			ui_state.selected_inventory_index = 0
 		"populated_history", "combat_history":
 			var capture_events: Array = [
-				{"sequence": 1, "type": "Move", "actor_name": "Mara, the Bloodless", "target_name": "", "details": {"from": [12, 8], "to": [13, 8]}},
-				{"sequence": 2, "type": "Attack", "actor_name": "Mara, the Bloodless", "target_name": "Skeleton", "details": {"style": "melee"}},
-				{"sequence": 3, "type": "Damage", "actor_name": "Mara, the Bloodless", "target_name": "Skeleton", "details": {"amount": 12, "damage_type": "Slashing"}},
-				{"sequence": 4, "type": "KillCredit", "actor_name": "Mara, the Bloodless", "target_name": "Skeleton", "details": {"xp": 12, "credit": "full"}},
-				{"sequence": 5, "type": "StatusApplied", "actor_name": "Mara, the Bloodless", "target_name": "Rotwalker", "details": {"status": "Burning"}},
-				{"sequence": 6, "type": "LevelUp", "actor_name": "Mara, the Bloodless", "target_name": "", "details": {"level": 2, "skill_points": 1, "max_hp": 2, "attribute": "Willpower", "attribute_value": 15}}
+				{"sequence": 1, "type": "Move", "actor_name": "The Bloodletter", "target_name": "", "details": {"from": [12, 8], "to": [13, 8]}},
+				{"sequence": 2, "type": "Attack", "actor_name": "The Bloodletter", "target_name": "Skeleton", "details": {"style": "melee"}},
+				{"sequence": 3, "type": "Damage", "actor_name": "The Bloodletter", "target_name": "Skeleton", "details": {"amount": 12, "damage_type": "Slashing"}},
+				{"sequence": 4, "type": "KillCredit", "actor_name": "The Bloodletter", "target_name": "Skeleton", "details": {"xp": 12, "credit": "full"}},
+				{"sequence": 5, "type": "StatusApplied", "actor_name": "The Bloodletter", "target_name": "Rotwalker", "details": {"status": "Burning"}},
+				{"sequence": 6, "type": "LevelUp", "actor_name": "The Bloodletter", "target_name": "", "details": {"level": 2, "skill_points": 1, "max_hp": 2, "attribute": "Willpower", "attribute_value": 15}}
 			]
 			sim.run.combat_history = capture_events
 			if capture_scenario == "combat_history":
@@ -3095,6 +3328,8 @@ func _capture_after_draw() -> void:
 	offscreen.add_child(self)
 	queue_redraw()
 	await get_tree().process_frame
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var image := offscreen.get_texture().get_image()

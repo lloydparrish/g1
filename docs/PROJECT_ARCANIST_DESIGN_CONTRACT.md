@@ -112,34 +112,21 @@ Interactions should be owned by reusable environment/status rules rather than ex
 
 ## Characters
 
-Characters provide starting identity and a defining aura, not permanent class restrictions.
+Characters provide starting identity and hidden content affinities, not permanent class restrictions. New profiles start with four simple classes: The Mundane (stable ID jim), The Archer (archer), The Apprentice (apprentice) and The Defender (defender). They begin with their defining basic weapon/ability and otherwise small builds. Only the Archer, Apprentice and Defender have starting content affinities; The Mundane uses global reward weights with no character-derived weighting. Advanced classes remain profile unlocks and preserve the IDs aldren, mara, brakka, orin and sylvi. Their display titles are The Spellblade, The Bloodletter, The Warrior, The Necromancer and The Ranger, respectively. A locked card shows a large ?, Unknown Character and its actual player-facing requirement, while hiding the title, normal portrait and silhouette. Unlocks persist and show a concise portrait, title and identity reveal.
 
-### Jim the Mundane
-- Ordinary starting equipment.
-- No starting magic.
-- No special affinity or progression bonus.
-- Trait: none.
-Jim is the benchmark proving that the build system is genuinely open.
+Advanced unlock conditions are: The Spellblade (aldren), complete a stage while owning Sword and Arcane tagged content; The Bloodletter (mara), own Blood and Dagger tagged content together; The Warrior (brakka), complete a stage with a Greatsword equipped and Might 14 or higher; The Necromancer (orin), control at least five individual living Undead summons at once; The Ranger (sylvi), complete a stage while owning Bow and Nature tagged content. The Necromancer counts actual living player-owned summon entities, never capacity or historical summons. Conditions may be impossible in the current content pool. Keep an advanced class locked until legitimate content makes its authored condition achievable; do not substitute a temporary unrelated unlock. See [Advanced Character Scaling Review](ADVANCED_CHARACTER_SCALING_REVIEW.md) for unchanged profiles and starter comparisons.
 
-### Aldren, Exiled Battlemage
-- Starts with Swordsmanship and Arcane identity.
-- Aura: Spellsteel — casting a spell empowers the next weapon attack.
+The four baseline classes are:
+- **The Mundane:** ordinary sword, simple ordinary combat and an otherwise open build.
+- **The Archer:** basic bow and ranged projectile identity.
+- **The Apprentice:** one basic Magic Missile and beginner Arcane identity.
+- **The Defender:** shield equipment and Shield Bash, with shield/armor/defense/survivability affinities.
 
-### Mara, the Bloodless
-- Starts with Blood Magic access and a dagger.
-- Aura: Crimson Hunger — Blood manipulation defines her starting run identity.
+Affinity and build choices adjust hidden probability weights. They never restrict the global eligible pool. Repeatedly selected content tags can modestly influence later rewards. See [`CONTENT_FOUNDATION.md`](CONTENT_FOUNDATION.md) for the package, eligibility, weighting, exploration and save contracts.
 
-### Brakka, Ironbound
-- Heavy Weapons + Defense + heavy armor.
-- Aura: Immovable — rewards slow, armored positioning and retaliation.
+The five advanced records retain their existing abilities, auras, resources, attributes, equipment and growth profiles. Their archetypal titles and authored unlock conditions are finalized above; do not rebalance these profiles without a separate user-led design pass.
 
-### Sylvi, Thornwalker
-- Archery + Nature.
-- Aura: Living Hunt — rewards movement, vegetation and ranged combat.
-
-### Orin, Gravekeeper
-- Necromancy + increased starting Command.
-- Aura: Keeper of the Fallen — strong corpse and undead-summon interactions.
+Characters use a consistent static Treatment A portrait family: intentionally crude/charming, clean stick figures distinguished by readable weapons, equipment, pose and restrained thematic accents. The approved portraits are stored in assets/portraits; do not replace this direction with the comparison Treatment B.
 
 ## Martial disciplines
 
@@ -165,9 +152,8 @@ Common/naturally learnable schools:
 3. Storm
 4. Earth
 5. Nature
-6. Arcane
-7. Holy
-8. Shadow
+6. Holy
+7. Shadow
 
 Specialized/discoverable schools:
 9. Necromancy
@@ -177,6 +163,8 @@ Specialized/discoverable schools:
 13. Demonology
 
 Future expansion can add Chronomancy, Void, Dream, Chaos, Flesh, Gravity and other schools.
+
+Arcane is school-less magic: direct manipulation of magical energy, not a school that later branches into Fire, Blood, Time or another discipline. Magic Missile, Arcane Blast and Arcane Shield are examples of Arcane concepts. The `Arcane` damage/theme label may be used by abilities, but it does not designate a registered magical school or progression branch.
 
 ## Knowledge acquisition
 
@@ -278,7 +266,7 @@ Lucky runs may accumulate several compatible artifacts and become unusually powe
 
 ## Loot weighting
 
-Rewards are weighted toward the current build based on known schools, disciplines, equipment, tags, character and previous choices, but weighting is never exclusivity. A swordsman can discover Demonology and redirect the run.
+Rewards use global eligibility and tag-driven character/build weight adjustments, but weighting is never exclusivity. The Mundane has no character adjustment. A character can discover off-archetype content and redirect the run.
 
 ## Encounter generation
 

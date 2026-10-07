@@ -12,7 +12,7 @@ func _initialize() -> void:
 func run_suite() -> void:
 	var content_check = SimScript.new()
 	_check(content_check.validate_content().is_empty(), "player-facing content and spellbook definitions validate")
-	_check(content_check.content.abilities.size() == 32 and content_check.content.abilities.values().all(func(ability: Dictionary) -> bool: return not String(ability.get("description", "")).strip_edges().is_empty()), "all 32 playable abilities have authored descriptions")
+	_check(content_check.content.abilities.size() == 34 and content_check.content.abilities.values().all(func(ability: Dictionary) -> bool: return not String(ability.get("description", "")).strip_edges().is_empty()), "all 34 playable abilities have authored descriptions")
 
 	var rewards = SimScript.new()
 	rewards.start_run(401, "jim")
@@ -62,6 +62,7 @@ func run_suite() -> void:
 
 	for character_id in ["jim", "aldren", "mara", "sylvi", "orin", "brakka"]:
 		var summon_sim = SimScript.new()
+		_allow_character(summon_sim, character_id)
 		summon_sim.start_run(410, character_id)
 		for entity_id in summon_sim.run.entities.keys():
 			if entity_id != "player": summon_sim.run.entities[entity_id].alive = false
@@ -127,6 +128,7 @@ func run_suite() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
+	_allow_character(main.sim, "aldren")
 	main.sim.start_run(421, "aldren")
 	main.page = "battle"
 	main.queue_redraw()
@@ -187,9 +189,10 @@ func run_suite() -> void:
 	large_web_probe.start_run(422, "jim")
 	for index in range(120):
 		large_web_probe.content.abilities["radial_probe_%03d" % index] = {"name": "Radial Probe %d" % index, "school": "Swordsmanship", "kind": "passive", "target": "passive", "time": 0, "costs": {}, "effects": [], "modifiers": {}, "web_root": index == 0, "requires": ["radial_probe_%03d" % (index - 1)] if index > 0 else []}
+		large_web_probe.run.known.append("radial_probe_%03d" % index)
 	var radial_nodes: Array = large_web_probe.get_progression_graph()
 	var radial_bounds: Rect2 = large_web_probe.get_progression_graph_bounds(radial_nodes)
-	_check(radial_nodes.size() >= 120 and radial_bounds.size.y > main._ability_graph_rect().size.y, "120-node prerequisite branch extends beyond the radial web viewport without a logical cap")
+	_check(radial_nodes.size() >= 120 and (radial_bounds.size.x > main._ability_graph_rect().size.x or radial_bounds.size.y > main._ability_graph_rect().size.y), "120-node prerequisite branch extends beyond the radial web viewport without a logical cap")
 	var pan_before: Vector2 = main.web_pan
 	await _touch_drag(main, main._ability_graph_rect().get_center(), main._ability_graph_rect().get_center() + Vector2(65, 45))
 	_check(main.web_pan != pan_before, "touch drag pans the production progression graph")
@@ -283,3 +286,8 @@ func _check(condition: bool, description: String) -> void:
 	checks += 1
 	if not condition:
 		failures.append(description)
+
+func _allow_character(sim, character_id: String) -> void:
+	var unlocked: Array = sim.profile.get("unlocked_character_ids", [])
+	if not unlocked.has(character_id): unlocked.append(character_id)
+	sim.profile["unlocked_character_ids"] = unlocked

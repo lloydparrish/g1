@@ -26,6 +26,14 @@ if (-not (Test-Path -LiteralPath $GodotConsole)) {
     throw "Godot is not installed in $EngineDir. Run scripts\arcanist.ps1 Setup first."
 }
 
+function Invoke-ArcanistTestSuite {
+    param([string]$Name, [string]$ScriptPath)
+    $env:APPDATA = Join-Path $Profile "test\$Name\Roaming"
+    $env:LOCALAPPDATA = Join-Path $Profile "test\$Name\Local"
+    & $GodotConsole --headless --path $ProjectRoot --script $ScriptPath
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 switch ($Mode) {
     'Editor' {
         if (-not (Test-Path -LiteralPath $GodotWindow)) { throw "Missing editor executable: $GodotWindow" }
@@ -36,24 +44,16 @@ switch ($Mode) {
         & $GodotWindow --path $ProjectRoot
     }
     'Test' {
-        $env:APPDATA = Join-Path $Profile 'test\Roaming'
-        $env:LOCALAPPDATA = Join-Path $Profile 'test\Local'
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/test_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/production_path_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/mobile_acceptance_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/prompt6a_ui_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/progression_inventory_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/playtest_regressions_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/balance_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/combat_presentation_runner.gd'
-        exit $LASTEXITCODE
+        Invoke-ArcanistTestSuite 'core' 'res://tests/test_runner.gd'
+        Invoke-ArcanistTestSuite 'production' 'res://tests/production_path_runner.gd'
+        Invoke-ArcanistTestSuite 'mobile' 'res://tests/mobile_acceptance_runner.gd'
+        Invoke-ArcanistTestSuite 'prompt6a' 'res://tests/prompt6a_ui_runner.gd'
+        Invoke-ArcanistTestSuite 'progression' 'res://tests/progression_inventory_runner.gd'
+        Invoke-ArcanistTestSuite 'playtest' 'res://tests/playtest_regressions_runner.gd'
+        Invoke-ArcanistTestSuite 'balance' 'res://tests/balance_runner.gd'
+        Invoke-ArcanistTestSuite 'combat' 'res://tests/combat_presentation_runner.gd'
+        Invoke-ArcanistTestSuite 'content-foundation' 'res://tests/content_foundation_runner.gd'
+        exit 0
     }
     'Android' {
         $PowerShell = (Get-Process -Id $PID).Path
@@ -61,24 +61,15 @@ switch ($Mode) {
         exit $LASTEXITCODE
     }
     'BuildAll' {
-        $env:APPDATA = Join-Path $Profile 'test\Roaming'
-        $env:LOCALAPPDATA = Join-Path $Profile 'test\Local'
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/test_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/production_path_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/mobile_acceptance_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/prompt6a_ui_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/progression_inventory_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/playtest_regressions_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/balance_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $GodotConsole --headless --path $ProjectRoot --script 'res://tests/combat_presentation_runner.gd'
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Invoke-ArcanistTestSuite 'core' 'res://tests/test_runner.gd'
+        Invoke-ArcanistTestSuite 'production' 'res://tests/production_path_runner.gd'
+        Invoke-ArcanistTestSuite 'mobile' 'res://tests/mobile_acceptance_runner.gd'
+        Invoke-ArcanistTestSuite 'prompt6a' 'res://tests/prompt6a_ui_runner.gd'
+        Invoke-ArcanistTestSuite 'progression' 'res://tests/progression_inventory_runner.gd'
+        Invoke-ArcanistTestSuite 'playtest' 'res://tests/playtest_regressions_runner.gd'
+        Invoke-ArcanistTestSuite 'balance' 'res://tests/balance_runner.gd'
+        Invoke-ArcanistTestSuite 'combat' 'res://tests/combat_presentation_runner.gd'
+        Invoke-ArcanistTestSuite 'content-foundation' 'res://tests/content_foundation_runner.gd'
         $env:APPDATA = Join-Path $Profile 'Roaming'
         $env:LOCALAPPDATA = Join-Path $Profile 'Local'
         $TemplateDir = Join-Path $env:APPDATA 'Godot\export_templates\4.7.2.stable'

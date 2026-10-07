@@ -20,7 +20,7 @@ func run_suite() -> void:
 	_check(sim.start_run(20261004, "jim"), "character selection starts a run")
 	_check(sim.run.grid.size() == 16 and sim.run.grid[0].size() == 25, "stage generation creates a 25 by 16 battlefield")
 	_check(sim.get_timeline()[0].id == "player", "player is first at the initial decision point")
-	_check(sim.run.equipment.Weapon == "sword" and sim.run.known.size() == 3, "Jim starts with a weapon and no magic")
+	_check(sim.run.equipment.Weapon == "sword" and sim.run.known.is_empty() and sim.get_player().armor == 0, "The Mundane starts with a basic sword and no developed build")
 	_check(sim.content.weapons.dagger.time < sim.content.weapons.greatsword.time and sim.content.weapons.bow.range > sim.content.weapons.sword.range, "weapon definitions have distinct time and range")
 	sim.run.visible = sim._bool_grid(true)
 	sim.run.explored = sim._bool_grid(true)
@@ -101,6 +101,7 @@ func run_suite() -> void:
 	_check(route_test.get_movement_path(Vector2i(12, 8)).is_empty(), "player movement planning does not route through unexplored fog")
 
 	var mara = SimScript.new()
+	_allow_character(mara, "mara")
 	mara.start_run(77, "mara")
 	var blood_target: String = mara._spawn_enemy("goblin", Vector2i(8, 8), false)
 	var blood_before := int(mara.get_player().resources.Blood[0])
@@ -114,6 +115,7 @@ func run_suite() -> void:
 	_check(mara.run.grid[8][8] in ["fire", "floor", "blood"], "Fireball resolves its area terrain effect")
 
 	var aldren = SimScript.new()
+	_allow_character(aldren, "aldren")
 	aldren.start_run(778, "aldren")
 	var summon_result: Dictionary = aldren.act({"type": "cast", "id": "phantom_blade", "target": aldren.get_player().pos})
 	_check(summon_result.ok, "Phantom Blade is summoned through a reusable ability effect")
@@ -162,7 +164,7 @@ func run_suite() -> void:
 	var armor_before_equip: int = int(sim.get_player().armor)
 	sim.run.inventory.append("scale_armor")
 	var weapon_index: int = sim.run.inventory.find("scale_armor")
-	_check(sim.equip_item(weapon_index) and int(sim.get_player().armor) == armor_before_equip - int(sim.content.items.leather_armor.armor) + int(sim.content.items.scale_armor.armor), "inventory equipment replaces armor and recalculates protection")
+	_check(sim.equip_item(weapon_index) and int(sim.get_player().armor) == armor_before_equip + int(sim.content.items.scale_armor.armor), "inventory equipment adds protection over the deliberately empty starting build")
 	_check(sim.run.inventory.size() <= 30, "inventory stays within its thirty item capacity")
 
 	var objective = SimScript.new()
@@ -196,6 +198,7 @@ func run_suite() -> void:
 	_check(objective.run.stage_completed, "Survive objective resolves on its final turn")
 
 	var save_sim = SimScript.new()
+	_allow_character(save_sim, "aldren")
 	save_sim.start_run(60210, "aldren")
 	save_sim.act({"type": "wait"})
 	var saved_digest := save_sim.state_digest()
@@ -324,3 +327,7 @@ func _check(condition: bool, title: String) -> void:
 	if not condition:
 		failures.append(title)
 
+func _allow_character(sim, character_id: String) -> void:
+	var unlocked: Array = sim.profile.get("unlocked_character_ids", [])
+	if not unlocked.has(character_id): unlocked.append(character_id)
+	sim.profile["unlocked_character_ids"] = unlocked

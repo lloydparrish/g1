@@ -15,6 +15,16 @@ This bundle accompanies the Project Arcanist prompts supplied separately by the 
    - The Prompt 6 desktop battle HUD keeps exactly three persistent lower sections: World Map, Character / Abilities, and Inventory / Equipment. Spellbooks remain reachable through the Inventory tabs. The persistent map records only the chosen journey, with an unknown `?` node until the final encounter; the post-objective picker alone reveals future choices.
    - Android landscape keeps a contextual three-section dock with touch-sized controls and safe-area handling. The ability web remains a dedicated larger subview.
 
+3. `CONTENT_FOUNDATION.md`
+   - Canonical package identity/loading, stable-ID promotion, tags, prerequisites, weighting, unlocks, rewards, exploration loot, scripting boundary and artifact policy for the content foundation.
+   - Consult it together with the design contract before changing content definitions, profile progression, save references or content UI.
+
+4. `ADVANCED_CHARACTER_SCALING_REVIEW.md`
+   - Source-record comparison for the five advanced class profiles against the four simple starters. Final titles and unlock requirements are established; profile scaling remains unchanged.
+
+5. `CONTENT_FOUNDATION_VISUAL_QA.md`
+   - Retained desktop/mobile captures and manual visual QA notes for the content foundation, including screenshots of the installed nine-portrait Treatment A set.
+
 ## Priority when resolving ambiguity
 
 1. The user's current Codex prompt.
@@ -31,3 +41,4 @@ Do not silently contradict an established design rule. If implementation constra
 - Old versions are reproduced by checking out their Git commit and rebuilding.
 - `releases/ProjectArcanist.apk` is the explicitly designated, tracked release artifact and is exempt from generated-build cleanup.
 - Preserve screenshots cited by permanent QA documents. Keep uncited captures and temporary logs only while they are needed for active verification.
+- Do not create permanent timestamped executable copies for each update. Before removing a generated build, check whether it is running and confirm it is neither a documented release nor a QA artifact still needed for current review. Never apply this cleanup rule to authored source assets, canonical fixtures, saves or design documents.

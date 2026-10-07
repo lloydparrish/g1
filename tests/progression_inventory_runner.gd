@@ -12,15 +12,15 @@ func _initialize() -> void:
 func run_suite() -> void:
 	var sim = SimScript.new()
 	_check(sim.validate_content().is_empty(), "expanded content validates against the shared simulation schema")
-	_check(sim.content.abilities.size() == 32, "representative active and passive content remains within the milestone target")
-	_check(sim.content.progression.disciplines.size() == 10 and sim.content.progression.schools.size() == 13, "all canonical discipline and school registries are present")
+	_check(sim.content.abilities.size() == 34, "foundation adds only the two basic starter abilities to existing content")
+	_check(sim.content.progression.disciplines.size() == 10 and sim.content.progression.schools.size() == 12 and not sim.content.progression.schools.has("Arcane"), "Arcane remains school-less while the specialized spell schools stay registered")
 
 	sim.start_run(301, "jim")
 	var category_probe = SimScript.new()
 	category_probe.start_run(300, "jim")
 	var starting_categories: Array[String] = []
 	for category in category_probe.get_visible_ability_categories(): starting_categories.append(String(category.id))
-	_check(starting_categories.has("swordsmanship") and starting_categories.has("defense") and starting_categories.has("mobility") and not starting_categories.has("pyromancy") and not starting_categories.has("frost"), "untouched ability categories stay hidden for the current character")
+	_check(starting_categories.has("swordsmanship") and not starting_categories.has("defense") and not starting_categories.has("mobility") and not starting_categories.has("pyromancy") and not starting_categories.has("frost"), "the Mundane sees its basic sword path while the rest of the build stays empty")
 	category_probe.run.schools.append("Fire")
 	var earned_categories: Array[String] = []
 	for category in category_probe.get_visible_ability_categories(): earned_categories.append(String(category.id))
@@ -34,6 +34,7 @@ func run_suite() -> void:
 	_check(sim.get_progression_graph().any(func(node: Dictionary) -> bool: return node.id == "flame_wave" and not node.learned), "branching progression exposes siblings without a single-chain restriction")
 
 	var hybrid = SimScript.new()
+	_allow_character(hybrid, "aldren")
 	hybrid.start_run(302, "aldren")
 	hybrid.run.skill_points = 2
 	_check(not hybrid.get_ability_progress("flaming_blade").visible, "hybrid fire knowledge stays hidden until the school is discovered")
@@ -44,16 +45,19 @@ func run_suite() -> void:
 	jim.start_run(310, "jim")
 	jim.run.skill_points = 3
 	jim.run.inventory.append("greatsword")
+	jim.run.known.append("lunge")
 	_check(jim.equip_item(jim.run.inventory.find("greatsword")) and jim.run.disciplines.has("Heavy Weapons") and jim.get_ability_progress("cleave").learnable, "Jim can open a nonmagical Heavy Weapons path by training with its weapon")
 	_check(jim.run.schools.is_empty() and jim.run.known.all(func(ability_id: String) -> bool: return not String(jim.content.abilities[ability_id].school).is_empty()), "Jim retains his school-free starting identity while building martial skills")
 
 	var mara = SimScript.new()
+	_allow_character(mara, "mara")
 	mara.start_run(311, "mara")
 	mara.run.skill_points = 2
 	_check(mara.learn_ability("dagger_flurry") and mara.get_ability_progress("knife_dancer").learnable, "Mara's dagger path naturally reveals a mobility passive alongside Blood magic")
 	_check(mara.learn_ability("knife_dancer") and not mara.get_available_abilities().has("knife_dancer"), "passive techniques apply as passives instead of occupying active action slots")
 
 	var orin = SimScript.new()
+	_allow_character(orin, "orin")
 	orin.start_run(312, "orin")
 	_check(int(orin.get_player().resources.Command[1]) == 4 and orin.run.schools.has("Necromancy"), "Orin's build identity preserves extra Command and Necromancy access")
 
@@ -71,6 +75,7 @@ func run_suite() -> void:
 	var condition = SimScript.new()
 	condition.start_run(304, "jim")
 	condition.run.skill_points = 2
+	condition.run.known.append_array(["lunge", "guard"])
 	condition.content.abilities["web_condition_probe"] = {"name": "Web Condition Probe", "school": "Swordsmanship", "time": 50, "range": 1, "target": "enemy", "costs": {}, "effects": [{"type": "damage", "amount": 2, "damage": "Slashing"}], "prerequisites": {"all_of": ["lunge"], "any_of": ["parry", "guard"], "discipline_ranks": {"Swordsmanship": 2}, "characters": ["jim"]}}
 	_check(condition.get_ability_progress("web_condition_probe").learnable, "graph prerequisites support AND, OR, discipline rank and character conditions")
 	condition.run.artifacts.append("copper_hare")
@@ -78,6 +83,7 @@ func run_suite() -> void:
 	_check(condition.get_ability_progress("resource_probe").learnable, "graph prerequisites support artifact and current-resource conditions")
 
 	var brakka = SimScript.new()
+	_allow_character(brakka, "brakka")
 	brakka.start_run(305, "brakka")
 	_check(brakka.get_player().armor == 4 and brakka.get_passive_modifier("damage_reduction") > 0.0, "Brakka's passive modifies the equipped heavy armor and damage rules")
 	var hp_before: int = brakka.get_player().hp
@@ -93,6 +99,7 @@ func run_suite() -> void:
 	_check(large_graph.size() >= 80 and graph_bounds.end.x > 782.0 and graph_bounds.end.y > 414.0, "80-node progression web expands beyond its viewport without a logical node cap")
 
 	var save_source = SimScript.new()
+	_allow_character(save_source, "aldren")
 	save_source.start_run(307, "aldren")
 	save_source.run.schools.append("Fire")
 	save_source.run.discoveries.append("spellbook:cinder_primer")
@@ -338,3 +345,8 @@ func _check(condition: bool, title: String) -> void:
 	checks += 1
 	if not condition:
 		failures.append(title)
+
+func _allow_character(sim, character_id: String) -> void:
+	var unlocked: Array = sim.profile.get("unlocked_character_ids", [])
+	if not unlocked.has(character_id): unlocked.append(character_id)
+	sim.profile["unlocked_character_ids"] = unlocked
