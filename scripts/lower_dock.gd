@@ -82,71 +82,89 @@ func _draw_desktop() -> void:
 		host.active_hit_clip_rect = Rect2()
 
 func _draw_world_map_desktop(rect: Rect2) -> void:
-	var sim = host.sim
-	var history: Array = sim.run.get("route", []).duplicate()
-	var current_id := String(sim.run.get("stage_id", ""))
-	var mobile: bool = host._is_mobile_layout()
-	if history.is_empty() or String(history.back()) != current_id:
-		history.append(current_id)
-	var route_y := rect.position.y + (23.0 if mobile else 38.0)
-	var history_left := rect.position.x + 17.0
-	var history_right := rect.end.x - 16.0
-	var history_step := minf(60.0, (history_right - history_left) / maxf(1.0, float(history.size() - 1)))
-	for i in range(history.size()):
-		var stage_id := String(history[i])
-		var point := Vector2(history_left + float(i) * history_step, route_y)
-		if i > 0:
-			var previous := Vector2(history_left + float(i - 1) * history_step, route_y)
-			host.draw_line(previous + Vector2(5.0, 0.0), point - Vector2(5.0, 0.0), host.COLORS.line, 1.5)
-		var is_current := stage_id == current_id and i == history.size() - 1
-		var color: Color = host.COLORS.gold if is_current else host.COLORS.cyan
-		host.draw_circle(point, 5.0 if is_current else 3.5, color)
-		host.draw_arc(point, 8.0, 0.0, TAU, 18, color, 1.1)
-		var stage_name := String(sim.content.stages.get(stage_id, {}).get("name", stage_id))
-		if not is_current:
-			host._draw_label(host._fit_text(stage_name, 64.0, 6), point.x, route_y + (18.0 if mobile else 20.0), 6, host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	var current: Dictionary = sim.content.stages.get(current_id, {})
-	host._draw_label(host._fit_text("CURRENT  ·  " + String(current.get("name", current_id)), rect.size.x - 8.0, 7), rect.position.x + 2.0, rect.position.y + 12.0, 7, host.COLORS.gold)
-	var choice_y := rect.position.y + (60.0 if mobile else 88.0)
-	var choices: Array = sim.run.get("route_choices", [])
-	var boss_ready := int(sim.run.get("stage_index", 0)) >= ArcanistSim.STAGE_ORDER.size() - 1 and bool(sim.run.get("stage_completed", false))
-	var selectable: Array[String] = []
-	if boss_ready:
-		selectable.append("grave_tyrant")
-	else:
-		for choice in choices:
-			selectable.append(String(choice))
-	if selectable.is_empty():
-		var hint := "No connected destination is known." if not sim.run.get("stage_completed", false) else "No connected route is currently available."
-		host._draw_label(host._fit_text(hint, rect.size.x - 8.0, 7), rect.position.x + 2.0, choice_y + 12.0, 7, host.COLORS.muted)
+	var journey := _persistent_journey()
+	var history: Array = journey.history
+	var entries: Array = journey.entries
+	if entries.is_empty():
 		return
-	var selected_id := String(host.ui_state.selected_map_node_id)
-	if not selectable.has(selected_id):
-		selected_id = selectable[0]
-		host.ui_state.selected_map_node_id = selected_id
-	var node_gap := 6.0
-	var node_width := (rect.size.x - 4.0 - node_gap * float(selectable.size() - 1)) / float(selectable.size())
-	for i in range(selectable.size()):
-		var stage_id := selectable[i]
-		var stage: Dictionary = sim.content.enemies.get(stage_id, {}) if stage_id == "grave_tyrant" else sim.content.stages.get(stage_id, {})
-		var node_rect := Rect2(rect.position.x + 2.0 + float(i) * (node_width + node_gap), choice_y, node_width, 44.0)
-		var current_node := Vector2(history_left + float(history.size() - 1) * history_step, route_y)
-		var next_node := Vector2(node_rect.get_center().x, node_rect.position.y)
-		host.draw_line(current_node, next_node, host.COLORS.line_soft, 1.0)
-		var active := selected_id == stage_id
-		host._draw_panel(node_rect, "", host.COLORS.gold if active else host.COLORS.line_soft)
-		var title := String(stage.get("name", "Grave Tyrant" if stage_id == "grave_tyrant" else stage_id))
-		var glyph := "T" if stage_id == "grave_tyrant" else "◇"
-		host._draw_label(glyph, node_rect.position.x + 8.0, node_rect.position.y + 17.0, 12, host.COLORS.red if stage_id == "grave_tyrant" else host.COLORS.green)
-		host._draw_label(host._fit_text(title, node_width - 27.0, 7), node_rect.position.x + 25.0, node_rect.position.y + 16.0, 7, host.COLORS.text)
-		host._draw_label("BOSS" if stage_id == "grave_tyrant" else "COMBAT", node_rect.position.x + 25.0, node_rect.position.y + 33.0, 6, host.COLORS.muted)
-		host.active_hits.append({"rect": host._panel_hit_rect(node_rect), "action": {"type": "select_map_node", "id": stage_id}})
-	var detail_y := choice_y + (52.0 if mobile else 58.0)
-	var selected_stage: Dictionary = sim.content.enemies.get(selected_id, {}) if selected_id == "grave_tyrant" else sim.content.stages.get(selected_id, {})
-	var description := String(selected_stage.get("subtitle", selected_stage.get("description", "A connected destination")))
-	host._draw_label(host._fit_text(description, rect.size.x - 94.0, 7), rect.position.x + 2.0, detail_y + 10.0, 7, host.COLORS.muted)
-	var status := "DESTINATION READY AFTER OBJECTIVE" if bool(sim.run.get("stage_completed", false)) else "CONNECTED  ·  COMPLETE OBJECTIVE TO CONTINUE"
-	host._draw_label(host._fit_text(status, rect.size.x - 8.0, 6), rect.position.x + 2.0, detail_y + 17.0, 6, host.COLORS.gold if sim.run.get("stage_completed", false) else host.COLORS.muted)
+	var current_name := String(entries[history.size() - 1].name)
+	host._draw_label(host._fit_text("CURRENT  ·  %s  ·  %d / 6" % [current_name, int(host.sim.run.get("stage_index", 0)) + 1], rect.size.x - 8.0, 7), rect.position.x + 2.0, rect.position.y + 13.0, 7, host.COLORS.gold)
+	var positions := _journey_positions(rect, entries.size())
+	for index in range(1, entries.size()):
+		var from_point: Vector2 = positions[index - 1]
+		var to_point: Vector2 = positions[index]
+		var direction := (to_point - from_point).normalized()
+		var from_radius := 15.0 if index - 1 == history.size() - 1 else 12.0
+		var to_radius := 12.0
+		host.draw_line(from_point + direction * from_radius, to_point - direction * to_radius, host.COLORS.line, 2.0)
+	for index in range(entries.size()):
+		var entry: Dictionary = entries[index]
+		var point: Vector2 = positions[index]
+		var is_unknown := bool(entry.get("unknown", false))
+		var is_current := bool(entry.get("current", false))
+		var color: Color = host.COLORS.muted if is_unknown else host.COLORS.gold if is_current else host.COLORS.cyan
+		var radius := 15.0 if is_current else 12.0
+		host.draw_circle(point, radius, Color(color.r, color.g, color.b, 0.16) if not is_unknown else Color(0.04, 0.08, 0.12, 0.95))
+		host.draw_arc(point, radius, 0.0, TAU, 28, color, 2.5 if is_current else 1.5)
+		if is_unknown:
+			host._draw_label("?", point.x, point.y + 5.0, 12, color, HORIZONTAL_ALIGNMENT_CENTER)
+		else:
+			host._draw_label(str(index + 1), point.x, point.y + 3.0, 6, color, HORIZONTAL_ALIGNMENT_CENTER)
+		var name_lines: Array[String] = host._wrap_text_to_width(String(entry.name), maxf(48.0, rect.size.x / 3.0 - 16.0), 6, 2)
+		var text_y: float
+		if entries.size() <= 3:
+			text_y = point.y + 27.0
+		elif index < 3:
+			text_y = point.y - 17.0 - float(name_lines.size() - 1) * 8.0
+		else:
+			text_y = point.y + 24.0
+		for line_index in range(name_lines.size()):
+			host._draw_label(name_lines[line_index], point.x, text_y + float(line_index) * 8.0, 6, color if is_current or is_unknown else host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	var journey_status := "NEXT LOCATION UNKNOWN" if bool(journey.has_unknown) else "JOURNEY COMPLETE" if String(host.sim.run.get("outcome", "")) == "victory" else "FINAL ENCOUNTER  ·  6 / 6"
+	host._draw_label(journey_status, rect.position.x + 2.0, rect.end.y - 5.0, 6, host.COLORS.gold if not bool(journey.has_unknown) else host.COLORS.muted)
+
+func _persistent_journey() -> Dictionary:
+	var sim = host.sim
+	var current_id := String(sim.run.get("stage_id", ""))
+	var history: Array = sim.run.get("route", []).duplicate()
+	if history.is_empty():
+		history.append(current_id)
+	elif String(history.back()) == "grave_tyrant" and current_id == "graveyard":
+		# Older Prompt 6 saves stored the boss choice ID as if it were the map ID.
+		history[history.size() - 1] = current_id
+	elif String(history.back()) != current_id:
+		history.append(current_id)
+	var entries: Array = []
+	for index in range(history.size()):
+		var stage_id := String(history[index])
+		if stage_id == "grave_tyrant":
+			stage_id = "graveyard"
+		var stage: Dictionary = sim.content.stages.get(stage_id, {})
+		entries.append({"id": stage_id, "name": String(stage.get("name", stage_id.replace("_", " ").capitalize())), "current": index == history.size() - 1, "unknown": false})
+	var has_unknown := int(sim.run.get("stage_index", 0)) < 5
+	if has_unknown:
+		entries.append({"id": "", "name": "UNKNOWN", "current": false, "unknown": true})
+	return {"history": history, "entries": entries, "has_unknown": has_unknown}
+
+func _journey_positions(rect: Rect2, count: int) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	if count <= 0:
+		return result
+	if count <= 3:
+		var spacing := rect.size.x / float(count + 1)
+		var y := rect.position.y + rect.size.y * 0.54
+		for index in range(count):
+			result.append(Vector2(rect.position.x + spacing * float(index + 1), y))
+		return result
+	var top_y := rect.position.y + rect.size.y * 0.32
+	var bottom_y := rect.position.y + rect.size.y * 0.69
+	for index in range(count):
+		var row := int(index / 3)
+		var step := index % 3
+		var column := step if row == 0 else 2 - step
+		var x_fraction: float = [0.17, 0.5, 0.83][column]
+		result.append(Vector2(rect.position.x + rect.size.x * x_fraction, top_y if row == 0 else bottom_y))
+	return result
 
 func _draw_character_desktop(rect: Rect2) -> void:
 	var sim = host.sim

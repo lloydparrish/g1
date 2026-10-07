@@ -74,7 +74,15 @@ foreach ($CaptureCase in @(
 	@{ Name = 'p6b-equipment-head'; Size = '1920x1080'; Scenario = 'equipment_head'; Overlay = 'inventory' },
 	@{ Name = 'p6b-equipment-weapon'; Size = '1920x1080'; Scenario = 'equipment_weapon'; Overlay = 'inventory' },
 	@{ Name = 'p6b-targeting-range'; Size = '1920x1080'; Scenario = 'targeting_attack'; Target = 'attack' },
-	@{ Name = 'p6b-destination-picker'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'destinations' }
+	@{ Name = 'p6b-destination-picker'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'destinations' },
+	@{ Name = 'p6c-action-wrapping'; Size = '1920x1080'; Scenario = 'quickbar_customized' },
+	@{ Name = 'p6c-tooltip-long'; Size = '1920x1080'; Scenario = 'tooltip_long'; Overlay = 'character' },
+	@{ Name = 'p6c-divider-spacing'; Size = '1920x1080'; Scenario = 'populated_history' },
+	@{ Name = 'p6c-world-map-before'; Size = '1920x1080'; Scenario = 'map_locked'; Overlay = 'map' },
+	@{ Name = 'p6c-destination-popup'; Size = '1920x1080'; Scenario = 'destination_popup'; Overlay = 'destinations' },
+	@{ Name = 'p6c-world-map-after-choice'; Size = '1920x1080'; Scenario = 'map_after_choice'; Overlay = 'map' },
+	@{ Name = 'p6c-world-map-5-of-6'; Size = '1920x1080'; Scenario = 'map_late_5'; Overlay = 'map' },
+	@{ Name = 'p6c-world-map-6-of-6'; Size = '1920x1080'; Scenario = 'map_final_6'; Overlay = 'map' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Name)"
 	$ExtraArguments = @("--capture=$($CaptureCase.Size)", "--capture-dir=$CaseDirectory", "--capture-scenario=$($CaptureCase.Scenario)")

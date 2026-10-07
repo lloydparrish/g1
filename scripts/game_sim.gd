@@ -907,7 +907,8 @@ func start_boss() -> bool:
 	run.stage_index = 5
 	if run.route.is_empty():
 		run.route.append(run.stage_id)
-	run.route.append("grave_tyrant")
+	# Journey history records the visited map, not the boss entity offered as its entry choice.
+	run.route.append("graveyard")
 	_new_stage("graveyard", true)
 	save_run()
 	return true

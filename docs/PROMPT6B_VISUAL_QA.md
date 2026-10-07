@@ -1,4 +1,6 @@
-# Prompt 6B — Final HUD, Combat and Platform QA
+# Prompt 6B — Historical HUD, Combat and Platform QA
+
+> Superseded by Prompt 6C for tooltip wrapping, toolbar labels, divider spacing and persistent World Map information boundaries. The 6B captures below document the preceding implementation and intentionally show connected destination previews that Prompt 6C removes from the persistent map. See [`PROMPT6C_VISUAL_QA.md`](PROMPT6C_VISUAL_QA.md) for the current contract and evidence.
 
 Prompt 6B supersedes the four-panel and map-travel decisions recorded in Prompt 6A. The authoritative desktop lower HUD now contains three persistent panels: World Map, Character / Abilities, and Inventory / Equipment. Android retains a touch-first contextual dock with those same three sections.
 

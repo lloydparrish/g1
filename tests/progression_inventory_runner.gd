@@ -233,10 +233,9 @@ func run_suite() -> void:
 	main.queue_redraw()
 	await process_frame
 	await process_frame
-	var map_route_count := 0
-	for hit in main.active_hits:
-		if hit.action.get("type", "") == "select_map_node" and actual_route_choices.has(hit.action.get("id", "")): map_route_count += 1
-	_check(not actual_route_choices.is_empty() and map_route_count == actual_route_choices.size() and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss"]), "the World Map shows only authoritative connected destinations without bypassing the picker")
+	var persistent_journey: Dictionary = main.lower_dock._persistent_journey()
+	var exposed_future_route: bool = main.active_hits.any(func(hit: Dictionary) -> bool: return actual_route_choices.has(String(hit.action.get("id", ""))))
+	_check(not actual_route_choices.is_empty() and persistent_journey.history == main.sim.run.route and bool(persistent_journey.has_unknown) and not exposed_future_route and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route", "select_map_node"]), "the World Map shows visited journey history and an unknown next node without exposing generated branch choices")
 	main._handle_action({"type": "next_stage"})
 	main.queue_redraw()
 	await process_frame

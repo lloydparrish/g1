@@ -57,6 +57,25 @@ func run_suite() -> void:
 	var ability_action := {"type": "select_lower_ability", "id": "arcane_bolt"}
 	var ability_tooltip: Array[String] = desktop._tooltip_lines_for_action(ability_action)
 	_check(ability_tooltip.size() >= 3 and ability_tooltip[2] == String(desktop.sim.content.abilities.arcane_bolt.description), "ability hover details come from authored ability data")
+	var long_action_names := ["MARCHER'S SWORD", "Healing Draught", "Blueglass Tonic", "Scroll of Fireball"]
+	var action_names_wrap := true
+	for action_name in long_action_names:
+		var wrapped_name: Array[String] = desktop._wrap_text_to_width(String(action_name), 58.0, 8, 2)
+		var measured_ok := wrapped_name.all(func(line: String) -> bool: return ThemeDB.fallback_font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1.0, desktop._physical_font_size(8)).x <= 58.0 * desktop.draw_scale)
+		action_names_wrap = action_names_wrap and wrapped_name.size() == 2 and " ".join(wrapped_name) == String(action_name) and measured_ok and not wrapped_name.back().contains("…")
+	_check(action_names_wrap, "long combat action names wrap to two measured lines before any ellipsis")
+	var action_detail_lines: Array[String] = desktop._action_detail_lines("STA 4 · BLOOD 3\n115T", 50.0)
+	var action_detail_fits: bool = action_detail_lines.size() == 3 and action_detail_lines.back() == "115T" and action_detail_lines.all(func(line: String) -> bool: return ThemeDB.fallback_font.get_string_size(String(line), HORIZONTAL_ALIGNMENT_LEFT, -1.0, desktop._physical_font_size(7)).x <= 50.0 * desktop.draw_scale)
+	_check(action_detail_fits, "multi-resource costs wrap across aligned rows and preserve the action time cost")
+	_check(desktop._quickbar_item_detail(desktop.sim.content.items.healing_potion, 2) == "×2\n70T" and desktop._quickbar_item_detail(desktop.sim.content.items.fireball_scroll, 1) == "×1\n115T", "item action cards retain quantity and the authoritative consumable or scroll time cost")
+	var long_tooltip_source: Array[String] = desktop._tooltip_lines_for_action({"type": "select_lower_ability", "id": "demonic_gateway"})
+	var long_tooltip: Dictionary = desktop._tooltip_layout(long_tooltip_source)
+	var short_tooltip_source: Array[String] = ["Potion", "Consumable", "Restore 24 Health."]
+	var short_tooltip: Dictionary = desktop._tooltip_layout(short_tooltip_source)
+	var tooltip_lines_fit: bool = Array(long_tooltip.lines).all(func(line: String) -> bool: return ThemeDB.fallback_font.get_string_size(String(line), HORIZONTAL_ALIGNMENT_LEFT, -1.0, desktop._physical_font_size(8)).x <= float(long_tooltip.text_width) * desktop.draw_scale)
+	var tooltip_position: Vector2 = desktop._tooltip_position(Vector2(desktop.screen_size.x - 1.0, desktop.screen_size.y - 1.0), Vector2(float(long_tooltip.width), float(long_tooltip.height)))
+	_check(long_tooltip.lines.size() > long_tooltip_source.size() and float(long_tooltip.height) > float(short_tooltip.height) and float(long_tooltip.width) <= 300.0 and tooltip_lines_fit, "long tooltip copy wraps to content-driven height within a bounded measured width")
+	_check(tooltip_position.x >= 8.0 and tooltip_position.y >= 8.0 and tooltip_position.x + float(long_tooltip.width) <= desktop.screen_size.x - 8.0 and tooltip_position.y + float(long_tooltip.height) <= desktop.screen_size.y - 8.0, "tooltip placement keeps its complete border inside the viewport")
 
 	var initial_equipped := String(desktop.sim.run.equipment.get("Body", ""))
 	desktop.sim.run.inventory.append("scale_armor")
@@ -102,18 +121,19 @@ func run_suite() -> void:
 	desktop.sim.run.stage_completed = false
 	desktop.queue_redraw()
 	await process_frame
-	_check(not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route"]), "the persistent World Map never exposes travel controls")
+	_check(not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route", "select_map_node"]), "the persistent World Map never exposes travel or future-node inspection controls")
+	var map_before_choice: Dictionary = desktop.lower_dock._persistent_journey()
+	var map_before_ids: Array[String] = []
+	for entry in map_before_choice.entries:
+		if not bool(entry.get("unknown", false)): map_before_ids.append(String(entry.id))
+	_check(map_before_ids == desktop.sim.run.route and bool(map_before_choice.has_unknown) and bool(map_before_choice.entries.back().unknown), "the persistent World Map shows authoritative visited history followed by an unknown next node")
+	_check(not actual_choices.any(func(choice: String) -> bool: return map_before_ids.has(choice)) and not desktop.active_hits.any(func(hit: Dictionary) -> bool: return actual_choices.has(String(hit.action.get("id", "")))), "generated future destinations are not exposed through persistent map labels or controls")
 	desktop.sim.run.stage_completed = true
 	desktop.queue_redraw()
 	await process_frame
-	var displayed_routes: Array[String] = []
-	for hit in desktop.active_hits:
-		if hit.action.get("type", "") == "select_map_node": displayed_routes.append(String(hit.action.get("id", "")))
-	_check(not actual_choices.is_empty() and displayed_routes.size() == actual_choices.size(), "the map overview displays only this run's connected destinations")
-	var stage_before_select := String(desktop.sim.run.stage_id)
+	var completed_map: Dictionary = desktop.lower_dock._persistent_journey()
+	_check(not actual_choices.is_empty() and bool(completed_map.has_unknown) and not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["select_map_node", "destination_route"]), "completing the objective does not reveal branches in the persistent journey map")
 	var route_id := String(actual_choices[0])
-	desktop._handle_action({"type": "select_map_node", "id": route_id})
-	_check(String(desktop.sim.run.stage_id) == stage_before_select, "map node inspection never advances the run")
 	desktop._handle_action({"type": "next_stage"})
 	desktop.queue_redraw()
 	await process_frame
@@ -122,7 +142,9 @@ func run_suite() -> void:
 		if hit.action.get("type", "") == "destination_route": picker_routes.append(String(hit.action.get("id", "")))
 	_check(desktop.overlay == "destinations" and picker_routes.size() == actual_choices.size(), "encounter completion opens a dedicated picker populated from the authoritative route state")
 	desktop._handle_action({"type": "destination_route", "id": route_id})
-	_check(String(desktop.sim.run.stage_id) == route_id, "destination choice advances only through the authoritative run route API")
+	var map_after_choice: Dictionary = desktop.lower_dock._persistent_journey()
+	var chosen_history: Array = map_after_choice.history
+	_check(String(desktop.sim.run.stage_id) == route_id and String(chosen_history.back()) == route_id and not chosen_history.has(String(actual_choices[1])), "the chosen destination joins the authoritative journey while its rejected branch stays hidden")
 
 	var targeting = MainScene.instantiate()
 	targeting.playback_mode = "Instant"
@@ -170,6 +192,17 @@ func run_suite() -> void:
 	else:
 		_check(false, "the generated opening encounter provides a visible enemy to inspect")
 
+	for _transition in range(3):
+		desktop.sim.run.stage_completed = true
+		var next_stage_id := String(desktop.sim.run.route_choices[0])
+		_check(desktop.sim.choose_route(next_stage_id), "authoritative route selection advances the journey")
+	var fifth_map: Dictionary = desktop.lower_dock._persistent_journey()
+	_check(int(desktop.sim.run.stage_index) == 4 and fifth_map.history == desktop.sim.run.route and bool(fifth_map.has_unknown) and String(fifth_map.history.back()) == String(desktop.sim.run.stage_id), "the 5/6 journey keeps every chosen map in order and leaves the next location unknown")
+	desktop.sim.run.stage_completed = true
+	_check(desktop.sim.start_boss(), "the final destination opens through the authoritative boss progression API")
+	var sixth_map: Dictionary = desktop.lower_dock._persistent_journey()
+	_check(int(desktop.sim.run.stage_index) == 5 and sixth_map.history.size() == 6 and sixth_map.history == desktop.sim.run.route and not bool(sixth_map.has_unknown) and String(sixth_map.history.back()) == String(desktop.sim.run.stage_id), "the 6/6 map shows the ordered chosen route and omits an inappropriate unknown node")
+
 	var mobile = MainScene.instantiate()
 	mobile.playback_mode = "Instant"
 	mobile.mobile_layout_override = true
@@ -204,10 +237,8 @@ func run_suite() -> void:
 	var route_choices: Array = mobile.sim.run.route_choices.duplicate()
 	mobile.sim.run.stage_completed = true
 	await _touch_action(mobile, "lower_panel", "world_map")
-	var mobile_stage_before := String(mobile.sim.run.stage_id)
 	var mobile_route := String(route_choices[0]) if not route_choices.is_empty() else ""
-	if mobile_route != "": await _touch_action(mobile, "select_map_node", mobile_route)
-	_check(mobile_route != "" and String(mobile.sim.run.stage_id) == mobile_stage_before, "mobile destination selection does not travel implicitly")
+	_check(mobile_route != "" and not mobile.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["select_map_node", "destination_route"]), "mobile persistent map hides future destinations until the destination picker opens")
 	if mobile_route != "":
 		await _touch_action(mobile, "next_stage")
 		_check(mobile.overlay == "destinations", "mobile objective completion opens the dedicated destination picker")

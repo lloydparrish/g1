@@ -4,7 +4,6 @@ var active_lower_panel := ""
 var lower_dock_expanded := false
 var character_tab := "Abilities"
 var inventory_tab := "Inventory"
-var selected_map_node_id := ""
 var selected_equipment_slot := ""
 var selected_artifact_index := -1
 var selected_spellbook_id := ""

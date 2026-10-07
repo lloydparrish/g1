@@ -470,7 +470,7 @@ func _battle_layout() -> Dictionary:
 		panel_height = 260.0 if active_panel in ["inventory", "character"] else 220.0
 	var dock_bottom := screen_size.y - 18.0
 	var dock_top := dock_bottom - (panel_height if panel_height > 0.0 else 38.0)
-	var toolbar_height := 88.0
+	var toolbar_height := 104.0
 	var toolbar_y := dock_top - toolbar_height - 10.0
 	var battle_bottom := toolbar_y - 10.0
 	var right_width := clampf(screen_size.x * 0.19, 258.0, 310.0)
@@ -484,7 +484,7 @@ func _battle_layout() -> Dictionary:
 	var dock_header_y := dock_top
 	var dock_header_height := 26.0 if not _is_mobile_layout() else 38.0 if panel_height <= 0.0 else 34.0
 	var panel_content_height := maxf(0.0, panel_height - dock_header_height)
-	var timeline_height := clampf(right_rect.size.y * 0.34, 140.0, 190.0)
+	var timeline_height := clampf(right_rect.size.y * 0.34, 170.0, 190.0)
 	var group_target_width := minf(screen_size.x * 0.68, 1280.0)
 	var end_turn_width := 126.0
 	var action_gap := 6.0
@@ -801,7 +801,7 @@ func _draw_timeline() -> void:
 	var layout := _battle_layout()
 	var right_rect: Rect2 = layout.right_rect
 	var panel_rect := Rect2(right_rect.position, Vector2(right_rect.size.x, float(layout.timeline_height)))
-	_draw_panel(panel_rect, "TURN TIMELINE", COLORS.line)
+	var content_top := _draw_panel(panel_rect, "TURN TIMELINE", COLORS.line)
 	var entries: Array = []
 	var timeline_entities: Dictionary = presentation_state.get("entities", {}) if playback_active else sim.run.get("entities", {})
 	for entity_id in timeline_entities:
@@ -815,23 +815,28 @@ func _draw_timeline() -> void:
 	entries = entries.slice(0, 6)
 	var label_x := panel_rect.position.x + 14.0
 	var time_x := panel_rect.end.x - 15.0
+	var footer_y := panel_rect.end.y - 30.0
+	var first_entry_y := content_top + 7.0
+	var last_entry_y := footer_y - 10.0
+	var entry_step := (last_entry_y - first_entry_y) / float(maxi(1, entries.size() - 1))
 	for i in range(entries.size()):
 		var entry: Dictionary = entries[i]
-		var y := panel_rect.position.y + 45.0 + i * minf(23.0, (panel_rect.size.y - 66.0) / 5.0)
+		var y := first_entry_y + float(i) * entry_step
 		var entry_id := String(entry.id)
 		var color_key := "player" if entry_id == "player" else "ally" if entry.faction == "Adventurers" else "hostile" if entry.faction in ["Undead", "Demons"] else "other"
 		var color := _entity_presentation_color(color_key)
 		var is_current := entry_id == "player" and not playback_active
 		var is_acting := playback_active and entry_id == acting_actor_id
 		if is_current or is_acting:
-			draw_rect(Rect2(panel_rect.position.x + 7, y - 17, panel_rect.size.x - 14, 22), Color(0.75, 0.58, 0.2, 0.14), true)
-			draw_rect(Rect2(panel_rect.position.x + 7, y - 17, 3, 22), COLORS.gold, true)
+			var row_height := minf(18.0, entry_step if entries.size() > 1 else 18.0)
+			draw_rect(Rect2(panel_rect.position.x + 7, y - row_height + 3.0, panel_rect.size.x - 14, row_height), Color(0.75, 0.58, 0.2, 0.14), true)
+			draw_rect(Rect2(panel_rect.position.x + 7, y - row_height + 3.0, 3, row_height), COLORS.gold, true)
 		_draw_label(String(entry.symbol), label_x, y, 14, color)
 		_draw_label(_fit_text(String(entry.name), panel_rect.size.x - 94.0, 10), label_x + 22, y, 10, COLORS.text)
 		var time_left := int(entry.time) - int(sim.get_player().next_time)
 		_draw_label("ACTING" if is_acting else "NOW" if entry_id == "player" else str(maxi(0, time_left)), time_x, y, 9, COLORS.gold if is_acting or is_current else COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
 		active_hits.append({"rect": _touch_hit_rect(Rect2(panel_rect.position.x + 7, y - 18, panel_rect.size.x - 14, 23)), "action": {"type": "inspect_entity", "id": entry_id}})
-	_draw_line(label_x, panel_rect.end.y - 24.0, time_x, panel_rect.end.y - 24.0, COLORS.line_soft)
+	_draw_line(label_x, footer_y, time_x, footer_y, COLORS.line_soft)
 	_draw_label("NEXT ACTION  ·  TIME COST", label_x, panel_rect.end.y - 9.0, 8, COLORS.muted)
 
 func _draw_inspection_card() -> void:
@@ -847,10 +852,10 @@ func _draw_inspection_card() -> void:
 	var enemy: Dictionary = display_entities.get(selected_enemy, {})
 	var enemy_selected: bool = not enemy.is_empty() and bool(enemy.get("alive", true)) and (playback_active or sim._cell_visible(sim._pos(enemy)))
 	var object: Dictionary = _selected_object()
-	_draw_panel(rect, "ENEMY INSPECTION" if enemy_selected else "FIELD INTELLIGENCE", COLORS.line)
+	var content_top := _draw_panel(rect, "ENEMY INSPECTION" if enemy_selected else "FIELD INTELLIGENCE", COLORS.line)
 	if enemy_selected or not object.is_empty():
 		_draw_button(Rect2(rect.end.x - 31.0, rect.position.y + 2.0, 27.0, 26.0), "×", {"type": "clear_inspection"}, false, 9, COLORS.gold)
-	var cursor_y := rect.position.y + 43.0
+	var cursor_y := content_top
 	if not object.is_empty():
 		_draw_label(String(object.get("name", "Field object")), content_x, cursor_y, 14, COLORS.cyan if object.get("kind") == "exit" else COLORS.gold)
 		_draw_label("%s  ·  %d / %d HP" % [String(object.get("kind", "object")).capitalize(), int(object.get("hp", 1)), int(object.get("max_hp", 1))], content_x, cursor_y + 22.0, 10, COLORS.text)
@@ -887,9 +892,9 @@ func _draw_inspection_card() -> void:
 	else:
 		_draw_label("OBJECTIVE", content_x, cursor_y, 9, COLORS.gold)
 		cursor_y += 17.0
-		for line in _wrap(sim.get_objective_text(), maxi(18, int(content_width / 7.0))).slice(0, 2):
+		for line in _wrap_text_to_width(sim.get_objective_text(), content_width, 10):
 			_draw_label(String(line), content_x, cursor_y, 10, COLORS.text)
-			cursor_y += 15.0
+			cursor_y += _text_line_height(10)
 		_draw_label("ENCOUNTER  ·  %d / 6" % [int(sim.run.stage_index) + 1], content_x, cursor_y + 3.0, 9, COLORS.gold)
 		cursor_y += 20.0
 		_draw_label("%d hostiles  ·  %d XP  ·  Level %d" % [sim._hostile_count(), int(sim.run.xp), int(sim.run.level)], content_x, cursor_y, 8, COLORS.muted)
@@ -898,10 +903,11 @@ func _draw_inspection_card() -> void:
 	var can_show_next: bool = bool(sim.run.get("stage_completed", false))
 	var show_next_button: bool = can_show_next
 	var reserved_bottom := 14.0 + (44.0 if show_next_button else 0.0)
-	var feed_capacity := maxi(0, int((rect.end.y - reserved_bottom - cursor_y - 30.0) / 14.0))
+	var feed_capacity := maxi(0, int((rect.end.y - reserved_bottom - cursor_y - 36.0) / 14.0))
 	var event_count := mini(mini(6, feed.size()), feed_capacity)
-	var feed_start := maxf(cursor_y + 8.0, rect.end.y - reserved_bottom - (event_count * 14.0) - 26.0)
+	var feed_start := maxf(cursor_y + 22.0, rect.end.y - reserved_bottom - (event_count * 14.0) - 26.0)
 	if feed_start + 18.0 < rect.end.y - reserved_bottom:
+		_draw_line(content_x, feed_start - 12.0, content_x + content_width, feed_start - 12.0, COLORS.line_soft)
 		_draw_label("RECENT EVENTS  ·  VIEW HISTORY ›", content_x, feed_start, 8, COLORS.gold)
 		active_hits.append({"rect": _touch_hit_rect(Rect2(content_x, feed_start - 12.0, content_width, 22.0)), "action": {"type": "open_combat_history"}})
 	for i in range(event_count):
@@ -938,19 +944,19 @@ func _draw_action_bar() -> void:
 	elif target_mode != "": prompt = "TARGETING  ·  %s  ·  TAP THE ACTION AGAIN, BACK OR × TO CANCEL" % _target_action_name()
 	_draw_label(_fit_text(prompt, action_width - 18.0, 8), action_x, action_y + 12.0, 8, COLORS.gold if target_mode != "" or playback_active or quickbar_assign_mode else COLORS.muted)
 	var y := action_y + 18.0
-	var h := 62.0
+	var h := 84.0
 	var x := action_x
-	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("move"), "MOVE", "100", {"type": "target_mode", "mode": "move"}, target_mode == "move", COLORS.cyan)
+	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("move"), "MOVE", "100T", {"type": "target_mode", "mode": "move"}, target_mode == "move", COLORS.cyan)
 	x += slot_width + gap
 	var weapon_id: String = sim.run.equipment.get("Weapon", "sword")
 	var weapon: Dictionary = sim.content.weapons.get(weapon_id, sim.content.weapons.get("sword", {}))
-	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("attack"), _fit_text(String(weapon.get("name", "Weapon")), slot_width - 6.0, 8).to_upper(), "%d STA" % int(weapon.get("stamina", 0)), {"type": "target_mode", "mode": "attack"}, target_mode == "attack", COLORS.gold)
+	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("attack"), String(weapon.get("name", "Weapon")).to_upper(), "%d STA\n%dT" % [int(weapon.get("stamina", 0)), int(weapon.get("time", 100))], {"type": "target_mode", "mode": "attack"}, target_mode == "attack", COLORS.gold)
 	x += slot_width + gap
 	for slot_index in range(8):
 		var assignment: Dictionary = sim.run.get("quickbar", [])[slot_index] if sim.run.get("quickbar", []).size() > slot_index else {"type": "empty", "id": ""}
 		_draw_quickbar_slot(Rect2(x, y, slot_width, h), slot_index, assignment)
 		x += slot_width + gap
-	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("wait"), "WAIT", "100", {"type": "wait"}, false, COLORS.muted)
+	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("wait"), "WAIT", "100T", {"type": "wait"}, false, COLORS.muted)
 	x += slot_width + gap
 	if target_mode != "" and not playback_active:
 		_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("cancel"), "CANCEL", "", {"type": "cancel_target"}, false, COLORS.orange)
@@ -971,9 +977,17 @@ func _draw_action_icon_slot(rect: Rect2, glyph: String, label: String, detail: S
 	draw_rect(Rect2(rect.position.x + 3.0, rect.position.y + 2.0, rect.size.x - 6.0, 2.0), accent)
 	draw_rect(rect, COLORS.gold if active else COLORS.line, false, 2.2 if active else 1.0)
 	draw_circle(Vector2(rect.get_center().x, rect.position.y + 22.0), minf(17.0, rect.size.x * 0.28), Color(accent.r, accent.g, accent.b, 0.13))
-	_draw_label(glyph, rect.get_center().x, rect.position.y + 28.0, 20, accent, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(_fit_text(label, rect.size.x - 6.0, 8), rect.get_center().x, rect.position.y + 43.0, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
-	if detail != "": _draw_label(_fit_text(detail, rect.size.x - 6.0, 7), rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label(glyph, rect.get_center().x, rect.position.y + 25.0, 19, accent, HORIZONTAL_ALIGNMENT_CENTER)
+	var label_lines := _wrap_text_to_width(label, rect.size.x - 8.0, 8, 2)
+	if label_lines.size() == 1:
+		_draw_label(label_lines[0], rect.get_center().x, rect.position.y + 45.0, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+	else:
+		for index in range(label_lines.size()):
+			_draw_label(label_lines[index], rect.get_center().x, rect.position.y + 39.0 + float(index) * 10.0, 8, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+	var detail_lines := _action_detail_lines(detail, rect.size.x - 8.0)
+	for index in range(detail_lines.size()):
+		var detail_y := rect.position.y + 57.0 + float(index) * (_text_line_height(7) + 1.0)
+		_draw_label(detail_lines[index], rect.get_center().x, detail_y, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 	active_hits.append({"rect": _panel_hit_rect(rect), "action": action})
 
 func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -> void:
@@ -989,8 +1003,8 @@ func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -
 	if kind == "ability" and sim.content.abilities.has(action_id):
 		var ability: Dictionary = sim.content.abilities[action_id]
 		glyph = _ability_glyph(ability)
-		label = _fit_text(String(ability.get("name", action_id)), rect.size.x - 6.0, 8)
-		detail = _cost_text(ability.get("costs", {}))
+		label = String(ability.get("name", action_id))
+		detail = "%s\n%dT" % [_cost_text(ability.get("costs", {})), int(ability.get("time", 0))]
 		accent = _school_color(String(ability.get("school", "")))
 		enabled = sim._can_pay(ability.get("costs", {}))
 		selected_action = target_mode == action_id
@@ -999,8 +1013,8 @@ func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -
 		var item: Dictionary = sim.content.items[action_id]
 		var item_count := int(sim.run.inventory.count(action_id))
 		glyph = _item_glyph(action_id, item)
-		label = _fit_text(String(item.get("name", action_id)), rect.size.x - 6.0, 8) if item_count > 0 else "EMPTY"
-		detail = "×%d" % item_count
+		label = String(item.get("name", action_id)) if item_count > 0 else "EMPTY"
+		detail = _quickbar_item_detail(item, item_count)
 		accent = _item_color(String(item.get("type", "item")), String(item.get("rarity", "Common"))) if item_count > 0 else COLORS.line
 		enabled = item_count > 0
 	if quickbar_assign_mode:
@@ -1010,9 +1024,17 @@ func _draw_quickbar_slot(rect: Rect2, slot_index: int, assignment: Dictionary) -
 	draw_rect(rect, fill)
 	draw_rect(Rect2(rect.position.x + 3.0, rect.position.y + 2.0, rect.size.x - 6.0, 2.0), accent)
 	draw_rect(rect, COLORS.gold if selected_action else COLORS.line_soft, false, 2.2 if selected_action else 1.0)
-	_draw_label(glyph, rect.get_center().x, rect.position.y + 28.0, 20, accent if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label(_fit_text(label, rect.size.x - 6.0, 8), rect.get_center().x, rect.position.y + 43.0, 8, COLORS.text if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	if detail != "": _draw_label(_fit_text(detail, rect.size.x - 6.0, 7), rect.get_center().x, rect.position.y + 55.0, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label(glyph, rect.get_center().x, rect.position.y + 25.0, 19, accent if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	var label_lines := _wrap_text_to_width(label, rect.size.x - 8.0, 8, 2)
+	if label_lines.size() == 1:
+		_draw_label(label_lines[0], rect.get_center().x, rect.position.y + 45.0, 8, COLORS.text if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	else:
+		for index in range(label_lines.size()):
+			_draw_label(label_lines[index], rect.get_center().x, rect.position.y + 39.0 + float(index) * 10.0, 8, COLORS.text if enabled else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	var detail_lines := _action_detail_lines(detail, rect.size.x - 8.0)
+	for index in range(detail_lines.size()):
+		var detail_y := rect.position.y + 57.0 + float(index) * (_text_line_height(7) + 1.0)
+		_draw_label(detail_lines[index], rect.get_center().x, detail_y, 7, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 	_draw_label(str(slot_index + 1), rect.position.x + 5.0, rect.position.y + 12.0, 7, COLORS.gold)
 	active_hits.append({"rect": _touch_hit_rect(rect), "action": {"type": "quickbar_slot", "index": slot_index}})
 
@@ -1472,12 +1494,18 @@ func _draw_toast(text: String) -> void:
 	draw_rect(rect, COLORS.line, false, 1.0)
 	_draw_label(text, 720, 625, 13, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
 
-func _draw_panel(rect: Rect2, title: String, border: Color) -> void:
+func _draw_panel(rect: Rect2, title: String, border: Color) -> float:
 	draw_rect(rect, COLORS.panel)
 	draw_rect(rect, border, false, 1.4)
 	if title != "":
-		_draw_label(title, rect.position.x + 14, rect.position.y + 25, 11, COLORS.gold)
-		draw_line(Vector2(rect.position.x + 12, rect.position.y + 35), Vector2(rect.end.x - 12, rect.position.y + 35), COLORS.line_soft, 1.0)
+		var title_baseline := rect.position.y + 25.0
+		var title_font_size := _physical_font_size(11)
+		var descent := ThemeDB.fallback_font.get_descent(title_font_size) / maxf(0.1, draw_scale)
+		var rule_y := maxf(rect.position.y + 40.0, title_baseline + descent + 7.0)
+		_draw_label(title, rect.position.x + 14, title_baseline, 11, COLORS.gold)
+		draw_line(Vector2(rect.position.x + 12, rule_y), Vector2(rect.end.x - 12, rule_y), COLORS.line_soft, 1.0)
+		return rule_y + 11.0
+	return rect.position.y + 8.0
 
 func _draw_corner_marks(rect: Rect2) -> void:
 	var length := 13.0
@@ -1527,9 +1555,10 @@ func _draw_dpad_button(rect: Rect2, glyph: String, direction: Vector2i) -> void:
 	active_hits.append({"rect": _touch_hit_rect(rect), "action": {"type": "dpad", "direction": [direction.x, direction.y]}})
 
 func _draw_hover_tooltip() -> void:
-	if capture_requested and capture_scenario == "ability_tooltip":
+	if capture_requested and capture_scenario in ["ability_tooltip", "tooltip_long"]:
+		var tooltip_ability_id := "demonic_gateway" if capture_scenario == "tooltip_long" else "fireball"
 		for hit in active_hits:
-			if String(hit.action.get("type", "")) == "select_lower_ability" and String(hit.action.get("id", "")) == "fireball":
+			if String(hit.action.get("type", "")) == "select_lower_ability" and String(hit.action.get("id", "")) == tooltip_ability_id:
 				hover_position = hit.rect.get_center()
 				break
 	if _is_mobile_layout() or hover_position.x < 0.0:
@@ -1545,20 +1574,39 @@ func _draw_hover_tooltip() -> void:
 	var lines: Array[String] = _tooltip_lines_for_action(source.action)
 	if lines.is_empty():
 		return
-	var width := minf(250.0, screen_size.x - 24.0)
-	var height := 12.0 + float(lines.size()) * 15.0
-	var point := hover_position + Vector2(14.0, 16.0)
-	if point.x + width > screen_size.x - 8.0:
-		point.x = hover_position.x - width - 14.0
-	if point.y + height > screen_size.y - 8.0:
-		point.y = hover_position.y - height - 14.0
-	point.x = clampf(point.x, 8.0, screen_size.x - width - 8.0)
-	point.y = clampf(point.y, 8.0, screen_size.y - height - 8.0)
+	var tooltip_layout := _tooltip_layout(lines)
+	var width := float(tooltip_layout.width)
+	var height := float(tooltip_layout.height)
+	var point := _tooltip_position(hover_position, Vector2(width, height))
 	var rect := Rect2(point, Vector2(width, height))
 	draw_rect(rect, Color("#08121b"))
 	draw_rect(rect, COLORS.cyan, false, 1.0)
-	for i in range(lines.size()):
-		_draw_label(_fit_text(lines[i], width - 14.0, 8), point.x + 7.0, point.y + 16.0 + float(i) * 15.0, 8, COLORS.text if i == 0 else COLORS.muted)
+	var wrapped_lines: Array[String] = tooltip_layout.lines
+	var line_height := float(tooltip_layout.line_height)
+	for i in range(wrapped_lines.size()):
+		_draw_label(wrapped_lines[i], point.x + 10.0, point.y + 8.0 + line_height * float(i + 1), 8, COLORS.text if i == 0 else COLORS.muted)
+
+func _tooltip_layout(lines: Array[String]) -> Dictionary:
+	var width := minf(300.0, screen_size.x - 16.0)
+	var text_width := maxf(80.0, width - 24.0)
+	var wrapped_lines: Array[String] = []
+	for line in lines:
+		var wrapped := _wrap_text_to_width(line, text_width, 8)
+		if wrapped.is_empty():
+			wrapped_lines.append("")
+		else:
+			wrapped_lines.append_array(wrapped)
+	var line_height := _text_line_height(8) + 3.0
+	var height := 16.0 + float(wrapped_lines.size()) * line_height
+	return {"width": width, "height": height, "text_width": text_width, "line_height": line_height, "lines": wrapped_lines}
+
+func _tooltip_position(anchor: Vector2, size: Vector2) -> Vector2:
+	var point := anchor + Vector2(14.0, 16.0)
+	if point.x + size.x > screen_size.x - 8.0:
+		point.x = anchor.x - size.x - 14.0
+	if point.y + size.y > screen_size.y - 8.0:
+		point.y = anchor.y - size.y - 14.0
+	return Vector2(clampf(point.x, 8.0, maxf(8.0, screen_size.x - size.x - 8.0)), clampf(point.y, 8.0, maxf(8.0, screen_size.y - size.y - 8.0)))
 
 func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
 	var result: Array[String] = []
@@ -1622,16 +1670,6 @@ func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
 				result.append("Time %d  ·  Range %d  ·  Stamina %d" % [int(stats.time), int(stats.range), int(stats.stamina)])
 			if int(stats.get("armor", 0)) > 0:
 				result.append("Armor  ·  %d" % int(stats.armor))
-	elif kind == "select_map_node":
-		var node_id := String(action.get("id", ""))
-		var stage: Dictionary = sim.content.enemies.get(node_id, {}) if node_id == "grave_tyrant" else sim.content.stages.get(node_id, {})
-		if stage.is_empty(): return result
-		result.append(String(stage.get("name", node_id)))
-		result.append(String(stage.get("subtitle", "Forest boss" if node_id == "grave_tyrant" else "Connected destination")))
-		if node_id == "grave_tyrant":
-			result.append("Boss  ·  %d HP  ·  %d×%d" % [int(stage.get("hp", 0)), int(stage.get("footprint", 1)), int(stage.get("footprint", 1))])
-		else:
-			result.append("Encounter  ·  %s" % ", ".join(stage.get("objectives", [])))
 	elif kind == "select_lower_book":
 		var book_id := String(action.get("id", ""))
 		var book: Dictionary = sim.content.items.get(book_id, {})
@@ -1746,6 +1784,75 @@ func _physical_font_size(size: int) -> int:
 	var scaled := float(size) * draw_scale
 	var floor_size := 9 if size <= 6 else 10 if size <= 8 else 11 if size <= 10 else 12
 	return maxi(floor_size, roundi(scaled))
+
+func _text_line_height(size: int) -> float:
+	return ThemeDB.fallback_font.get_height(_physical_font_size(size)) / maxf(0.1, draw_scale)
+
+func _action_detail_lines(text: String, max_width: float) -> Array[String]:
+	var rows: Array[String] = []
+	for paragraph_value in text.split("\n", false):
+		var paragraph := String(paragraph_value).strip_edges()
+		if paragraph.is_empty():
+			continue
+		rows.append_array(_wrap_text_to_width(paragraph, max_width, 7))
+	if rows.size() > 3:
+		var tail: String = rows.back()
+		var overflow_parts: Array[String] = []
+		for row_index in range(2, rows.size() - 1):
+			overflow_parts.append(rows[row_index])
+		var overflow := " ".join(overflow_parts)
+		rows.resize(3)
+		rows[2] = _fit_text((overflow + " " if not overflow.is_empty() else "") + tail + "…", max_width, 7)
+	return rows
+
+func _quickbar_item_detail(item: Dictionary, item_count: int) -> String:
+	if item_count <= 0:
+		return ""
+	var use_time := 70
+	if String(item.get("type", "")) == "scroll":
+		var ability_id := String(item.get("ability", ""))
+		use_time = int(sim.content.abilities.get(ability_id, {}).get("time", use_time))
+	return "×%d\n%dT" % [item_count, use_time]
+
+func _wrap_text_to_width(text: String, max_width: float, size: int, max_lines: int = -1) -> Array[String]:
+	var wrapped: Array[String] = []
+	var physical_limit := maxf(1.0, max_width * draw_scale - 2.0)
+	var physical_size := _physical_font_size(size)
+	var paragraphs := text.split("\n", true)
+	for paragraph_index in range(paragraphs.size()):
+		var paragraph := String(paragraphs[paragraph_index]).strip_edges()
+		if paragraph.is_empty():
+			if paragraph_index > 0 and paragraph_index < paragraphs.size() - 1:
+				wrapped.append("")
+			continue
+		var current := ""
+		for word_value in paragraph.split(" ", false):
+			var word := String(word_value)
+			var candidate := word if current.is_empty() else current + " " + word
+			var candidate_width := ThemeDB.fallback_font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size).x
+			if candidate_width <= physical_limit:
+				current = candidate
+				continue
+			if not current.is_empty():
+				wrapped.append(current)
+				current = ""
+			var word_width := ThemeDB.fallback_font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1.0, physical_size).x
+			if word_width > physical_limit:
+				wrapped.append(_fit_text(word, max_width, size))
+			else:
+				current = word
+		if not current.is_empty():
+			wrapped.append(current)
+		if paragraph_index < paragraphs.size() - 1 and not paragraph.is_empty():
+			wrapped.append("")
+	if max_lines > 0 and wrapped.size() > max_lines:
+		var overflow: Array[String] = []
+		for index in range(max_lines - 1, wrapped.size()):
+			if not String(wrapped[index]).is_empty():
+				overflow.append(String(wrapped[index]))
+		wrapped.resize(max_lines)
+		wrapped[max_lines - 1] = _fit_text(" ".join(overflow) + "…", max_width, size)
+	return wrapped
 
 func _fit_text(text: String, max_width: float, size: int) -> String:
 	var physical_limit := max_width * draw_scale
@@ -2013,8 +2120,6 @@ func _handle_action(action: Dictionary) -> void:
 			ui_state.inventory_page = posmod(int(ui_state.inventory_page) + int(action.get("delta", 0)), page_count)
 		"select_artifact":
 			ui_state.selected_artifact_index = int(action.get("index", -1))
-		"select_map_node":
-			ui_state.selected_map_node_id = String(action.get("id", ""))
 		"clear_inspection":
 			selected_enemy = ""
 			selected_object_index = -1
@@ -2706,6 +2811,12 @@ func _prepare_capture_scenario() -> void:
 			ui_state.character_tab = "Abilities"
 			ui_state.selected_ability_category = "pyromancy"
 			ui_state.selected_ability_id = "fireball"
+		"tooltip_long":
+			ui_state.active_lower_panel = "character"
+			ui_state.character_tab = "Abilities"
+			ui_state.selected_ability_category = "summoning"
+			ui_state.selected_ability_id = "demonic_gateway"
+			ui_state.ability_page = 0
 		"abilities_arcane":
 			ui_state.active_lower_panel = "character"
 			ui_state.character_tab = "Abilities"
@@ -2767,6 +2878,23 @@ func _prepare_capture_scenario() -> void:
 		"quickbar_empty":
 			sim.run.inventory.erase("healing_potion")
 			sim.run.quickbar[5] = {"type": "item", "id": "healing_potion"}
+		"destination_popup":
+			sim.run.stage_completed = true
+		"map_after_choice":
+			ui_state.active_lower_panel = "world_map"
+			var selected_destination := String(sim.run.get("route_choices", [""])[0])
+			sim.run.stage_completed = true
+			if selected_destination != "": sim.choose_route(selected_destination)
+		"map_late_5", "map_final_6":
+			ui_state.active_lower_panel = "world_map"
+			for _transition in range(4):
+				sim.run.stage_completed = true
+				var next_destination := String(sim.run.get("route_choices", [""])[0])
+				if next_destination == "" or not sim.choose_route(next_destination):
+					break
+			if capture_scenario == "map_final_6":
+				sim.run.stage_completed = true
+				sim.start_boss()
 		"full_inventory":
 			var item_ids: Array = sim.content.items.keys()
 			while sim.run.inventory.size() < 30:
