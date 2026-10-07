@@ -64,4 +64,4 @@ Godot emitted a Windows root-certificate-store warning during its runs, and Andr
 
 ## Prompt 6A follow-up
 
-The one-section-at-a-time desktop dock described in this historical Prompt 6 record is superseded by Prompt 6A. Windows now keeps all four management panels visible together; Android retains the contextual dock and uses the full lower width for its selected panel. See [`PROMPT6A_VISUAL_QA.md`](PROMPT6A_VISUAL_QA.md) for the updated typography diagnosis, resolution review, touch-flow checks, and three follow-up comparison passes.
+The layout described in this historical Prompt 6 record was superseded by Prompt 6A, then refined by Prompt 6B. The current authoritative desktop HUD has three persistent panels and routes normal travel through the post-objective destination picker. See [`PROMPT6B_VISUAL_QA.md`](PROMPT6B_VISUAL_QA.md) for the final contract and current evidence; [`PROMPT6A_VISUAL_QA.md`](PROMPT6A_VISUAL_QA.md) remains a historical record of the typography and touch-flow pass.

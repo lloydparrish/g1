@@ -699,6 +699,26 @@ func get_progression_graph() -> Array:
 		result.append({"id": ability_id, "ability": ability, "school": school, "position": position, "parents": parents, "root_id": layout.roots.get(ability_id, ability_id), "root": bool(layout.root_nodes.get(ability_id, false)), "depth": int(layout.depths.get(ability_id, 0)), "learned": progress.learned, "learnable": progress.learnable, "reason": progress.reason})
 	return result
 
+func get_visible_ability_categories() -> Array:
+	var categories: Dictionary = content.get("ability_categories", {})
+	var relevant: Dictionary = {}
+	for ability_id in content.get("abilities", {}):
+		var progress: Dictionary = get_ability_progress(String(ability_id))
+		if not progress.get("visible", false):
+			continue
+		for category_id in content.abilities[ability_id].get("categories", []):
+			if categories.has(category_id):
+				relevant[String(category_id)] = categories[category_id]
+	var result: Array = []
+	for category_id in relevant:
+		result.append({"id": String(category_id), "name": String(relevant[category_id].get("name", category_id)), "order": int(relevant[category_id].get("order", 99)), "glyph": String(relevant[category_id].get("glyph", "◇"))})
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.order) == int(b.order):
+			return String(a.id) < String(b.id)
+		return int(a.order) < int(b.order)
+	)
+	return result
+
 func _ability_parent_ids(ability: Dictionary) -> Array:
 	var parents: Array = ability.get("requires", []).duplicate()
 	parents.append_array(ability.get("prerequisites", {}).get("all_of", []))
@@ -893,12 +913,10 @@ func start_boss() -> bool:
 	return true
 
 func equip_item(index: int) -> bool:
-	if index < 0 or index >= run.inventory.size():
+	if not can_equip_item(index):
 		return false
 	var item_id: String = run.inventory[index]
 	var item: Dictionary = content.items.get(item_id, {})
-	if item.get("type") != "equipment":
-		return false
 	var slot: String = item.get("slot", "")
 	var old_weapon: String = run.equipment.get("Weapon", "")
 	if slot == "Offhand" and old_weapon != "" and content.weapons[old_weapon].hands == 2:
@@ -941,6 +959,39 @@ func equip_item(index: int) -> bool:
 	_add_log("Equipped %s." % item.name)
 	save_run()
 	return true
+
+func can_equip_item(index: int, selected_slot: String = "") -> bool:
+	if run.is_empty() or index < 0 or index >= run.get("inventory", []).size():
+		return false
+	var item_id := String(run.inventory[index])
+	var item: Dictionary = content.items.get(item_id, {})
+	if item.get("type", "") != "equipment":
+		return false
+	var item_slot := String(item.get("slot", ""))
+	if item_slot == "" or not run.get("equipment", {}).has(item_slot):
+		return false
+	if selected_slot != "" and selected_slot != item_slot:
+		return false
+	if item_slot == "Weapon" and content.weapons.get(item.get("weapon", ""), {}).is_empty():
+		return false
+	return true
+
+func get_equipment_item_stats(item_id: String) -> Dictionary:
+	var item: Dictionary = content.items.get(item_id, {})
+	if item.get("type", "") != "equipment":
+		return {}
+	var stats: Dictionary = {"name": String(item.get("name", item_id)), "slot": String(item.get("slot", "")), "armor": int(item.get("armor", 0)), "resist": item.get("resist", {}).duplicate(true), "modifiers": item.get("modifiers", {}).duplicate(true), "description": String(item.get("description", ""))}
+	if item.has("weapon"):
+		var weapon: Dictionary = content.weapons.get(String(item.weapon), {})
+		if not weapon.is_empty():
+			stats["damage"] = int(weapon.get("damage", 0))
+			stats["damage_type"] = String(weapon.get("type", ""))
+			stats["time"] = int(weapon.get("time", 0))
+			stats["stamina"] = int(weapon.get("stamina", 0))
+			stats["range"] = int(weapon.get("range", 0))
+			stats["hands"] = int(weapon.get("hands", 1))
+			stats["style"] = String(weapon.get("style", ""))
+	return stats
 
 func unequip_item(slot: String) -> bool:
 	if not run.get("equipment", {}).has(slot) or run.inventory.size() >= 30:
@@ -989,7 +1040,11 @@ func get_spellbook_options(index: int) -> Dictionary:
 	for ability_id in offered:
 		var ability: Dictionary = content.abilities.get(ability_id, {})
 		options.append({"id": ability_id, "name": ability.get("name", "Unknown ability"), "description": ability.get("description", ""), "learned": run.get("known", []).has(ability_id)})
-	return {"id": item_id, "name": book.get("name", "Spellbook"), "school": book.get("school", ""), "description": book.get("description", ""), "contents": book.get("contents", []), "mode": mode, "choice_count": int(learning.get("choice_count", offered.size() if mode == "all" else 0)), "consume_on_study": bool(learning.get("consume_on_study", false)), "unlocks_school": bool(learning.get("unlocks_school", book.get("unlocks_school", false))), "resolved": not resolution.is_empty(), "chosen_abilities": resolution.get("abilities", []), "options": options}
+	var immediate_contents: Array[String] = []
+	if mode != "school_only":
+		for ability_id in offered:
+			immediate_contents.append(String(content.abilities.get(ability_id, {}).get("name", ability_id)))
+	return {"id": item_id, "name": book.get("name", "Spellbook"), "school": book.get("school", ""), "description": book.get("description", ""), "contents": immediate_contents, "mode": mode, "choice_count": int(learning.get("choice_count", offered.size() if mode == "all" else 0)), "consume_on_study": bool(learning.get("consume_on_study", false)), "unlocks_school": bool(learning.get("unlocks_school", book.get("unlocks_school", false))), "resolved": not resolution.is_empty(), "chosen_abilities": resolution.get("abilities", []), "options": options}
 
 func study_spellbook(index: int, choice_indices: Variant = null) -> bool:
 	if index < 0 or index >= run.inventory.size():
@@ -1286,6 +1341,8 @@ func _spawn_summon(summon_id: String, cell: Vector2i) -> bool:
 
 func _player_move(target: Vector2i) -> Dictionary:
 	var player: Dictionary = get_player()
+	if not _cell_visible(target):
+		return {"ok": false, "message": "That tile is still hidden by fog of war."}
 	if not _inside(target) or _terrain_at(target) == "wall":
 		return {"ok": false, "message": "That path is blocked."}
 	if _dist(_pos(player), target) == 0:
@@ -1293,7 +1350,8 @@ func _player_move(target: Vector2i) -> Dictionary:
 	var occupant := _occupant(target)
 	if occupant != "" and _is_hostile("player", occupant):
 		return _player_attack(target)
-	var next_step := _next_step(_pos(player), target, "player")
+	var path: Array[Vector2i] = get_movement_path(target, "player")
+	var next_step := path[0] if not path.is_empty() else _pos(player)
 	if next_step == _pos(player):
 		return {"ok": false, "message": "No open path reaches that tile."}
 	var previous_pos := _pos(player)
@@ -1313,22 +1371,19 @@ func _player_move(target: Vector2i) -> Dictionary:
 		_damage("player", 5, "Fire", "the burning ground")
 	_add_log("%s steps across the field." % player.name)
 	_check_objective_at_player()
-	var passive_move := maxf(0.4, 1.0 - get_passive_modifier("move_time_reduction"))
-	var move_time := maxi(1, int(round(100.0 * passive_move * float(_artifact_modifier("move_time_multiplier", 1.0)))))
-	return _spend_player_time(move_time, "")
+	return _spend_player_time(_movement_step_time_cost("player"), "")
 
 func _player_attack(target: Vector2i) -> Dictionary:
 	var player: Dictionary = get_player()
 	var target_id := _occupant(target)
 	if target_id == "" or not _is_hostile("player", target_id):
 		var object_index := _object_index_at(target)
-		if object_index >= 0 and run.objects[object_index].get("kind") == "ward":
+		if object_index >= 0 and run.objects[object_index].get("kind") == "ward" and is_valid_target_cell("attack", target):
 			return _attack_object(object_index)
 		return {"ok": false, "message": "Select a visible enemy or ritual ward."}
 	var weapon_id: String = run.equipment.get("Weapon", "sword")
 	var weapon: Dictionary = content.weapons.get(weapon_id, content.weapons.sword)
-	var distance := _distance_to_entity(_pos(player), run.entities[target_id])
-	if distance > int(weapon.range) or not _line_of_sight(_pos(player), target):
+	if not is_valid_target_cell("attack", target):
 		return {"ok": false, "message": "That target is beyond your weapon's reach."}
 	var stamina: Array = player.resources.Stamina
 	if int(stamina[0]) < int(weapon.stamina):
@@ -1383,24 +1438,15 @@ func _cast(ability_id: String, target: Vector2i) -> Dictionary:
 		return {"ok": false, "message": "You have not learned %s." % ability.name}
 	if ability.get("discovery_required", false) and not run.schools.has(ability.get("school", "")):
 		return {"ok": false, "message": "You have not discovered %s." % ability.get("school", "that school")}
+	var cost_status := get_cost_status(ability.get("costs", {}))
+	if not cost_status.affordable:
+		return {"ok": false, "message": "Requires %s. %s" % [get_cost_summary(ability.get("costs", {})), "; ".join(cost_status.issues)]}
 	var target_mode: String = ability.get("target", "enemy")
 	var origin := _pos(player)
 	if target_mode == "self":
 		target = origin
-	else:
-		if not _inside(target) or _dist(origin, target) > int(ability.get("range", 0)):
-			return {"ok": false, "message": "That target is outside the ability's reach."}
-		if not _cell_visible(target) or not _line_of_sight(origin, target):
-			return {"ok": false, "message": "You cannot see a clear path to that target."}
-		if target_mode == "enemy":
-			var enemy_id := _occupant(target)
-			if enemy_id == "" or not _is_hostile("player", enemy_id):
-				return {"ok": false, "message": "Choose a visible hostile creature."}
-		if target_mode == "tile" and _terrain_at(target) == "wall":
-			return {"ok": false, "message": "That tile is blocked."}
-	var cost_status := get_cost_status(ability.get("costs", {}))
-	if not cost_status.affordable:
-		return {"ok": false, "message": "Requires %s. %s" % [get_cost_summary(ability.get("costs", {})), "; ".join(cost_status.issues)]}
+	elif not is_valid_target_cell(ability_id, target):
+		return {"ok": false, "message": _targeting_failure_message(ability_id, target)}
 	_pay(ability.get("costs", {}))
 	var targets: Array = _targets_for_ability(ability, target)
 	_emit_combat_event("Cast", "player", _occupant(target), {"ability": String(ability.name), "school": String(ability.get("school", "")), "pos": [target.x, target.y]})
@@ -1415,6 +1461,113 @@ func _cast(ability_id: String, target: Vector2i) -> Dictionary:
 	_add_log("%s casts %s." % [player.name, ability.name])
 	_check_objective()
 	return _spend_player_time(time_cost, "")
+
+func get_targeting_preview(action_id: String) -> Dictionary:
+	var range_cells: Array[Vector2i] = []
+	var valid_cells: Array[Vector2i] = []
+	var definition := _targeting_definition(action_id)
+	if definition.is_empty() or not bool(definition.get("available", false)):
+		return {"available": false, "range_cells": range_cells, "valid_cells": valid_cells}
+	for y in range(HEIGHT):
+		for x in range(WIDTH):
+			var cell := Vector2i(x, y)
+			if not _targeting_cell_in_range(action_id, cell, definition):
+				continue
+			range_cells.append(cell)
+			if _targeting_cell_is_valid(action_id, cell, definition):
+				valid_cells.append(cell)
+	return {"available": true, "range_cells": range_cells, "valid_cells": valid_cells}
+
+func is_valid_target_cell(action_id: String, cell: Vector2i) -> bool:
+	var definition := _targeting_definition(action_id)
+	return not definition.is_empty() and bool(definition.get("available", false)) and _targeting_cell_is_valid(action_id, cell, definition)
+
+func _targeting_definition(action_id: String) -> Dictionary:
+	if action_id == "attack":
+		var weapon: Dictionary = content.weapons.get(run.get("equipment", {}).get("Weapon", "sword"), content.weapons.get("sword", {}))
+		return {"kind": "attack", "range": int(weapon.get("range", 1)), "available": not weapon.is_empty() and int(get_player().get("resources", {}).get("Stamina", [0, 0])[0]) >= int(weapon.get("stamina", 0))}
+	if action_id.begins_with("item:"):
+		var index := int(action_id.trim_prefix("item:"))
+		if index < 0 or index >= run.get("inventory", []).size():
+			return {}
+		var item: Dictionary = content.items.get(String(run.inventory[index]), {})
+		if item.get("effect", "") == "bomb":
+			return {"kind": "bomb", "range": 5, "available": true}
+		if item.get("type", "") == "scroll":
+			var ability_id := String(item.get("ability", ""))
+			var scroll_ability: Dictionary = content.abilities.get(ability_id, {})
+			if scroll_ability.is_empty() or scroll_ability.get("target", "enemy") in ["self", "passive"]:
+				return {}
+			var scroll_cost: Dictionary = get_cost_status(scroll_ability.get("costs", {}))
+			return {"kind": "ability", "ability_id": ability_id, "target": String(scroll_ability.get("target", "enemy")), "range": int(scroll_ability.get("range", 0)), "available": bool(scroll_cost.get("affordable", false))}
+		return {}
+	if not content.get("abilities", {}).has(action_id):
+		return {}
+	var ability: Dictionary = content.abilities[action_id]
+	var target_kind := String(ability.get("target", "enemy"))
+	if target_kind in ["self", "passive"] or ability.get("kind", "active") == "passive":
+		return {}
+	var temporary: bool = int(run.get("temporary_abilities", {}).get(action_id, 0)) > 0
+	var known: bool = run.get("known", []).has(action_id) or temporary
+	var discovered: bool = not ability.get("discovery_required", false) or run.get("schools", []).has(ability.get("school", ""))
+	var affordable := bool(get_cost_status(ability.get("costs", {})).get("affordable", false))
+	return {"kind": "ability", "ability_id": action_id, "target": target_kind, "range": int(ability.get("range", 0)), "available": known and discovered and affordable}
+
+func _targeting_cell_in_range(action_id: String, cell: Vector2i, definition: Dictionary) -> bool:
+	if not _inside(cell) or not _cell_visible(cell):
+		return false
+	var origin := _pos(get_player())
+	var kind := String(definition.get("kind", ""))
+	if kind == "bomb":
+		return _dist(origin, cell) <= int(definition.get("range", 0))
+	if kind == "attack":
+		var target_id := _occupant(cell)
+		if target_id != "" and _is_hostile("player", target_id):
+			return _distance_to_entity(origin, run.entities[target_id]) <= int(definition.get("range", 0)) and _line_of_sight(origin, cell)
+		var object_index := _object_index_at(cell)
+		if object_index >= 0 and run.objects[object_index].get("kind", "") == "ward":
+			return _dist(origin, cell) <= 1
+		return _dist(origin, cell) <= int(definition.get("range", 0)) and _line_of_sight(origin, cell)
+	return _dist(origin, cell) <= int(definition.get("range", 0)) and _line_of_sight(origin, cell)
+
+func _targeting_cell_is_valid(action_id: String, cell: Vector2i, definition: Dictionary = {}) -> bool:
+	if definition.is_empty():
+		definition = _targeting_definition(action_id)
+	if definition.is_empty() or not bool(definition.get("available", false)) or not _targeting_cell_in_range(action_id, cell, definition):
+		return false
+	var kind := String(definition.get("kind", ""))
+	if kind == "bomb":
+		return true
+	if kind == "attack":
+		var target_id := _occupant(cell)
+		if target_id != "" and _is_hostile("player", target_id):
+			return true
+		var object_index := _object_index_at(cell)
+		return object_index >= 0 and run.objects[object_index].get("kind", "") == "ward" and _dist(_pos(get_player()), cell) <= 1
+	var ability: Dictionary = content.abilities.get(String(definition.get("ability_id", action_id)), {})
+	match String(definition.get("target", ability.get("target", "enemy"))):
+		"enemy":
+			var enemy_id := _occupant(cell)
+			return enemy_id != "" and _is_hostile("player", enemy_id)
+		"tile": return _terrain_at(cell) != "wall"
+		"area": return true
+	return false
+
+func _targeting_failure_message(action_id: String, cell: Vector2i) -> String:
+	if not _inside(cell) or not _cell_visible(cell):
+		return "You cannot target a hidden tile."
+	var definition := _targeting_definition(action_id)
+	var kind := String(definition.get("kind", ""))
+	if kind == "attack":
+		return "That target is beyond your weapon's reach or blocked from view."
+	var target_kind := String(definition.get("target", "enemy"))
+	if target_kind == "enemy" and _occupant(cell) == "":
+		return "Choose a visible hostile creature."
+	if target_kind == "tile" and _terrain_at(cell) == "wall":
+		return "That tile is blocked."
+	if not _line_of_sight(_pos(get_player()), cell):
+		return "You cannot see a clear path to that target."
+	return "That target is outside the ability's reach."
 
 func _targets_for_ability(ability: Dictionary, center: Vector2i) -> Array:
 	var target_mode: String = ability.get("target", "enemy")
@@ -2088,41 +2241,132 @@ func _find_spawn(preferred: Vector2i) -> Vector2i:
 	return Vector2i(-1, -1)
 
 func _next_step(start: Vector2i, target: Vector2i, mover_id: String) -> Vector2i:
-	if start == target:
-		return start
-	var candidates: Array[Vector2i] = []
-	if _occupant(target, mover_id) == "" and _terrain_at(target) != "wall":
-		candidates.append(target)
+	var path: Array[Vector2i] = _find_movement_path(start, target, mover_id)
+	return path[0] if not path.is_empty() else start
+
+func get_movement_path(target: Vector2i, mover_id: String = "player") -> Array[Vector2i]:
+	if not run.get("entities", {}).has(mover_id):
+		return []
+	return _find_movement_path(_pos(run.entities[mover_id]), target, mover_id)
+
+func get_movement_path_cost(target: Vector2i, mover_id: String = "player") -> Dictionary:
+	var path := get_movement_path(target, mover_id)
+	var per_step_time := _movement_step_time_cost(mover_id)
+	var per_step_stamina := 3 if mover_id == "player" else 0
+	return {"reachable": not path.is_empty(), "steps": path.size(), "time": path.size() * per_step_time, "stamina": path.size() * per_step_stamina}
+
+func _movement_step_time_cost(mover_id: String) -> int:
+	if mover_id != "player":
+		return 100
+	var passive_move := maxf(0.4, 1.0 - get_passive_modifier("move_time_reduction"))
+	return maxi(1, int(round(100.0 * passive_move * float(_artifact_modifier("move_time_multiplier", 1.0)))))
+
+func _find_movement_path(start: Vector2i, target: Vector2i, mover_id: String) -> Array[Vector2i]:
+	var empty: Array[Vector2i] = []
+	if start == target or not _inside(start) or not _inside(target):
+		return empty
+	var goals: Array[Vector2i] = []
+	if _movement_cell_passable(target, mover_id):
+		goals.append(target)
 	else:
 		for direction in DIRECTIONS:
 			var adjacent: Vector2i = target + direction
-			if _inside(adjacent) and _terrain_at(adjacent) != "wall" and _occupant(adjacent, mover_id) == "":
-				candidates.append(adjacent)
-	if candidates.is_empty():
-		return start
-	candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return _dist(start, a) < _dist(start, b))
-	var goal: Vector2i = candidates[0]
-	var queue: Array[Vector2i] = [start]
-	var previous := {_cell_key(start): _cell_key(start)}
-	var visited := 0
-	while not queue.is_empty() and visited < WIDTH * HEIGHT:
-		var current: Vector2i = queue.pop_front()
-		visited += 1
-		if current == goal:
-			break
-		for direction in DIRECTIONS:
+			if _movement_cell_passable(adjacent, mover_id):
+				goals.append(adjacent)
+	if goals.is_empty():
+		return empty
+	var start_key := _cell_key(start)
+	var distance_by_key: Dictionary = {start_key: 0}
+	var previous_by_key: Dictionary = {}
+	var open: Array[Vector2i] = [start]
+	while not open.is_empty():
+		var best_index := 0
+		for index in range(1, open.size()):
+			var candidate_key := _cell_key(open[index])
+			var best_key := _cell_key(open[best_index])
+			if int(distance_by_key[candidate_key]) < int(distance_by_key[best_key]):
+				best_index = index
+		var current: Vector2i = open.pop_at(best_index)
+		var current_key := _cell_key(current)
+		for direction in _ordered_movement_directions(current, target):
 			var next: Vector2i = current + direction
-			var key := _cell_key(next)
-			if not _inside(next) or previous.has(key) or _terrain_at(next) == "wall" or _occupant(next, mover_id) != "":
+			if not _movement_cell_passable(next, mover_id):
 				continue
-			previous[key] = _cell_key(current)
-			queue.append(next)
-	if not previous.has(_cell_key(goal)):
-		return start
-	var step := goal
-	while previous[_cell_key(step)] != _cell_key(start) and step != start:
-		step = _key_cell(String(previous[_cell_key(step)]))
-	return step
+			var next_key := _cell_key(next)
+			var candidate_cost := int(distance_by_key[current_key]) + _movement_step_time_cost(mover_id)
+			if distance_by_key.has(next_key) and candidate_cost >= int(distance_by_key[next_key]):
+				continue
+			distance_by_key[next_key] = candidate_cost
+			previous_by_key[next_key] = current_key
+			if not open.has(next):
+				open.append(next)
+	var selected_goal := Vector2i(-1, -1)
+	var selected_cost := 2147483647
+	for goal in goals:
+		var goal_key := _cell_key(goal)
+		if distance_by_key.has(goal_key) and int(distance_by_key[goal_key]) < selected_cost:
+			selected_goal = goal
+			selected_cost = int(distance_by_key[goal_key])
+	if selected_goal == Vector2i(-1, -1):
+		return empty
+	var reverse_path: Array[Vector2i] = []
+	var cursor := selected_goal
+	while cursor != start:
+		reverse_path.append(cursor)
+		var cursor_key := _cell_key(cursor)
+		if not previous_by_key.has(cursor_key):
+			return empty
+		cursor = _key_cell(String(previous_by_key[cursor_key]))
+	reverse_path.reverse()
+	return reverse_path
+
+func _ordered_movement_directions(from: Vector2i, target: Vector2i) -> Array:
+	var delta := target - from
+	var preferred_x := signi(delta.x)
+	var preferred_y := signi(delta.y)
+	var ordered: Array = DIRECTIONS.duplicate()
+	ordered.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var a_distance := _dist(from + a, target)
+		var b_distance := _dist(from + b, target)
+		if a_distance != b_distance:
+			return a_distance < b_distance
+		var a_rank := _movement_direction_tie_rank(a, preferred_x, preferred_y)
+		var b_rank := _movement_direction_tie_rank(b, preferred_x, preferred_y)
+		if a_rank != b_rank:
+			return a_rank < b_rank
+		return DIRECTIONS.find(a) < DIRECTIONS.find(b)
+	)
+	return ordered
+
+func _movement_direction_tie_rank(direction: Vector2i, preferred_x: int, preferred_y: int) -> int:
+	if preferred_y == 0:
+		if direction == Vector2i(preferred_x, 0): return 0
+		if direction.x == preferred_x: return 1
+	elif preferred_x == 0:
+		if direction == Vector2i(0, preferred_y): return 0
+		if direction.y == preferred_y: return 1
+	else:
+		if direction == Vector2i(preferred_x, preferred_y): return 0
+		if direction == Vector2i(preferred_x, 0): return 1
+		if direction == Vector2i(0, preferred_y): return 2
+	return 3
+
+func _movement_cell_passable(cell: Vector2i, mover_id: String) -> bool:
+	if not _inside(cell):
+		return false
+	if mover_id == "player" and not _cell_was_explored(cell):
+		return false
+	var mover: Dictionary = run.get("entities", {}).get(mover_id, {})
+	var footprint := maxi(1, int(mover.get("footprint", 1)))
+	for y in range(cell.y, cell.y + footprint):
+		for x in range(cell.x, cell.x + footprint):
+			var footprint_cell := Vector2i(x, y)
+			if not _inside(footprint_cell) or _terrain_at(footprint_cell) == "wall" or _occupant(footprint_cell, mover_id) != "":
+				return false
+	return true
+
+func _cell_was_explored(cell: Vector2i) -> bool:
+	return _inside(cell) and not run.get("explored", []).is_empty() and bool(run.explored[cell.y][cell.x])
 
 func _retreat_step(start: Vector2i, threat: Vector2i, mover_id: String) -> Vector2i:
 	var best := start

@@ -190,14 +190,14 @@ Unrelated, rare or forbidden knowledge must be found through spellbooks, shrines
 
 ## Spellbooks
 
-Spellbooks are identifiable loot with visible contents. Example:
+Spellbooks are identifiable loot with explicit immediate learning rules. Example:
 
 The Lesser Key of Ash — Demonology — Rare
 - Summon Imp
 - Hellfire Pact
 - Demonic Gateway
 
-Books may unlock a school, teach abilities, provide choices or use other definition-driven rules. Their contents are inspectable before learning.
+Books may unlock a school, teach abilities, provide choices or use other definition-driven rules. Pre-study previews show only the immediate grants or current choice options defined for that book. A learning result reports what was actually granted; it must not reveal downstream abilities that are only future possibilities.
 
 ## Ability webs
 
@@ -357,7 +357,11 @@ Landscape first. The supplied UI mockup is a visual target, adapted intelligentl
 
 Windows and Android are both supported. Android landscape is the primary mobile presentation; Windows remains a first-class desktop build.
 
-During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. Windows desktop keeps World Map, Character / Abilities, Inventory / Equipment, and Spellbook / Discovery visible together in four persistent lower panels; each panel's selections persist independently. Android landscape uses a contextual lower dock where one section expands at a time and the other sections remain available as compact headers. Collapse the Android dock to restore battlefield space. On both platforms the ability web may open as a dedicated large subview. Codex, settings and other infrequent flows may use separate overlays.
+During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. Windows desktop keeps exactly three persistent lower panels: World Map, Character / Abilities, and Inventory / Equipment. There is no persistent Spellbook / Discovery panel; spellbooks remain available through Inventory tabs and dedicated knowledge interfaces. The World Map shows the current run's visited route, current node, and actual connected/discovered destinations as an overview. The post-objective destination picker is the normal progression interface, and both views read the authoritative run route state. Android landscape uses a contextual lower dock with the same three sections, where one section expands at a time and the other sections remain available as compact headers. Collapse the Android dock to restore battlefield space. On both platforms the ability web may open as a dedicated large subview. Codex, settings and other infrequent flows may use separate overlays.
+
+The Character / Abilities category list is data-driven but character-relevant: show a category when the current character has a learned, unlocked, invested or otherwise meaningfully available ability in it. Keep the full global category registry for future acquisition; newly relevant categories appear from run state.
+
+Equipment selection filters the carried gear grid by the selected equipment slot using the same compatibility rules used by equip actions. Inspection exposes actual authored combat values such as weapon damage/type/time/range/stamina, armor, resistances and modifiers. Never fabricate missing stats.
 
 Touch model:
 - Tap: select/move/target.
@@ -408,6 +412,8 @@ Later prompts may expand content, but must preserve the shared deterministic sim
 - Each reward resolution accepts and saves exactly one selected reward. Other choices become unavailable after the claim.
 - Spellbook learning is defined per book and supports teaching all listed abilities, selecting an exact number, or revealing a school. Inspectable book contents remain in the Codex after study or consumption.
 - The same target action selected again cancels targeting; another action replaces the current target mode. Cancel, Escape and Android Back use the same target-cancellation route before closing broader UI.
+- Clicking a distant battlefield tile uses a deterministic lowest-time-cost valid path that respects walls, occupancy, creature footprint, legal movement directions and fog/knowledge rules. Movement cost is sourced from the same per-step action cost as the movement action.
+- Selecting a targeted attack shows a restrained battlefield range preview from the authoritative targeting query also used for action validation. It distinguishes range from visible legal targets and never exposes hidden tiles or enemies. The preview clears on cancel, action resolution, replacement action or turn/state transition.
 - Command communicates occupied summon capacity. It is not spent like Mana; failure feedback identifies the resource that blocked the action or the full Command capacity.
 - Battlefield, timeline and inspection use the same simulation-owned entity presentation, including canonical creature glyphs.
 - Every playable ability must have a non-empty authored description in data. Content validation checks these descriptions and spellbook references.

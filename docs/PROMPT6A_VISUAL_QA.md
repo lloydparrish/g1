@@ -1,4 +1,6 @@
-# Prompt 6A — Desktop HUD and Mobile Regression QA
+# Prompt 6A — Historical Desktop HUD and Mobile Regression QA
+
+> Superseded by Prompt 6B. Prompt 6A's four-panel desktop and map travel-control contracts below describe the earlier state. The current three-panel layout and destination-picker travel flow are recorded in [`PROMPT6B_VISUAL_QA.md`](PROMPT6B_VISUAL_QA.md).
 
 ## Typography finding and correction
 

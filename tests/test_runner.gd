@@ -22,6 +22,8 @@ func run_suite() -> void:
 	_check(sim.get_timeline()[0].id == "player", "player is first at the initial decision point")
 	_check(sim.run.equipment.Weapon == "sword" and sim.run.known.size() == 3, "Jim starts with a weapon and no magic")
 	_check(sim.content.weapons.dagger.time < sim.content.weapons.greatsword.time and sim.content.weapons.bow.range > sim.content.weapons.sword.range, "weapon definitions have distinct time and range")
+	sim.run.visible = sim._bool_grid(true)
+	sim.run.explored = sim._bool_grid(true)
 	var start := sim._pos(sim.get_player())
 	var path_step: Vector2i = sim._next_step(start, Vector2i(20, 8), "player")
 	_check(path_step != start and sim._dist(start, path_step) == 1, "eight-direction pathfinding returns the first legal step")
@@ -63,6 +65,40 @@ func run_suite() -> void:
 	sim._regenerate(200)
 	_check(int(sim.get_player().resources.Mana[0]) > mana_before, "Mana regenerates over simulated time")
 	_check(sim._dist(Vector2i(0, 0), Vector2i(2, 1)) == 2, "grid uses eight-direction movement distance")
+
+	var route_test = SimScript.new()
+	route_test.start_run(20261006, "jim")
+	_prepare_open_movement_board(route_test, Vector2i(3, 8))
+	var horizontal: Array[Vector2i] = route_test.get_movement_path(Vector2i(20, 8))
+	var horizontal_cost: Dictionary = route_test.get_movement_path_cost(Vector2i(20, 8))
+	_check(horizontal.size() == 17 and horizontal[0] == Vector2i(4, 8), "long horizontal clicks use the direct lowest-action-cost route")
+	_check(int(horizontal_cost.time) == horizontal.size() * route_test._movement_step_time_cost("player") and int(horizontal_cost.stamina) == horizontal.size() * 3, "path cost matches the actual per-step movement time and Stamina costs")
+	_prepare_open_movement_board(route_test, Vector2i(12, 2))
+	var vertical: Array[Vector2i] = route_test.get_movement_path(Vector2i(12, 13))
+	_check(vertical.size() == 11 and vertical[0] == Vector2i(12, 3), "long vertical clicks use the direct lowest-action-cost route")
+	_prepare_open_movement_board(route_test, Vector2i(8, 8))
+	for y in range(1, ArcanistSim.HEIGHT - 1):
+		if y != 4:
+			route_test._set_grid(Vector2i(10, y), "wall")
+	var obstacle_path: Array[Vector2i] = route_test.get_movement_path(Vector2i(12, 8))
+	_check(obstacle_path.size() == 8 and obstacle_path.all(func(cell: Vector2i) -> bool: return route_test._terrain_at(cell) != "wall"), "pathfinding takes the shortest open detour through the only gap")
+	var repeated_path: Array[Vector2i] = route_test.get_movement_path(Vector2i(12, 8))
+	_check(obstacle_path == repeated_path, "equivalent route queries resolve deterministically")
+	var alternate_route: Array[Vector2i] = [Vector2i(9, 8), Vector2i(9, 7), Vector2i(9, 6), Vector2i(9, 5), Vector2i(10, 4), Vector2i(11, 5), Vector2i(11, 6), Vector2i(11, 7), Vector2i(12, 8)]
+	var alternate_route_valid := true
+	var alternate_previous := Vector2i(8, 8)
+	for cell in alternate_route:
+		if _chebyshev_test_distance(alternate_previous, cell) != 1 or not route_test._movement_cell_passable(cell, "player"):
+			alternate_route_valid = false
+		alternate_previous = cell
+	var shortest_cost: Dictionary = route_test.get_movement_path_cost(Vector2i(12, 8))
+	_check(alternate_route_valid and alternate_route.size() == 9 and int(shortest_cost.time) < alternate_route.size() * route_test._movement_step_time_cost("player"), "pathfinding compares two legal alternatives and chooses the lower total action-time route")
+	_prepare_open_movement_board(route_test, Vector2i(8, 8))
+	route_test.run.visible = route_test._bool_grid(false)
+	route_test.run.explored = route_test._bool_grid(false)
+	route_test.run.visible[8][8] = true
+	route_test.run.explored[8][8] = true
+	_check(route_test.get_movement_path(Vector2i(12, 8)).is_empty(), "player movement planning does not route through unexplored fog")
 
 	var mara = SimScript.new()
 	mara.start_run(77, "mara")
@@ -266,6 +302,22 @@ func run_suite() -> void:
 	for failure in failures:
 		printerr("FAIL: " + failure)
 	quit(1 if not failures.is_empty() else 0)
+
+func _prepare_open_movement_board(sim, player_position: Vector2i) -> void:
+	var player: Dictionary = sim.get_player()
+	sim.run.entities = {"player": player}
+	player.pos = [player_position.x, player_position.y]
+	player.footprint = 1
+	sim.run.objects = []
+	sim.run.corpses = []
+	for y in range(SimScript.HEIGHT):
+		for x in range(SimScript.WIDTH):
+			sim._set_grid(Vector2i(x, y), "floor")
+	sim.run.visible = sim._bool_grid(true)
+	sim.run.explored = sim._bool_grid(true)
+
+func _chebyshev_test_distance(a: Vector2i, b: Vector2i) -> int:
+	return maxi(absi(a.x - b.x), absi(a.y - b.y))
 
 func _check(condition: bool, title: String) -> void:
 	checks += 1

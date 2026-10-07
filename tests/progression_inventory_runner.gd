@@ -16,6 +16,15 @@ func run_suite() -> void:
 	_check(sim.content.progression.disciplines.size() == 10 and sim.content.progression.schools.size() == 13, "all canonical discipline and school registries are present")
 
 	sim.start_run(301, "jim")
+	var category_probe = SimScript.new()
+	category_probe.start_run(300, "jim")
+	var starting_categories: Array[String] = []
+	for category in category_probe.get_visible_ability_categories(): starting_categories.append(String(category.id))
+	_check(starting_categories.has("swordsmanship") and starting_categories.has("defense") and starting_categories.has("mobility") and not starting_categories.has("pyromancy") and not starting_categories.has("frost"), "untouched ability categories stay hidden for the current character")
+	category_probe.run.schools.append("Fire")
+	var earned_categories: Array[String] = []
+	for category in category_probe.get_visible_ability_categories(): earned_categories.append(String(category.id))
+	_check(earned_categories.has("pyromancy") and not earned_categories.has("frost") and category_probe.content.ability_categories.has("frost"), "a newly discovered school reveals its category while global category data remains intact")
 	sim.run.skill_points = 12
 	_check(not sim.run.schools.has("Fire") and not sim.get_progression_graph().any(func(node: Dictionary) -> bool: return node.id == "firebolt"), "undiscovered magic stays out of Jim's natural ability web")
 	sim.run.schools.append("Fire")
@@ -224,10 +233,18 @@ func run_suite() -> void:
 	main.queue_redraw()
 	await process_frame
 	await process_frame
+	var map_route_count := 0
+	for hit in main.active_hits:
+		if hit.action.get("type", "") == "select_map_node" and actual_route_choices.has(hit.action.get("id", "")): map_route_count += 1
+	_check(not actual_route_choices.is_empty() and map_route_count == actual_route_choices.size() and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss"]), "the World Map shows only authoritative connected destinations without bypassing the picker")
+	main._handle_action({"type": "next_stage"})
+	main.queue_redraw()
+	await process_frame
+	await process_frame
 	var route_hit_size := Vector2.ZERO
 	for hit in main.active_hits:
-		if hit.action.get("type", "") == "route": route_hit_size = hit.rect.size
-	_check(not actual_route_choices.is_empty() and route_hit_size.x >= 54.0 and route_hit_size.y >= 54.0, "authored run routes expose a full-size touch-safe travel action")
+		if hit.action.get("type", "") == "destination_route": route_hit_size = hit.rect.size
+	_check(main.overlay == "destinations" and route_hit_size.x >= 54.0 and route_hit_size.y >= 54.0, "the dedicated destination picker exposes a full-size touch-safe travel action")
 	main.queue_free()
 
 	print("PROGRESSION + INVENTORY %d · FAILURES %d" % [checks, failures.size()])

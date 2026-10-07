@@ -12,8 +12,8 @@ This bundle accompanies **Codex Prompt 1** supplied separately by the user.
 2. `Project_Arcanist_UI_Reference.png`
    - Visual design reference and acceptance target.
    - Preserve its overall design language rather than reproducing the static screenshot literally at every size.
-   - The production battle HUD uses a compact lower dock for World Map, Character / Abilities, Inventory / Equipment, and Spellbook / Discovery. Expand one section at a time so the battlefield remains dominant; keep the ability web as a dedicated larger subview.
-   - Android landscape uses the same contextual dock with touch-sized controls and safe-area handling.
+   - The Prompt 6B desktop battle HUD keeps exactly three persistent lower sections: World Map, Character / Abilities, and Inventory / Equipment. Spellbooks remain reachable through the Inventory tabs. The post-objective destination picker is the normal travel interface; the persistent map is an overview.
+   - Android landscape keeps a contextual three-section dock with touch-sized controls and safe-area handling. The ability web remains a dedicated larger subview.
 
 ## Priority when resolving ambiguity
 

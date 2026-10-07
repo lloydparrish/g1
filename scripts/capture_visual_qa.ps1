@@ -68,11 +68,18 @@ foreach ($CaptureCase in @(
 	@{ Name = '6a-abilities-pyromancy'; Size = '1920x1080'; Scenario = 'abilities_pyromancy'; Overlay = 'abilities' },
 	@{ Name = '6a-abilities-arcane'; Size = '1920x1080'; Scenario = 'abilities_arcane'; Overlay = 'abilities' },
 	@{ Name = '6a-equipment'; Size = '1920x1080'; Scenario = 'equipment_desktop'; Overlay = 'inventory' },
-	@{ Name = '6a-ability-tooltip'; Size = '1920x1080'; Scenario = 'ability_tooltip'; Overlay = 'abilities' }
+	@{ Name = '6a-ability-tooltip'; Size = '1920x1080'; Scenario = 'ability_tooltip'; Overlay = 'abilities' },
+	@{ Name = 'p6b-world-map'; Size = '1920x1080'; Scenario = 'map_locked'; Overlay = 'map' },
+	@{ Name = 'p6b-character-abilities'; Size = '1920x1080'; Scenario = 'abilities_pyromancy'; Overlay = 'character' },
+	@{ Name = 'p6b-equipment-head'; Size = '1920x1080'; Scenario = 'equipment_head'; Overlay = 'inventory' },
+	@{ Name = 'p6b-equipment-weapon'; Size = '1920x1080'; Scenario = 'equipment_weapon'; Overlay = 'inventory' },
+	@{ Name = 'p6b-targeting-range'; Size = '1920x1080'; Scenario = 'targeting_attack'; Target = 'attack' },
+	@{ Name = 'p6b-destination-picker'; Size = '1920x1080'; Scenario = 'visual'; Overlay = 'destinations' }
 )) {
 	$CaseDirectory = "res://build/visual-qa/$($CaptureCase.Name)"
 	$ExtraArguments = @("--capture=$($CaptureCase.Size)", "--capture-dir=$CaseDirectory", "--capture-scenario=$($CaptureCase.Scenario)")
 	if ($CaptureCase.ContainsKey('Overlay')) { $ExtraArguments += "--capture-overlay=$($CaptureCase.Overlay)" }
+	if ($CaptureCase.ContainsKey('Target')) { $ExtraArguments += "--capture-target=$($CaptureCase.Target)" }
 	if ($CaptureCase.ContainsKey('Book')) { $ExtraArguments += "--capture-book=$($CaptureCase.Book)" }
 	& $Godot --path $ProjectRoot -- @ExtraArguments
 	if ($LASTEXITCODE -ne 0) { throw "Combat/inventory capture failed: $($CaptureCase.Name)." }

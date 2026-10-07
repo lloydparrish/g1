@@ -72,9 +72,9 @@ func run_flow() -> void:
 	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "character", "the character section switches without collapsing desktop panels")
 	await _tap_action(main, "lower_panel", "inventory")
 	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "inventory", "inventory remains independently available in the desktop dock")
-	await _tap_action(main, "lower_panel", "spellbook")
-	_check(not main.ui_state.lower_dock_expanded and main.ui_state.active_lower_panel == "spellbook", "spellbook discovery remains independently available in the desktop dock")
-	await _tap_action(main, "lower_panel", "spellbook")
+	_check(not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "lower_panel" and hit.action.get("id", "") == "spellbook"), "spellbook discovery is not a persistent desktop panel")
+	await _tap_action(main, "lower_inventory_tab", "Spellbooks")
+	_check(main.ui_state.inventory_tab == "Spellbooks", "spellbooks remain accessible through the Inventory tabs")
 	_check(not main.ui_state.lower_dock_expanded and main.sim.state_digest() == dock_digest, "switching desktop panels never advances the simulation")
 	await _tap_action(main, "lower_panel", "character")
 	await _tap_action(main, "lower_character_tab", "Known")
@@ -99,10 +99,12 @@ func run_flow() -> void:
 	await _tap_action(main, "equip")
 	_check(main.sim.run.equipment.get("Body", "") == "scale_armor", "the lower inventory equips the claimed armor")
 	await _tap_action(main, "lower_panel", "inventory")
-	_check(not main.ui_state.lower_dock_expanded and main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "route"), "connected destinations remain available in the persistent desktop map")
+	_check(not main.ui_state.lower_dock_expanded and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss"]), "the persistent desktop map has no direct travel actions")
 	var next_route: String = String(main.sim.run.route_choices[0])
-	await _tap_action(main, "route", next_route)
-	_check(main.sim.run.stage_index == 1 and main.sim.run.stage_id == next_route and not main.sim.get_visible_entities().is_empty(), "production route selection creates the later encounter")
+	await _tap_action(main, "next_stage")
+	_check(main.overlay == "destinations", "the completed encounter opens the dedicated destination picker")
+	await _tap_action(main, "destination_route", next_route)
+	_check(main.sim.run.stage_index == 1 and main.sim.run.stage_id == next_route and not main.sim.get_visible_entities().is_empty(), "the dedicated route selection creates the later encounter")
 
 	main.sim.run.stage_index = 4
 	main.sim.run.stage_completed = true
@@ -110,13 +112,15 @@ func run_flow() -> void:
 	main.queue_redraw()
 	await process_frame
 	await process_frame
-	_check(main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "boss"), "the completed final encounter exposes its boss destination on the persistent map")
-	await _tap_action(main, "boss")
+	_check(not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss"]), "the persistent map does not expose the final boss travel action")
+	await _tap_action(main, "next_stage")
+	_check(main.overlay == "destinations", "the final encounter opens the dedicated boss destination picker")
+	await _tap_action(main, "destination_route", "grave_tyrant")
 	var tyrant_id := ""
 	for entity_id in main.sim.run.entities:
 		if main.sim.run.entities[entity_id].get("kind") == "boss":
 			tyrant_id = String(entity_id)
-	_check(main.sim.run.stage_id == "graveyard" and tyrant_id != "", "production route control enters the 2x2 Grave Tyrant encounter")
+	_check(main.sim.run.stage_id == "graveyard" and tyrant_id != "", "dedicated destination control enters the 2x2 Grave Tyrant encounter")
 	if tyrant_id != "":
 		main.sim._set_grid(Vector2i(14, 7), "floor")
 		main.sim._set_grid(Vector2i(15, 7), "floor")

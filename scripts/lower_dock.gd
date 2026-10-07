@@ -3,10 +3,10 @@ extends RefCounted
 var host
 
 const SLOT_NAMES := ["Head", "Body", "Hands", "Feet", "Weapon", "Offhand", "Ring 1", "Ring 2", "Amulet"]
-const SECTION_NAMES := ["World Map", "Character / Abilities", "Inventory / Equipment", "Spellbook / Discovery"]
-const SECTION_IDS := ["world_map", "character", "inventory", "spellbook"]
-const SECTION_GLYPHS := ["⌖", "✦", "▦", "▤"]
-const SECTION_COLORS := ["green", "cyan", "gold", "purple"]
+const SECTION_NAMES := ["World Map", "Character / Abilities", "Inventory / Equipment"]
+const SECTION_IDS := ["world_map", "character", "inventory"]
+const SECTION_GLYPHS := ["⌖", "✦", "▦"]
+const SECTION_COLORS := ["green", "cyan", "gold"]
 
 func draw() -> void:
 	if host._is_mobile_layout():
@@ -18,7 +18,7 @@ func _draw_mobile() -> void:
 	var layout: Dictionary = host._battle_layout()
 	var screen_width: float = host.screen_size.x
 	var column_gap := 6.0
-	var column_width := (screen_width - 36.0 - column_gap * 3.0) / 4.0
+	var column_width := (screen_width - 36.0 - column_gap * float(SECTION_IDS.size() - 1)) / float(SECTION_IDS.size())
 	var dock_top: float = layout.dock_top
 	var bottom: float = layout.dock_bottom
 	var header_height: float = layout.dock_header_height
@@ -52,14 +52,13 @@ func _draw_mobile() -> void:
 		"world_map": _draw_world_map_desktop(body)
 		"character": _draw_character(body)
 		"inventory": _draw_inventory(body)
-		"spellbook": _draw_spellbook(body)
 	host.active_hit_clip_rect = Rect2()
 
 func _draw_desktop() -> void:
 	var layout: Dictionary = host._battle_layout()
 	var screen_width: float = host.screen_size.x
 	var column_gap := 6.0
-	var column_width := (screen_width - 36.0 - column_gap * 3.0) / 4.0
+	var column_width := (screen_width - 36.0 - column_gap * float(SECTION_IDS.size() - 1)) / float(SECTION_IDS.size())
 	var dock_top: float = layout.dock_top
 	var panel_height: float = layout.dock_bottom - dock_top
 	var header_height := float(layout.dock_header_height)
@@ -80,34 +79,35 @@ func _draw_desktop() -> void:
 			"world_map": _draw_world_map_desktop(body)
 			"character": _draw_character_desktop(body)
 			"inventory": _draw_inventory_desktop(body)
-			"spellbook": _draw_spellbook(body)
 		host.active_hit_clip_rect = Rect2()
 
 func _draw_world_map_desktop(rect: Rect2) -> void:
 	var sim = host.sim
-	var history: Array = sim.run.get("route", [])
+	var history: Array = sim.run.get("route", []).duplicate()
 	var current_id := String(sim.run.get("stage_id", ""))
-	var history_count := history.size()
 	var mobile: bool = host._is_mobile_layout()
-	var left := rect.position.x + 38.0
-	var right := rect.end.x - 10.0
-	var route_y := rect.position.y + (18.0 if mobile else 32.0)
-	var step := minf(56.0, (right - left) / maxf(1.0, float(history_count - 1)))
-	for i in range(history_count):
+	if history.is_empty() or String(history.back()) != current_id:
+		history.append(current_id)
+	var route_y := rect.position.y + (23.0 if mobile else 38.0)
+	var history_left := rect.position.x + 17.0
+	var history_right := rect.end.x - 16.0
+	var history_step := minf(60.0, (history_right - history_left) / maxf(1.0, float(history.size() - 1)))
+	for i in range(history.size()):
 		var stage_id := String(history[i])
-		var point := Vector2(left + float(i) * step, route_y)
+		var point := Vector2(history_left + float(i) * history_step, route_y)
 		if i > 0:
-			var previous := Vector2(left + float(i - 1) * step, route_y)
+			var previous := Vector2(history_left + float(i - 1) * history_step, route_y)
 			host.draw_line(previous + Vector2(5.0, 0.0), point - Vector2(5.0, 0.0), host.COLORS.line, 1.5)
-		var is_current := stage_id == current_id and i == history_count - 1
+		var is_current := stage_id == current_id and i == history.size() - 1
 		var color: Color = host.COLORS.gold if is_current else host.COLORS.cyan
 		host.draw_circle(point, 5.0 if is_current else 3.5, color)
 		host.draw_arc(point, 8.0, 0.0, TAU, 18, color, 1.1)
 		var stage_name := String(sim.content.stages.get(stage_id, {}).get("name", stage_id))
-		host._draw_label(host._fit_text(stage_name, 58.0, 6), point.x, route_y + (20.0 if mobile else 22.0), 6, host.COLORS.text if is_current else host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+		if not is_current:
+			host._draw_label(host._fit_text(stage_name, 64.0, 6), point.x, route_y + (18.0 if mobile else 20.0), 6, host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 	var current: Dictionary = sim.content.stages.get(current_id, {})
-	host._draw_label(host._fit_text(String(current.get("subtitle", "Current encounter")), rect.size.x - 8.0, 7), rect.position.x + 2.0, rect.position.y + (49.0 if mobile else 62.0), 7, host.COLORS.muted)
-	var choice_y := rect.position.y + (56.0 if mobile else 82.0)
+	host._draw_label(host._fit_text("CURRENT  ·  " + String(current.get("name", current_id)), rect.size.x - 8.0, 7), rect.position.x + 2.0, rect.position.y + 12.0, 7, host.COLORS.gold)
+	var choice_y := rect.position.y + (60.0 if mobile else 88.0)
 	var choices: Array = sim.run.get("route_choices", [])
 	var boss_ready := int(sim.run.get("stage_index", 0)) >= ArcanistSim.STAGE_ORDER.size() - 1 and bool(sim.run.get("stage_completed", false))
 	var selectable: Array[String] = []
@@ -117,7 +117,7 @@ func _draw_world_map_desktop(rect: Rect2) -> void:
 		for choice in choices:
 			selectable.append(String(choice))
 	if selectable.is_empty():
-		var hint := "Complete this encounter to reveal connected routes." if not sim.run.get("stage_completed", false) else "No connected route is currently available."
+		var hint := "No connected destination is known." if not sim.run.get("stage_completed", false) else "No connected route is currently available."
 		host._draw_label(host._fit_text(hint, rect.size.x - 8.0, 7), rect.position.x + 2.0, choice_y + 12.0, 7, host.COLORS.muted)
 		return
 	var selected_id := String(host.ui_state.selected_map_node_id)
@@ -130,6 +130,9 @@ func _draw_world_map_desktop(rect: Rect2) -> void:
 		var stage_id := selectable[i]
 		var stage: Dictionary = sim.content.enemies.get(stage_id, {}) if stage_id == "grave_tyrant" else sim.content.stages.get(stage_id, {})
 		var node_rect := Rect2(rect.position.x + 2.0 + float(i) * (node_width + node_gap), choice_y, node_width, 44.0)
+		var current_node := Vector2(history_left + float(history.size() - 1) * history_step, route_y)
+		var next_node := Vector2(node_rect.get_center().x, node_rect.position.y)
+		host.draw_line(current_node, next_node, host.COLORS.line_soft, 1.0)
 		var active := selected_id == stage_id
 		host._draw_panel(node_rect, "", host.COLORS.gold if active else host.COLORS.line_soft)
 		var title := String(stage.get("name", "Grave Tyrant" if stage_id == "grave_tyrant" else stage_id))
@@ -142,12 +145,8 @@ func _draw_world_map_desktop(rect: Rect2) -> void:
 	var selected_stage: Dictionary = sim.content.enemies.get(selected_id, {}) if selected_id == "grave_tyrant" else sim.content.stages.get(selected_id, {})
 	var description := String(selected_stage.get("subtitle", selected_stage.get("description", "A connected destination")))
 	host._draw_label(host._fit_text(description, rect.size.x - 94.0, 7), rect.position.x + 2.0, detail_y + 10.0, 7, host.COLORS.muted)
-	if bool(sim.run.get("stage_completed", false)):
-		var travel_action := {"type": "boss"} if selected_id == "grave_tyrant" else {"type": "route", "id": selected_id}
-		var travel_rect := Rect2(rect.end.x - 82.0, detail_y if mobile else detail_y - 3.0, 82.0, 54.0 if mobile else 32.0)
-		host._draw_button(travel_rect, "TRAVEL", travel_action, true, 7, host.COLORS.green)
-	else:
-		host._draw_label(host._fit_text("LOCKED  ·  COMPLETE ENCOUNTER TO TRAVEL", rect.size.x - 8.0, 6), rect.position.x + 2.0, detail_y + 17.0, 6, host.COLORS.gold)
+	var status := "DESTINATION READY AFTER OBJECTIVE" if bool(sim.run.get("stage_completed", false)) else "CONNECTED  ·  COMPLETE OBJECTIVE TO CONTINUE"
+	host._draw_label(host._fit_text(status, rect.size.x - 8.0, 6), rect.position.x + 2.0, detail_y + 17.0, 6, host.COLORS.gold if sim.run.get("stage_completed", false) else host.COLORS.muted)
 
 func _draw_character_desktop(rect: Rect2) -> void:
 	var sim = host.sim
@@ -169,11 +168,15 @@ func _draw_character_desktop(rect: Rect2) -> void:
 		host._draw_label("WEAPON  ·  %s" % String(sim.content.items.get(sim.run.equipment.get("Weapon", ""), {}).get("name", "Unarmed")), rect.position.x + 2.0, content_top + 112.0, 7, host.COLORS.muted)
 		host._draw_button(Rect2(rect.end.x - 92.0, rect.end.y - 31.0, 90.0, 27.0), "ABILITY WEB", {"type": "overlay", "id": "ability_web"}, false, 6, host.COLORS.cyan)
 		return
+	var visible_categories: Array = sim.get_visible_ability_categories()
 	var categories: Dictionary = sim.content.get("ability_categories", {})
-	var category_ids: Array = categories.keys()
-	category_ids.sort_custom(func(a: String, b: String) -> bool: return int(categories[a].get("order", 99)) < int(categories[b].get("order", 99)))
+	var category_ids: Array = []
+	for category in visible_categories:
+		category_ids.append(String(category.id))
 	if host.ui_state.character_tab == "Passives":
 		category_ids = []
+	if not category_ids.has(String(host.ui_state.selected_ability_category)):
+		host.ui_state.selected_ability_category = String(category_ids[0]) if not category_ids.is_empty() else ""
 	var categories_per_page := 10
 	var category_pages := maxi(1, int(ceil(float(category_ids.size()) / float(categories_per_page))))
 	host.ui_state.ability_category_page = clampi(int(host.ui_state.ability_category_page), 0, category_pages - 1)
@@ -275,45 +278,75 @@ func _draw_equipment_desktop(rect: Rect2) -> void:
 		host._draw_label(host._item_glyph(item_id, item) if occupied else "·", slot_rect.end.x - 7.0, slot_rect.position.y + 12.0, 9, host.COLORS.gold if occupied else host.COLORS.muted, HORIZONTAL_ALIGNMENT_RIGHT)
 		host.active_hits.append({"rect": slot_rect, "action": {"type": "select_equipment_slot", "slot": slot}})
 	var inventory: Array = sim.run.get("inventory", [])
-	var grid_top := rect.position.y + 1.0
+	var selected_slot := String(host.ui_state.selected_equipment_slot)
+	var candidates: Array[int] = []
+	for index in range(inventory.size()):
+		if sim.can_equip_item(index, selected_slot):
+			candidates.append(index)
+	var grid_top := rect.position.y + 24.0
 	var cell_w := grid_width / 5.0
-	for i in range(mini(30, inventory.size())):
-		var item_id := String(inventory[i])
+	host._draw_label(host._fit_text("%s GEAR  ·  %d" % [selected_slot.to_upper() if not selected_slot.is_empty() else "ALL", candidates.size()], grid_width - 64.0, 6), grid_x + 2.0, rect.position.y + 12.0, 6, host.COLORS.gold)
+	host._draw_button(Rect2(rect.end.x - 55.0, rect.position.y + 1.0, 53.0, 20.0), "ALL", {"type": "select_equipment_slot", "slot": ""}, selected_slot == "", 6, host.COLORS.gold)
+	for i in range(mini(30, candidates.size())):
+		var inventory_index := candidates[i]
+		var item_id := String(inventory[inventory_index])
 		var item: Dictionary = sim.content.items.get(item_id, {})
 		var row := int(i / 5)
 		var column := i % 5
 		var item_rect := Rect2(grid_x + float(column) * cell_w, grid_top + float(row) * 22.0, cell_w - 2.0, 20.0)
-		var selected := int(host.ui_state.selected_inventory_index) == i
+		var selected := int(host.ui_state.selected_inventory_index) == inventory_index
 		host._draw_panel(item_rect, "", host.COLORS.gold if selected else host._item_color("equipment", String(item.get("rarity", "Common"))))
 		host._draw_label(host._item_glyph(item_id, item), item_rect.get_center().x, item_rect.position.y + 15.0, 11, host._item_color("equipment", String(item.get("rarity", "Common"))), HORIZONTAL_ALIGNMENT_CENTER)
-		host.active_hits.append({"rect": item_rect, "action": {"type": "select_item", "index": i}})
-	var selected_slot := String(host.ui_state.selected_equipment_slot)
+		host.active_hits.append({"rect": item_rect, "action": {"type": "select_item", "index": inventory_index}})
+	if candidates.is_empty():
+		host._draw_label("No compatible gear for this slot.", grid_x + 2.0, grid_top + 25.0, 7, host.COLORS.muted)
 	var equipped_id := String(sim.run.equipment.get(selected_slot, ""))
 	var equipped: Dictionary = sim.content.items.get(equipped_id, {})
-	var action_y := rect.end.y - 24.0
+	var action_y := rect.end.y - 27.0
 	var selected_index := int(host.ui_state.selected_inventory_index)
 	var selected_item: Dictionary = {}
 	var selected_id := ""
 	if selected_index >= 0 and selected_index < inventory.size():
 		selected_id = String(inventory[selected_index])
 		selected_item = sim.content.items.get(selected_id, {})
-	var summary := "%s  ·  %s" % [selected_slot, String(equipped.get("name", "Empty"))] if not selected_slot.is_empty() else "Select a slot or item."
+		if not sim.can_equip_item(selected_index, selected_slot):
+			selected_index = -1
+			selected_id = ""
+			selected_item = {}
+	var summary := "%s  ·  %s" % [selected_slot, String(equipped.get("name", "Empty"))] if not selected_slot.is_empty() else "%d compatible items" % candidates.size()
 	if not selected_item.is_empty():
 		summary = "%s  →  %s" % [String(selected_item.get("name", selected_id)), String(selected_item.get("slot", selected_item.get("type", "Item")))]
-	var summary_x := grid_x + (74.0 if selected_item.get("type", "") == "equipment" else 0.0)
-	var summary_width := grid_width - (74.0 if selected_item.get("type", "") == "equipment" else 0.0) - (72.0 if not selected_slot.is_empty() and equipped_id not in ["", "occupied"] else 0.0)
-	host._draw_label(host._fit_text(summary, summary_width, 6), summary_x, action_y + 14.0, 6, host.COLORS.muted)
-	if not selected_slot.is_empty() and equipped_id not in ["", "occupied"]:
+	var stats_id := selected_id if not selected_item.is_empty() else equipped_id
+	var stats_line := _equipment_stats_text(sim, stats_id)
+	var show_equip: bool = selected_index >= 0 and selected_item.get("type", "") == "equipment" and String(sim.run.equipment.get(String(selected_item.get("slot", "")), "")) != selected_id
+	var show_unequip: bool = not selected_slot.is_empty() and equipped_id not in ["", "occupied"]
+	var summary_x := grid_x + (76.0 if show_equip else 0.0)
+	var summary_width := grid_width - (76.0 if show_equip else 0.0) - (72.0 if show_unequip else 0.0)
+	host._draw_label(host._fit_text(summary, summary_width, 6), summary_x, rect.end.y - 8.0, 6, host.COLORS.muted)
+	if stats_line != "":
+		host._draw_label(host._fit_text(stats_line, grid_width - 4.0, 6), grid_x + 2.0, rect.end.y - 30.0, 6, host.COLORS.cyan)
+	if show_unequip:
 		host._draw_button(Rect2(rect.end.x - 70.0, action_y, 70.0, 22.0), "UNEQUIP", {"type": "unequip", "slot": selected_slot}, false, 6, host.COLORS.gold)
-	if selected_index >= 0 and selected_index < inventory.size():
-		if selected_item.get("type", "") == "equipment":
-			var slot_name := String(selected_item.get("slot", ""))
-			var slot_now := String(sim.run.equipment.get(slot_name, ""))
-			var compatible := selected_slot.is_empty() or selected_slot == slot_name or (slot_name == "Offhand" and selected_slot == "Weapon" and int(sim.content.weapons.get(selected_item.get("weapon", ""), {}).get("hands", 1)) == 2)
-			if slot_now == selected_id:
-				host._draw_label("EQUIPPED", grid_x, action_y + 14.0, 6, host.COLORS.green)
-			elif compatible:
-				host._draw_button(Rect2(grid_x, action_y, 68.0, 22.0), "EQUIP", {"type": "equip"}, false, 6, host.COLORS.green)
+	if show_equip:
+		host._draw_button(Rect2(grid_x, action_y, 68.0, 22.0), "EQUIP", {"type": "equip"}, false, 6, host.COLORS.green)
+
+func _equipment_stats_text(sim, item_id: String) -> String:
+	var stats: Dictionary = sim.get_equipment_item_stats(item_id)
+	if stats.is_empty():
+		return ""
+	var parts: Array[String] = []
+	if stats.has("damage"):
+		parts.append("DMG %d %s" % [int(stats.damage), String(stats.damage_type)])
+		parts.append("TIME %d" % int(stats.time))
+		parts.append("RANGE %d" % int(stats.range))
+		parts.append("STA %d" % int(stats.stamina))
+	if int(stats.get("armor", 0)) > 0:
+		parts.append("ARMOR %d" % int(stats.armor))
+	for resistance in stats.get("resist", {}):
+		parts.append("%s %d%% RESIST" % [String(resistance).to_upper(), int(stats.resist[resistance] * 100.0)])
+	for modifier in stats.get("modifiers", {}):
+		parts.append("%s %+d" % [String(modifier).replace("_", " ").to_upper(), int(stats.modifiers[modifier])])
+	return "  ·  ".join(parts) if not parts.is_empty() else String(stats.get("description", "Equipment effect"))
 
 func _section_summary(section_id: String) -> String:
 	var sim = host.sim
@@ -407,7 +440,7 @@ func _draw_character(rect: Rect2) -> void:
 		host._draw_button(Rect2(x + 27.0, rect.end.y - 51.0, 54.0, 32.0), "‹", {"type": "lower_ability_page", "delta": -1}, true, 12)
 		host._draw_label("%d / %d" % [int(host.ui_state.ability_page) + 1, page_count], x + 52.0, rect.end.y - 5.0, 7, host.COLORS.muted)
 		host._draw_button(Rect2(x + 91.0, rect.end.y - 51.0, 54.0, 32.0), "›", {"type": "lower_ability_page", "delta": 1}, true, 12)
-	# Ability Web remains available from the Character tab, away from the four management tabs.
+	# Ability Web remains available from the Character tab beside the three persistent sections.
 
 func _draw_inventory(rect: Rect2) -> void:
 	var sim = host.sim
@@ -450,20 +483,27 @@ func _draw_equipment_mobile(rect: Rect2) -> void:
 	var cell_width := grid_width / float(columns)
 	var grid_top := rect.position.y + 4.0
 	var inventory: Array = sim.run.get("inventory", [])
-	host._draw_label("CARRIED ITEMS  ·  %d / 30" % inventory.size(), grid_x, rect.position.y + 10.0, 8, host.COLORS.gold)
-	for i in range(inventory.size()):
-		var item_id := String(inventory[i])
+	var selected_slot := String(host.ui_state.selected_equipment_slot)
+	var candidates: Array[int] = []
+	for index in range(inventory.size()):
+		if sim.can_equip_item(index, selected_slot): candidates.append(index)
+	host._draw_label("GEAR  ·  %d MATCHES" % candidates.size(), grid_x, rect.position.y + 10.0, 8, host.COLORS.gold)
+	host._draw_button(Rect2(grid_x + grid_width - 61.0, rect.position.y - 1.0, 60.0, 22.0), "ALL GEAR", {"type": "select_equipment_slot", "slot": ""}, selected_slot == "", 6, host.COLORS.gold)
+	for i in range(candidates.size()):
+		var inventory_index := candidates[i]
+		var item_id := String(inventory[inventory_index])
 		var item: Dictionary = sim.content.items.get(item_id, {})
 		var row := int(i / columns)
 		var column := i % columns
 		var item_rect := Rect2(grid_x + float(column) * cell_width + 1.0, grid_top + 18.0 + float(row) * 32.0, cell_width - 3.0, 28.0)
-		var selected := int(host.ui_state.selected_inventory_index) == i
+		var selected := int(host.ui_state.selected_inventory_index) == inventory_index
 		host._draw_panel(item_rect, "", host.COLORS.gold if selected else host._item_color(String(item.get("type", "item")), String(item.get("rarity", "Common"))))
 		host._draw_label(host._item_glyph(item_id, item), item_rect.get_center().x, item_rect.position.y + 20.0, 16, host._item_color(String(item.get("type", "item")), String(item.get("rarity", "Common"))), HORIZONTAL_ALIGNMENT_CENTER)
 		var quantity: int = inventory.count(item_id)
 		if quantity > 1: host._draw_label("×%d" % quantity, item_rect.end.x - 3.0, item_rect.position.y + 9.0, 7, host.COLORS.text, HORIZONTAL_ALIGNMENT_RIGHT)
-		host.active_hits.append({"rect": item_rect, "action": {"type": "select_item", "index": i}})
-	var selected_slot := String(host.ui_state.selected_equipment_slot)
+		host.active_hits.append({"rect": item_rect, "action": {"type": "select_item", "index": inventory_index}})
+	if candidates.is_empty():
+		host._draw_label("No compatible gear.", grid_x, grid_top + 32.0, 8, host.COLORS.muted)
 	var equipped_id := String(sim.run.equipment.get(selected_slot, ""))
 	var selected_index := int(host.ui_state.selected_inventory_index)
 	var selected_id := String(inventory[selected_index]) if selected_index >= 0 and selected_index < inventory.size() else ""
@@ -472,13 +512,23 @@ func _draw_equipment_mobile(rect: Rect2) -> void:
 	if not selected_item.is_empty():
 		host._draw_label(host._fit_text(String(selected_item.get("name", selected_id)), detail_width - 6.0, 8), detail_x, rect.position.y + 31.0, 8, host.COLORS.text)
 		host._draw_label("Slot  ·  %s" % String(selected_item.get("slot", selected_item.get("type", "Item"))), detail_x, rect.position.y + 48.0, 7, host.COLORS.muted)
+		var stat_text := _equipment_stats_text(sim, selected_id)
+		var stats_y := rect.position.y + 65.0
+		for line in host._wrap(stat_text, maxi(12, int(detail_width / 5.0))).slice(0, 4):
+			host._draw_label(host._fit_text(String(line), detail_width - 5.0, 7), detail_x, stats_y, 7, host.COLORS.cyan)
+			stats_y += 14.0
 	else:
 		var equipped: Dictionary = sim.content.items.get(equipped_id, {})
 		host._draw_label(host._fit_text("%s  ·  %s" % [selected_slot if selected_slot != "" else "No slot selected", String(equipped.get("name", "Empty"))], detail_width - 6.0, 7), detail_x, rect.position.y + 31.0, 7, host.COLORS.text)
+		var equipped_stats := _equipment_stats_text(sim, equipped_id)
+		var equipped_stats_y := rect.position.y + 48.0
+		for line in host._wrap(equipped_stats, maxi(12, int(detail_width / 5.0))).slice(0, 4):
+			host._draw_label(host._fit_text(String(line), detail_width - 5.0, 7), detail_x, equipped_stats_y, 7, host.COLORS.cyan)
+			equipped_stats_y += 14.0
 	var action_rect := Rect2(detail_x, rect.end.y - 48.0, detail_width, 35.0)
 	if selected_item.get("type", "") == "equipment":
 		var item_slot := String(selected_item.get("slot", ""))
-		var compatible := selected_slot == "" or selected_slot == item_slot or (item_slot == "Offhand" and selected_slot == "Weapon" and int(sim.content.weapons.get(selected_item.get("weapon", ""), {}).get("hands", 1)) == 2)
+		var compatible: bool = sim.can_equip_item(selected_index, selected_slot)
 		if String(sim.run.equipment.get(item_slot, "")) == selected_id:
 			host._draw_label("ALREADY EQUIPPED", detail_x, action_rect.position.y + 16.0, 7, host.COLORS.green)
 		elif compatible:
@@ -654,7 +704,7 @@ func _draw_selected_book(rect: Rect2, book_id: String, inventory_mode: bool) -> 
 	var mode := String(learning.get("mode", "all"))
 	var state := "LEARNED  ·  RECORDED" if resolved else "CHOOSE %d" % int(learning.get("choice_count", 0)) if mode == "choose" else "STUDY  ·  TEACHES ALL" if book_index >= 0 else "DISCOVERED  ·  NOT CARRIED"
 	host._draw_label(state, details_x, rect.position.y + 52.0, 6, host.COLORS.green if resolved else host.COLORS.gold)
-	var names: Array = learning.get("abilities", book.get("learns", []))
+	var names: Array = learning.get("abilities", book.get("learns", [])) if mode != "school_only" else []
 	var content_y := rect.position.y + 67.0
 	var option_entries: Array = options.get("options", []) if book_index >= 0 else []
 	if mode == "choose" and not option_entries.is_empty():

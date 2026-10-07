@@ -40,10 +40,12 @@ func run_suite() -> void:
 	_check(mobile.sim._pos(mobile.sim.get_player()) == destination, "a direct screen touch moves through the normal tile action")
 	_check(JSON.stringify(mobile.sim.run) == JSON.stringify(desktop.sim.run), "equivalent mouse and touch movement produce identical deterministic run state")
 	var dock_digest: String = mobile.sim.state_digest()
-	for section_id in ["world_map", "character", "inventory", "spellbook"]:
+	for section_id in ["world_map", "character", "inventory"]:
 		await _touch_action(mobile, "lower_panel", section_id)
 		_check(mobile.ui_state.lower_dock_expanded and mobile.ui_state.active_lower_panel == section_id, "touch expands lower section: %s" % section_id)
-	await _touch_action(mobile, "lower_panel", "spellbook")
+	await _touch_action(mobile, "lower_inventory_tab", "Spellbooks")
+	_check(mobile.ui_state.inventory_tab == "Spellbooks", "mobile keeps spellbooks reachable from the Inventory tabs")
+	await _touch_action(mobile, "lower_panel", "inventory")
 	_check(not mobile.ui_state.lower_dock_expanded and mobile.sim.state_digest() == dock_digest, "switching and collapsing lower sections never advances the simulation")
 	var feed_digest: String = mobile.sim.state_digest()
 	await _touch_action(mobile, "open_combat_history")

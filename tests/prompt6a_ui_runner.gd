@@ -31,12 +31,19 @@ func run_suite() -> void:
 		if action.get("type", "") == "lower_inventory_tab": inventory_tabs.append(String(action.get("id", "")))
 		if action.get("type", "") == "select_item": visible_inventory_slots += 1
 		if action.get("type", "") == "dpad": desktop_dpad = true
-	_check(desktop_sections == 4 and visible_inventory_slots == desktop.sim.run.inventory.size(), "desktop keeps all four panels and the inventory grid available together")
+	_check(desktop_sections == 3 and visible_inventory_slots == desktop.sim.run.inventory.size(), "desktop keeps exactly three persistent panels and the inventory grid available together")
 	_check(inventory_tabs == ["Inventory", "Equipment", "Artifacts", "Spellbooks"], "inventory sub-tabs use the requested order")
 	_check(not desktop_dpad, "desktop omits the touch movement D-pad")
 	var all_abilities: int = desktop.sim.content.abilities.size()
 	_check(all_abilities == 32 and desktop.sim.validate_content().is_empty() and desktop.sim.content.abilities.values().all(func(ability: Dictionary) -> bool: return not ability.get("categories", []).is_empty()), "every authored ability has validated category metadata")
 	_check(desktop.sim.content.ability_categories.has("pyromancy") and desktop.sim.content.ability_categories.has("mobility") and desktop.sim.content.ability_categories.has("nature"), "category registry includes core and authored-school groups")
+	var jim_category_ids: Array[String] = []
+	for category in desktop.sim.get_visible_ability_categories(): jim_category_ids.append(String(category.id))
+	_check(not jim_category_ids.has("arcane") and not jim_category_ids.has("pyromancy"), "the category list hides schools Jim has not entered")
+	desktop.sim.run.schools.append("Arcane")
+	desktop.queue_redraw()
+	await process_frame
+	_check(desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "select_ability_category" and hit.action.get("id", "") == "arcane"), "discovering a school adds its category from run state")
 	desktop._handle_action({"type": "select_ability_category", "id": "arcane"})
 	desktop.queue_redraw()
 	await process_frame
@@ -54,6 +61,17 @@ func run_suite() -> void:
 	var initial_equipped := String(desktop.sim.run.equipment.get("Body", ""))
 	desktop.sim.run.inventory.append("scale_armor")
 	desktop._handle_action({"type": "lower_inventory_tab", "id": "Equipment"})
+	desktop._handle_action({"type": "select_equipment_slot", "slot": "Head"})
+	desktop.queue_redraw()
+	await process_frame
+	_check(desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "select_equipment_slot" and hit.action.get("slot", "") == "Head") and not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "select_item"), "Head selection filters out every incompatible carried item and retains the slot controls")
+	desktop._handle_action({"type": "select_equipment_slot", "slot": "Body"})
+	desktop.queue_redraw()
+	await process_frame
+	var body_items: Array[int] = []
+	for hit in desktop.active_hits:
+		if hit.action.get("type", "") == "select_item": body_items.append(int(hit.action.index))
+	_check(not body_items.is_empty() and body_items.all(func(index: int) -> bool: return desktop.sim.can_equip_item(index, "Body")), "Body selection exposes only actual body-slot gear")
 	desktop._handle_action({"type": "select_equipment_slot", "slot": "Body"})
 	desktop._handle_action({"type": "select_item", "index": desktop.sim.run.inventory.size() - 1})
 	_check(String(desktop.sim.run.equipment.get("Body", "")) == initial_equipped, "selecting gear and equipment slots does not equip or unequip it")
@@ -62,6 +80,19 @@ func run_suite() -> void:
 	_check(desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "equip"), "selected gear exposes a separate explicit Equip action")
 	desktop._handle_action({"type": "equip"})
 	_check(String(desktop.sim.run.equipment.get("Body", "")) == "scale_armor", "the explicit Equip action uses the existing simulation rule")
+	var armor_item_stats: Dictionary = desktop.sim.get_equipment_item_stats("scale_armor")
+	_check(int(armor_item_stats.get("armor", 0)) == int(desktop.sim.content.items.scale_armor.armor), "equipment inspection reads the item's authored armor value")
+	desktop.sim.run.inventory.append("dagger")
+	desktop.sim.run.inventory.append("greatsword")
+	desktop._handle_action({"type": "select_equipment_slot", "slot": "Weapon"})
+	desktop.queue_redraw()
+	await process_frame
+	var weapon_items: Array[int] = []
+	for hit in desktop.active_hits:
+		if hit.action.get("type", "") == "select_item": weapon_items.append(int(hit.action.index))
+	_check(weapon_items.size() == 2 and weapon_items.all(func(index: int) -> bool: return desktop.sim.can_equip_item(index, "Weapon")), "Weapon selection filters the equipment grid to compatible weapons")
+	var dagger_stats: Dictionary = desktop.sim.get_equipment_item_stats("dagger")
+	_check(int(dagger_stats.get("damage", 0)) == int(desktop.sim.content.weapons.dagger.damage) and String(dagger_stats.get("damage_type", "")) == String(desktop.sim.content.weapons.dagger.type) and desktop._tooltip_lines_for_action({"type": "select_item", "index": desktop.sim.run.inventory.find("dagger")}).any(func(line: String) -> bool: return line.contains("Damage")), "weapon detail and tooltip expose authored combat stats")
 	desktop._handle_action({"type": "select_equipment_slot", "slot": "Body"})
 	_check(String(desktop.sim.run.equipment.get("Body", "")) == "scale_armor", "selecting an occupied equipment slot only inspects it")
 	desktop._handle_action({"type": "unequip", "slot": "Body"})
@@ -71,20 +102,58 @@ func run_suite() -> void:
 	desktop.sim.run.stage_completed = false
 	desktop.queue_redraw()
 	await process_frame
-	_check(not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") == "route"), "uncompleted encounters cannot travel through hidden route choices")
+	_check(not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route"]), "the persistent World Map never exposes travel controls")
 	desktop.sim.run.stage_completed = true
 	desktop.queue_redraw()
 	await process_frame
 	var displayed_routes: Array[String] = []
 	for hit in desktop.active_hits:
 		if hit.action.get("type", "") == "select_map_node": displayed_routes.append(String(hit.action.get("id", "")))
-	_check(not actual_choices.is_empty() and displayed_routes.size() == actual_choices.size(), "the map displays only this run's connected destinations")
+	_check(not actual_choices.is_empty() and displayed_routes.size() == actual_choices.size(), "the map overview displays only this run's connected destinations")
 	var stage_before_select := String(desktop.sim.run.stage_id)
 	var route_id := String(actual_choices[0])
 	desktop._handle_action({"type": "select_map_node", "id": route_id})
-	_check(String(desktop.sim.run.stage_id) == stage_before_select, "choosing a map node does not travel until the explicit control is used")
-	desktop._handle_action({"type": "route", "id": route_id})
-	_check(String(desktop.sim.run.stage_id) == route_id, "explicit map travel advances through the authoritative route API")
+	_check(String(desktop.sim.run.stage_id) == stage_before_select, "map node inspection never advances the run")
+	desktop._handle_action({"type": "next_stage"})
+	desktop.queue_redraw()
+	await process_frame
+	var picker_routes: Array[String] = []
+	for hit in desktop.active_hits:
+		if hit.action.get("type", "") == "destination_route": picker_routes.append(String(hit.action.get("id", "")))
+	_check(desktop.overlay == "destinations" and picker_routes.size() == actual_choices.size(), "encounter completion opens a dedicated picker populated from the authoritative route state")
+	desktop._handle_action({"type": "destination_route", "id": route_id})
+	_check(String(desktop.sim.run.stage_id) == route_id, "destination choice advances only through the authoritative run route API")
+
+	var targeting = MainScene.instantiate()
+	targeting.playback_mode = "Instant"
+	root.add_child(targeting)
+	await process_frame
+	targeting.sim.start_run(60261007, "sylvi")
+	targeting.page = "battle"
+	var target_player: Dictionary = targeting.sim.get_player()
+	var target_origin: Vector2i = targeting.sim._pos(target_player)
+	for y in range(targeting.sim.HEIGHT):
+		for x in range(targeting.sim.WIDTH):
+			targeting.sim._set_grid(Vector2i(x, y), "floor")
+	targeting.sim.run.equipment.Weapon = "bow"
+	var visible_target_id: String = targeting.sim._spawn_enemy("goblin", target_origin + Vector2i(4, 0), false)
+	var hidden_target_id: String = targeting.sim._spawn_enemy("goblin", Vector2i(24, 15), false)
+	targeting.sim._update_vision()
+	targeting._handle_action({"type": "target_mode", "mode": "attack"})
+	targeting.queue_redraw()
+	await process_frame
+	var target_preview: Dictionary = targeting.sim.get_targeting_preview("attack")
+	var valid_target_cell: Vector2i = targeting.sim._pos(targeting.sim.run.entities[visible_target_id])
+	var hidden_target_cell: Vector2i = targeting.sim._pos(targeting.sim.run.entities[hidden_target_id])
+	_check(target_preview.get("available", false) and target_preview.valid_cells.has(valid_target_cell) and targeting.sim.is_valid_target_cell("attack", valid_target_cell), "weapon range overlay and legal attack validation share the simulation targeting query")
+	_check(not target_preview.range_cells.has(hidden_target_cell) and not target_preview.valid_cells.has(hidden_target_cell), "targeting preview does not expose a hidden enemy")
+	_check(targeting._cell_is_legal_target(valid_target_cell) and not targeting._cell_is_legal_target(hidden_target_cell), "battlefield target cells match authoritative legality under fog")
+	targeting._handle_action({"type": "cancel_target"})
+	_check(targeting.target_mode == "", "cancelling targeting clears the battlefield range overlay")
+	targeting._handle_action({"type": "target_mode", "mode": "attack"})
+	var resolved_attack: Dictionary = targeting.sim.act({"type": "attack", "target": [valid_target_cell.x, valid_target_cell.y]})
+	targeting._commit_action(resolved_attack)
+	_check(resolved_attack.get("ok", false) and targeting.target_mode == "", "a resolved attack clears its range overlay")
 
 	var visible_enemy: Dictionary = {}
 	for entity in desktop.sim.get_visible_entities():
@@ -113,7 +182,7 @@ func run_suite() -> void:
 	var compact_headers := 0
 	for hit in mobile.active_hits:
 		if hit.action.get("type", "") == "lower_panel": compact_headers += 1
-	_check(mobile._is_mobile_layout() and compact_headers == 4 and not mobile.ui_state.lower_dock_expanded, "mobile keeps four contextual section headers collapsed by default")
+	_check(mobile._is_mobile_layout() and compact_headers == 3 and not mobile.ui_state.lower_dock_expanded, "mobile keeps three contextual section headers collapsed by default")
 	mobile._handle_action({"type": "lower_panel", "id": "inventory"})
 	mobile.queue_redraw()
 	await process_frame
@@ -139,8 +208,11 @@ func run_suite() -> void:
 	var mobile_route := String(route_choices[0]) if not route_choices.is_empty() else ""
 	if mobile_route != "": await _touch_action(mobile, "select_map_node", mobile_route)
 	_check(mobile_route != "" and String(mobile.sim.run.stage_id) == mobile_stage_before, "mobile destination selection does not travel implicitly")
-	if mobile_route != "": await _touch_action(mobile, "route", mobile_route)
-	_check(String(mobile.sim.run.stage_id) == mobile_route and not mobile.ui_state.lower_dock_expanded and mobile.ui_state.active_lower_panel == "world_map", "mobile travel uses the explicit control and returns the dock to its compact state")
+	if mobile_route != "":
+		await _touch_action(mobile, "next_stage")
+		_check(mobile.overlay == "destinations", "mobile objective completion opens the dedicated destination picker")
+		await _touch_action(mobile, "destination_route", mobile_route)
+	_check(String(mobile.sim.run.stage_id) == mobile_route and not mobile.ui_state.lower_dock_expanded and mobile.overlay == "", "mobile destination choice travels through the dedicated picker")
 
 	desktop.queue_free()
 	mobile.queue_free()

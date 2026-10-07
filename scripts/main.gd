@@ -139,18 +139,26 @@ func _ready() -> void:
 				sim.save_run()
 				overlay = capture_overlay
 				match capture_overlay:
-					"map": _open_lower_panel("world_map", false)
+					"map":
+						overlay = ""
+						ui_state.active_lower_panel = "world_map"
+						ui_state.lower_dock_expanded = true
 					"character", "abilities":
 						overlay = ""
 						ui_state.active_lower_panel = "character"
 						ui_state.lower_dock_expanded = true
 						ui_state.character_tab = "Abilities"
 					"inventory": _open_lower_panel("inventory", false)
-					"spellbook", "discovery": _open_lower_panel("spellbook", false)
+					"spellbook", "discovery":
+						overlay = ""
+						ui_state.active_lower_panel = "inventory"
+						ui_state.lower_dock_expanded = true
+						ui_state.inventory_tab = "Spellbooks"
 					"ability_web": overlay = "abilities"
 				match capture_overlay:
 					"inventory": ui_state.selected_inventory_index = 0
 					"map": sim.run.stage_completed = true
+					"destinations": sim.run.stage_completed = true
 					"rewards":
 						sim.run.stage_completed = true
 						sim.run.reward_choices = [{"type": "artifact", "id": "copper_hare", "claimed": false}, {"type": "item", "id": "healing_potion", "claimed": false}]
@@ -888,7 +896,7 @@ func _draw_inspection_card() -> void:
 		cursor_y += 22.0
 	var feed: Array = presentation_history if playback_active else sim.run.get("combat_history", [])
 	var can_show_next: bool = bool(sim.run.get("stage_completed", false))
-	var show_next_button: bool = can_show_next and _is_mobile_layout()
+	var show_next_button: bool = can_show_next
 	var reserved_bottom := 14.0 + (44.0 if show_next_button else 0.0)
 	var feed_capacity := maxi(0, int((rect.end.y - reserved_bottom - cursor_y - 30.0) / 14.0))
 	var event_count := mini(mini(6, feed.size()), feed_capacity)
@@ -902,7 +910,7 @@ func _draw_inspection_card() -> void:
 	if show_next_button:
 		var button_y := rect.end.y - 49.0
 		var transition_action := {"type": "next_stage"}
-		_draw_button(Rect2(content_x, button_y, content_width, 39.0), "NEXT STAGE  ›" if int(sim.run.get("stage_index", 0)) < 5 else "VICTORY", transition_action, true, 10, COLORS.green)
+		_draw_button(Rect2(content_x, button_y, content_width, 39.0), "CHOOSE DESTINATION  ›" if int(sim.run.get("stage_index", 0)) < 5 else "VICTORY", transition_action, true, 10, COLORS.green)
 
 func _draw_side_controls() -> void:
 	if not _is_mobile_layout():
@@ -1044,6 +1052,8 @@ func _draw_overlay() -> void:
 		_draw_action_palette(rect)
 	elif overlay == "rewards":
 		_draw_rewards(rect)
+	elif overlay == "destinations":
+		_draw_destination_picker(rect)
 	elif overlay == "codex":
 		_draw_codex(rect)
 	elif overlay == "codex_book":
@@ -1291,7 +1301,38 @@ func _draw_rewards(rect: Rect2) -> void:
 			_draw_label(choice_label, card.get_center().x, card.position.y + 254, 11, COLORS.gold if chosen else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 	_draw_label("%d XP  ·  %d KILLS  ·  %d / 6 ENCOUNTERS" % [sim.run.xp, sim.run.kills, sim.run.encounters_completed], 155, 616, 13, COLORS.gold)
 	_draw_button(Rect2(128, 640, 205, TOUCH_TARGET), "KEEP EXPLORING", {"type": "close"}, false, 12)
-	_draw_button(Rect2(1042, 640, 270, TOUCH_TARGET), "NEXT STAGE  →", {"type": "next_stage"}, true, 13)
+	_draw_button(Rect2(1026, 640, 286, TOUCH_TARGET), "CHOOSE DESTINATION  →", {"type": "next_stage"}, true, 12)
+
+func _draw_destination_picker(_rect: Rect2) -> void:
+	_draw_label("CHOOSE NEXT DESTINATION", 131, 105, 23, COLORS.text)
+	_draw_label("Only connected routes recorded for this run are shown.", 132, 132, 12, COLORS.muted)
+	var choices: Array = []
+	var boss_ready := int(sim.run.get("stage_index", 0)) >= ArcanistSim.STAGE_ORDER.size() - 1
+	if boss_ready:
+		choices.append("grave_tyrant")
+	else:
+		choices.assign(sim.run.get("route_choices", []))
+	_draw_panel(Rect2(127, 164, 1185, 440), "CONNECTED DESTINATIONS  ·  %d" % choices.size(), COLORS.line_soft)
+	if choices.is_empty():
+		_draw_label("No connected destination is available from this encounter.", 160, 224, 14, COLORS.muted)
+	else:
+		var gap := 18.0
+		var card_width := (1115.0 - gap * float(choices.size() - 1)) / float(choices.size())
+		for index in range(choices.size()):
+			var stage_id := String(choices[index])
+			var stage: Dictionary = sim.content.enemies.get(stage_id, {}) if stage_id == "grave_tyrant" else sim.content.stages.get(stage_id, {})
+			var card := Rect2(157.0 + float(index) * (card_width + gap), 216.0, card_width, 300.0)
+			var accent: Color = COLORS.red if stage_id == "grave_tyrant" else COLORS.green
+			_draw_panel(card, "BOSS" if stage_id == "grave_tyrant" else "COMBAT", accent)
+			_draw_label("☠" if stage_id == "grave_tyrant" else "◇", card.get_center().x, card.position.y + 67.0, 34, accent, HORIZONTAL_ALIGNMENT_CENTER)
+			_draw_label(_fit_text(String(stage.get("name", "Grave Tyrant" if stage_id == "grave_tyrant" else stage_id)), card.size.x - 30.0, 15), card.get_center().x, card.position.y + 113.0, 15, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+			var subtitle := String(stage.get("subtitle", stage.get("description", "The final threat waits ahead.")))
+			var subtitle_lines: Array = _wrap(subtitle, maxi(18, int(card.size.x / 8.0)))
+			for line_index in range(mini(4, subtitle_lines.size())):
+				_draw_label(String(subtitle_lines[line_index]), card.get_center().x, card.position.y + 150.0 + float(line_index) * 18.0, 10, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+			_draw_button(Rect2(card.position.x + 18.0, card.end.y - 58.0, card.size.x - 36.0, 42.0), "ENTER DESTINATION", {"type": "destination_route", "id": stage_id}, true, 10, accent)
+	_draw_label("The persistent World Map remains an overview; travel happens here after the objective.", 155, 635, 11, COLORS.gold)
+	_draw_button(Rect2(128, 640, 205, TOUCH_TARGET), "KEEP EXPLORING", {"type": "close"}, false, 12)
 
 func _draw_codex(rect: Rect2) -> void:
 	_draw_label("FIELD CODEX", 131, 103, 21, COLORS.text)
@@ -1331,23 +1372,29 @@ func _draw_spellbook_codex(rect: Rect2) -> void:
 		return
 	_draw_label(String(book.get("name", "Spellbook")), 131, 105, 23, COLORS.text)
 	_draw_label("%s  ·  %s SPELLBOOK" % [String(book.get("school", "Knowledge")).to_upper(), String(book.get("rarity", "COMMON")).to_upper()], 132, 132, 12, COLORS.purple)
-	_draw_panel(Rect2(128, 158, 1185, 456), "RECORDED CONTENTS", COLORS.line_soft)
+	_draw_panel(Rect2(128, 158, 1185, 456), "RECORDED IMMEDIATE KNOWLEDGE", COLORS.line_soft)
 	_draw_label("DESCRIPTION", 158, 204, 10, COLORS.gold)
 	var desc_y := 229.0
 	for line in _wrap(String(book.get("description", "A recorded work of recovered knowledge.")), 96).slice(0, 3):
 		_draw_label(String(line), 158, desc_y, 12, COLORS.text)
 		desc_y += 21
-	_draw_label("FULL CONTENTS", 158, 307, 10, COLORS.gold)
-	var contents: Array = book.get("contents", [])
+	var learning: Dictionary = book.get("learning", {})
+	var offered: Array = learning.get("abilities", book.get("learns", []))
+	var learn_mode := String(learning.get("mode", "all"))
+	_draw_label("IMMEDIATE STUDY" if learn_mode != "choose" else "IMMEDIATE CHOICES", 158, 307, 10, COLORS.gold)
+	var contents: Array = []
+	if learn_mode == "school_only":
+		contents.append("Unlocks %s knowledge" % String(book.get("school", "")))
+	else:
+		for ability_id in offered:
+			contents.append(String(sim.content.abilities.get(ability_id, {}).get("name", ability_id)))
 	var left_x := 158.0
 	for i in range(contents.size()):
 		var column := int(i / 8)
 		var row := i % 8
 		if column > 1: break
 		_draw_label("%02d  ·  %s" % [i + 1, String(contents[i])], left_x + column * 350, 335 + row * 25, 11, COLORS.text)
-	var offered: Array = book.get("learning", {}).get("abilities", book.get("learns", []))
 	_draw_label("LEARNING", 980, 204, 10, COLORS.gold)
-	var learn_mode := String(book.get("learning", {}).get("mode", "all"))
 	var learn_count := int(book.get("learning", {}).get("choice_count", offered.size()))
 	var resolution: Dictionary = sim.run.get("spellbook_resolutions", {}).get(codex_book_id, {})
 	_draw_label("%s  ·  %d offered" % ["Choose %d" % learn_count if learn_mode == "choose" else "Study all" if learn_mode == "all" else "School unlock", offered.size()], 980, 229, 10, COLORS.purple)
@@ -1540,7 +1587,18 @@ func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
 		result.append(String(item.get("name", item_id)))
 		result.append(String(item.get("type", "item")).capitalize())
 		result.append(String(item.get("description", "")))
-		if item.get("type", "") == "equipment": result.append("Slot  ·  %s" % String(item.get("slot", "")))
+		if item.get("type", "") == "equipment":
+			result.append("Slot  ·  %s" % String(item.get("slot", "")))
+			var stats: Dictionary = sim.get_equipment_item_stats(item_id)
+			if stats.has("damage"):
+				result.append("Damage  ·  %d %s" % [int(stats.damage), String(stats.damage_type)])
+				result.append("Time %d  ·  Range %d  ·  Stamina %d" % [int(stats.time), int(stats.range), int(stats.stamina)])
+			if int(stats.get("armor", 0)) > 0:
+				result.append("Armor  ·  %d" % int(stats.armor))
+			for resistance in stats.get("resist", {}):
+				result.append("Resist  ·  %s %d%%" % [String(resistance), int(stats.resist[resistance] * 100.0)])
+			for modifier in stats.get("modifiers", {}):
+				result.append("%s  ·  %+d" % [String(modifier).replace("_", " ").capitalize(), int(stats.modifiers[modifier])])
 	elif kind == "select_artifact":
 		var artifacts: Array = sim.run.get("artifacts", [])
 		var index := int(action.get("index", -1))
@@ -1556,7 +1614,14 @@ func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
 		var item: Dictionary = sim.content.items.get(item_id, {})
 		result.append(slot)
 		result.append(String(item.get("name", "Empty")))
-		if not item.is_empty(): result.append(String(item.get("description", "")))
+		if not item.is_empty():
+			result.append(String(item.get("description", "")))
+			var stats: Dictionary = sim.get_equipment_item_stats(item_id)
+			if stats.has("damage"):
+				result.append("Damage  ·  %d %s" % [int(stats.damage), String(stats.damage_type)])
+				result.append("Time %d  ·  Range %d  ·  Stamina %d" % [int(stats.time), int(stats.range), int(stats.stamina)])
+			if int(stats.get("armor", 0)) > 0:
+				result.append("Armor  ·  %d" % int(stats.armor))
 	elif kind == "select_map_node":
 		var node_id := String(action.get("id", ""))
 		var stage: Dictionary = sim.content.enemies.get(node_id, {}) if node_id == "grave_tyrant" else sim.content.stages.get(node_id, {})
@@ -1858,6 +1923,8 @@ func _handle_action(action: Dictionary) -> void:
 	var action_type := String(action.get("type", ""))
 	if playback_active and action_type not in ["playback_skip", "pause_menu", "close"]:
 		return
+	if target_mode != "" and action_type not in ["cancel_target", "target_mode", "ability", "quick_item", "quickbar_slot", "palette_cast"]:
+		target_mode = ""
 	match String(action.get("type", "")):
 		"select_character":
 			selected_character = String(action.id)
@@ -1926,6 +1993,8 @@ func _handle_action(action: Dictionary) -> void:
 		"lower_inventory_tab":
 			ui_state.inventory_tab = String(action.get("id", "Inventory"))
 			ui_state.inventory_page = 0
+			if ui_state.inventory_tab == "Equipment" and ui_state.selected_inventory_index >= 0 and not sim.can_equip_item(ui_state.selected_inventory_index, ui_state.selected_equipment_slot):
+				ui_state.selected_inventory_index = -1
 		"select_ability_category":
 			ui_state.selected_ability_category = String(action.get("id", ""))
 			ui_state.ability_page = 0
@@ -1951,6 +2020,8 @@ func _handle_action(action: Dictionary) -> void:
 			selected_object_index = -1
 		"select_equipment_slot":
 			ui_state.selected_equipment_slot = String(action.get("slot", ""))
+			if ui_state.selected_inventory_index >= 0 and not sim.can_equip_item(ui_state.selected_inventory_index, ui_state.selected_equipment_slot):
+				ui_state.selected_inventory_index = -1
 		"select_lower_ability":
 			var ability_id := String(action.get("id", ""))
 			ui_state.selected_ability_id = ability_id
@@ -2029,7 +2100,10 @@ func _handle_action(action: Dictionary) -> void:
 					chosen_names.append(String(sim.content.abilities[ability_id].name))
 				ui_state.selected_inventory_index = -1 if sim.content.items.get(book_id, {}).get("learning", {}).get("consume_on_study", false) else ui_state.selected_inventory_index
 				selected_book_abilities.clear()
-				_show_notice("Knowledge recorded: %s." % (", ".join(chosen_names) if not chosen_names.is_empty() else "school unlocked"))
+				var book: Dictionary = sim.content.items.get(book_id, {})
+				var school_name := String(book.get("school", ""))
+				var immediate_result := ", ".join(chosen_names) if not chosen_names.is_empty() else "%s knowledge unlocked" % school_name if school_name != "" else "knowledge recorded"
+				_show_notice("Knowledge recorded: %s." % immediate_result)
 		"toggle_book_choice":
 			var option_index := int(action.index)
 			if selected_book_abilities.has(option_index):
@@ -2154,7 +2228,15 @@ func _handle_action(action: Dictionary) -> void:
 				page = "outcome"
 				overlay = ""
 			elif sim.run.get("stage_completed", false):
-				_open_lower_panel("world_map", false)
+				overlay = "destinations"
+				ui_state.lower_dock_expanded = false
+		"destination_route":
+			var destination_id := String(action.get("id", ""))
+			var traveled := sim.start_boss() if destination_id == "grave_tyrant" else sim.choose_route(destination_id)
+			if traveled:
+				overlay = ""
+				selected_enemy = ""
+				selected_object_index = -1
 		"claim_reward":
 			if sim.claim_reward(int(action.index)):
 				_show_notice("Your one reward choice is secured. You may keep exploring.")
@@ -2207,7 +2289,6 @@ func _battlefield_tap(cell: Vector2i) -> void:
 	if target_mode.begins_with("item:"):
 		var item_index := int(target_mode.trim_prefix("item:"))
 		_commit_action(sim.act({"type": "use_item", "index": item_index, "target": [cell.x, cell.y]}))
-		target_mode = ""
 		return
 	if target_mode == "move":
 		var result: Dictionary = sim.act({"type": "move", "target": [cell.x, cell.y]})
@@ -2338,6 +2419,7 @@ func _handle_key(event: InputEventKey) -> void:
 
 func _commit_action(result: Dictionary) -> void:
 	if result.get("ok", false):
+		target_mode = ""
 		ui_state.lower_dock_expanded = false
 		pending_outcome_page = "outcome" if sim.run.get("outcome", "") != "" else ""
 		pending_outcome_overlay = "rewards" if sim.run.get("stage_completed", false) and sim.run.get("outcome", "") == "" else ""
@@ -2413,60 +2495,21 @@ func _target_ability() -> Dictionary:
 	return sim.content.abilities.get(target_mode, {})
 
 func _entity_is_legal_target(entity: Dictionary) -> bool:
-	var origin := sim._pos(sim.get_player())
-	if target_mode == "attack":
-		var weapon_id: String = sim.run.equipment.get("Weapon", "sword")
-		var weapon: Dictionary = sim.content.weapons.get(weapon_id, sim.content.weapons.sword)
-		return sim._distance_to_entity(origin, entity) <= int(weapon.range) and sim._line_of_sight(origin, sim._pos(entity))
-	if target_mode.begins_with("item:"):
-		var item_index := int(target_mode.trim_prefix("item:"))
-		if item_index >= 0 and item_index < sim.run.inventory.size():
-			var item: Dictionary = sim.content.items.get(sim.run.inventory[item_index], {})
-			if item.get("effect") == "bomb":
-				return sim._dist(origin, sim._pos(entity)) <= 5 and sim._cell_visible(sim._pos(entity))
-	var ability := _target_ability()
-	if ability.is_empty() or ability.get("target", "enemy") != "enemy" or not sim._can_pay(ability.get("costs", {})):
-		return false
-	return sim._dist(origin, sim._pos(entity)) <= int(ability.get("range", 0)) and sim._cell_visible(sim._pos(entity)) and sim._line_of_sight(origin, sim._pos(entity))
+	var pos := sim._pos(entity)
+	var footprint := int(entity.get("footprint", 1))
+	for y in range(pos.y, pos.y + footprint):
+		for x in range(pos.x, pos.x + footprint):
+			if sim.is_valid_target_cell(target_mode, Vector2i(x, y)):
+				return true
+	return false
 
 func _cell_is_legal_target(cell: Vector2i) -> bool:
-	if not sim._inside(cell):
-		return false
-	var origin := sim._pos(sim.get_player())
-	if target_mode == "attack":
-		var entity := sim.get_enemy_at(cell)
-		if not entity.is_empty():
-			return _entity_is_legal_target(entity)
-		var object_index := sim._object_index_at(cell)
-		return object_index >= 0 and sim.run.objects[object_index].get("kind") == "ward" and sim._dist(origin, cell) <= 1
 	if target_mode == "move":
-		return sim._terrain_at(cell) != "wall" and sim._next_step(origin, cell, "player") != origin
-	if target_mode.begins_with("item:"):
-		var item_index := int(target_mode.trim_prefix("item:"))
-		if item_index >= 0 and item_index < sim.run.inventory.size():
-			var item: Dictionary = sim.content.items.get(sim.run.inventory[item_index], {})
-			if item.get("effect") == "bomb":
-				return sim._dist(origin, cell) <= 5 and sim._cell_visible(cell)
-	var ability := _target_ability()
-	if ability.is_empty() or not sim._can_pay(ability.get("costs", {})):
-		return false
-	if ability.get("target", "enemy") == "self":
-		return false
-	if sim._dist(origin, cell) > int(ability.get("range", 0)) or not sim._cell_visible(cell) or not sim._line_of_sight(origin, cell):
-		return false
-	if ability.get("target", "enemy") == "enemy":
-		return not sim.get_enemy_at(cell).is_empty()
-	if ability.get("target", "enemy") == "tile":
-		return sim._terrain_at(cell) != "wall"
-	return true
+		return sim._terrain_at(cell) != "wall" and not sim.get_movement_path(cell).is_empty()
+	return sim.is_valid_target_cell(target_mode, cell)
 
 func _draw_targetable_cells(origin: Vector2, tile: float) -> void:
 	if target_mode == "":
-		return
-	var ability := _target_ability()
-	var target_kind := String(ability.get("target", ""))
-	var show_cell_candidates := target_mode == "move" or target_mode.begins_with("item:") or target_kind in ["area", "tile"]
-	if not show_cell_candidates:
 		return
 	if target_mode == "move" and _point_in_board(press_current_position):
 		var move_cell := _cell_from_point(press_current_position)
@@ -2475,14 +2518,20 @@ func _draw_targetable_cells(origin: Vector2, tile: float) -> void:
 			draw_rect(move_rect, Color(0.33, 0.9, 0.53, 0.24), true)
 			draw_rect(move_rect, COLORS.green, false, 2.0)
 		return
-	for y in range(ArcanistSim.HEIGHT):
-		for x in range(ArcanistSim.WIDTH):
-			var cell := Vector2i(x, y)
-			if not _cell_is_legal_target(cell):
-				continue
-			var rect := Rect2(origin + Vector2(x * tile, y * tile), Vector2(tile - 1, tile - 1))
-			draw_rect(rect, Color(0.35, 0.83, 0.93, 0.12), true)
-			draw_rect(rect, Color(0.35, 0.83, 0.93, 0.55), false, 1.0)
+	var preview: Dictionary = sim.get_targeting_preview(target_mode)
+	if not preview.get("available", false):
+		return
+	var valid: Dictionary = {}
+	for cell in preview.get("valid_cells", []):
+		valid[sim._cell_key(cell)] = true
+	for cell in preview.get("range_cells", []):
+		var cell_position: Vector2i = cell
+		var cell_rect := Rect2(origin + Vector2(cell_position.x * tile, cell_position.y * tile), Vector2(tile - 1.0, tile - 1.0))
+		draw_rect(cell_rect, Color(0.92, 0.96, 1.0, 0.025), true)
+		draw_rect(cell_rect, Color(0.88, 0.94, 1.0, 0.48), false, 1.0)
+		if valid.has(sim._cell_key(cell_position)):
+			draw_rect(cell_rect, Color(0.92, 0.96, 1.0, 0.08), true)
+			draw_rect(cell_rect, COLORS.gold, false, 2.0)
 
 func _target_preview_radius() -> int:
 	if target_mode.begins_with("item:"):
@@ -2668,6 +2717,28 @@ func _prepare_capture_scenario() -> void:
 			ui_state.selected_equipment_slot = "Body"
 			sim.run.inventory.append("scale_armor")
 			ui_state.selected_inventory_index = sim.run.inventory.size() - 1
+		"equipment_head":
+			ui_state.active_lower_panel = "inventory"
+			ui_state.inventory_tab = "Equipment"
+			ui_state.selected_equipment_slot = "Head"
+			ui_state.selected_inventory_index = -1
+		"equipment_weapon":
+			ui_state.active_lower_panel = "inventory"
+			ui_state.inventory_tab = "Equipment"
+			ui_state.selected_equipment_slot = "Weapon"
+			sim.run.inventory.append("dagger")
+			sim.run.inventory.append("greatsword")
+			ui_state.selected_inventory_index = sim.run.inventory.find("greatsword")
+		"targeting_attack":
+			for entity_id in sim.run.entities.keys():
+				if entity_id != "player": sim.run.entities[entity_id].alive = false
+			sim.run.equipment.Weapon = "bow"
+			var origin: Vector2i = sim._pos(sim.get_player())
+			for offset in range(1, 5): sim._set_grid(origin + Vector2i(offset, 0), "floor")
+			var target_position := origin + Vector2i(4, 0)
+			var target_id := sim._spawn_enemy("goblin", target_position, false)
+			if target_id != "": sim.run.entities[target_id].next_time = int(sim.get_player().next_time) + 100000
+			sim._update_vision()
 		"selected_enemy":
 			selected_enemy = _capture_adjacent_enemy()
 		"assign_ability":

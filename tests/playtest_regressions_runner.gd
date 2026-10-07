@@ -29,6 +29,14 @@ func run_suite() -> void:
 
 	var books = SimScript.new()
 	books.start_run(402, "jim")
+	books.run.inventory.append("storm_ledger")
+	var storm_index: int = books.run.inventory.size() - 1
+	var storm_preview: Dictionary = books.get_spellbook_options(storm_index)
+	_check(storm_preview.contents == ["Lightning Bolt"] and not storm_preview.contents.has("Storm Arrow"), "Storm Ledger preview shows its immediate grant without the downstream arrow")
+	_check(books.study_spellbook(storm_index, []) and books.run.spellbook_resolutions.storm_ledger.abilities == ["lightning_bolt"] and not books.run.known.has("storm_arrow"), "Storm Ledger's actual learning result contains only Lightning Bolt")
+	books.run.inventory.append("cinder_primer")
+	var cinder_preview: Dictionary = books.get_spellbook_options(books.run.inventory.size() - 1)
+	_check(cinder_preview.contents == ["Firebolt"] and not cinder_preview.contents.has("Meteor"), "Cinder Primer preview excludes abilities it does not immediately teach")
 	books.run.inventory.append("lesser_key_of_ash")
 	var lesser_index: int = books.run.inventory.size() - 1
 	_check(not books.study_spellbook(lesser_index, []) and books.run.inventory.has("lesser_key_of_ash") and not books.run.schools.has("Demonology"), "a choose-one book cannot be studied before a choice is made")
