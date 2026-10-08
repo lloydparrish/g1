@@ -55,6 +55,7 @@ switch ($Mode) {
         Invoke-ArcanistTestSuite 'content-foundation' 'res://tests/content_foundation_runner.gd'
         Invoke-ArcanistTestSuite 'endless-progression' 'res://tests/endless_progression_runner.gd'
         Invoke-ArcanistTestSuite 'swordplay' 'res://tests/swordplay_runner.gd'
+        Invoke-ArcanistTestSuite 'summon-stage-fixes' 'res://tests/summon_stage_fix_runner.gd'
         exit 0
     }
     'Android' {
@@ -74,6 +75,7 @@ switch ($Mode) {
         Invoke-ArcanistTestSuite 'content-foundation' 'res://tests/content_foundation_runner.gd'
         Invoke-ArcanistTestSuite 'endless-progression' 'res://tests/endless_progression_runner.gd'
         Invoke-ArcanistTestSuite 'swordplay' 'res://tests/swordplay_runner.gd'
+        Invoke-ArcanistTestSuite 'summon-stage-fixes' 'res://tests/summon_stage_fix_runner.gd'
         $env:APPDATA = Join-Path $Profile 'Roaming'
         $env:LOCALAPPDATA = Join-Path $Profile 'Local'
         $TemplateDir = Join-Path $env:APPDATA 'Godot\export_templates\4.7.2.stable'

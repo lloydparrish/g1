@@ -221,11 +221,11 @@ Representative hybrids: Flaming Blade, Frozen Dead, Storm Arrow, Bloodletting St
 
 ## Phantom Blade architecture benchmark
 
-Phantom Blade is an architecture test. It summons an ethereal sword associated with its owner. It follows/orbits the owner conceptually, identifies valid enemies, attacks automatically through the timeline, inherits appropriate modifiers and can later be duplicated/modified by upgrades and artifacts. It should be expressed through reusable summon/follow/target/attack/trigger mechanics rather than a monolithic special-case system.
+Phantom Blade is an architecture test. It summons an ethereal sword associated with its owner. It follows to within one or two tiles when idle and attacks valid nearby enemies through its own scheduled timeline turns. Targeting respects its authored attack range and line of sight, favors enemies near the owner, and uses shared movement/pathfinding to return when separated. Its follow, target and attack behavior belongs in reusable Core companion mechanics rather than a monolithic summon exception.
 
 ## Summoning and Command
 
-Summons occupy real battlefield locations unless explicitly defined otherwise. Each summon has a Command cost; examples: Skeleton 1, Imp 1, Wolf 2, Wraith 3, Knight 4, Greater Demon 8.
+Summons occupy real battlefield locations unless explicitly defined otherwise. Each summon has a Command cost; examples: Skeleton 1, Imp 1, Wolf 2, Wraith 3, Knight 4, Greater Demon 8. Living player-owned summons persist across Stage and Map transitions with identity, ownership, health, statuses, remaining durations and timeline state. They are placed on legal unoccupied tiles near the owner; deterministic saveable deferred placement handles temporary lack of space. Dead, expired or dismissed summons never transfer, and transition placement does not heal them.
 
 Command is itself modifiable by spells, artifacts, equipment and character traits. Example: Blood Covenant: -20 Maximum Health, +1 Command. There is no universal hard-coded summon-count maximum.
 
@@ -335,7 +335,7 @@ Map themes, stage templates, enemy pools, encounter composition, exploration loo
 
 ## Post-encounter behavior
 
-Completing a Stage objective does not immediately transition. The player may continue exploring, looting, consuming corpses, interacting with shrines or manipulating terrain before choosing to continue. Stages 1–5 continue within the current Map. After Stage 6, the map-completion/reward flow reveals the next Map; entering it is a map transition inside the active run, not new-run initialization. Do not silently refill Health, Mana or Stamina at map entry.
+Completing a Stage objective does not immediately transition. The player may continue exploring, looting, consuming corpses, interacting with shrines or manipulating terrain before choosing to continue. Stages 1–5 continue within the current Map. After Stage 6, the map-completion/reward flow reveals the next Map; entering it is a map transition inside the active run, not new-run initialization. Entering any next Stage after completion restores `max(1, floor(MaxHealth × 0.05))` Health, capped at maximum; this includes the new Map's Stage 1. Initial run creation and save/resume do not trigger the heal. Map entry does not refill Mana or Stamina.
 
 ## Death and persistent progression
 

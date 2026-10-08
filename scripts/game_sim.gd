@@ -6,7 +6,8 @@ const HEIGHT := 16
 const SAVE_PATH := "user://run_save.json"
 const CODEX_PATH := "user://codex.json"
 const PROFILE_PATH := "user://profile.json"
-const SAVE_VERSION := 3
+const SAVE_VERSION := 4
+const STAGE_ENTRY_HEAL_PERCENT := 0.05
 const BASE_ENEMY_HEALTH_GROWTH := 0.12
 const BASE_ENEMY_DAMAGE_GROWTH := 0.085
 const BASE_ENEMY_ARMOR_GROWTH := 0.035
@@ -588,6 +589,7 @@ func start_run(seed_value: int, character_id: String) -> bool:
 		"enemies_defeated": "0", "exploration_rewards_found": 0,
 		"encounters_completed": 0,
 		"stage_id": "", "objective": {}, "stage_completed": false, "stage_prompt_dismissed": false, "reward_choices": [], "reward_choice_resolved": false, "reward_chosen_index": -1,
+		"pending_summon_transfers": [], "last_stage_heal_transition_key": "",
 		"route_choices": [], "route": ["ruined_village"], "outcome": "", "log": ["The March stirs beyond the gate."],
 		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "spellbook_resolutions": {}, "trigger_counts": {}, "ability_states": {},
 		"package_ids": content_registry.load_order.filter(func(package_id: String) -> bool: return package_id != "core"),
@@ -621,7 +623,7 @@ func resume_run() -> bool:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return false
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [1, 2, SAVE_VERSION]:
+	if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [1, 2, 3, SAVE_VERSION]:
 		return false
 	run = _migrate_run_data(_canonicalize(parsed))
 	var saved_character_id := String(run.get("character_id", "jim"))
@@ -725,7 +727,7 @@ func _recover_interrupted_save() -> void:
 func _is_valid_run_file(path: String) -> bool:
 	if not FileAccess.file_exists(path): return false
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-	return parsed is Dictionary and int(parsed.get("version", 0)) in [1, 2, SAVE_VERSION] and parsed.has("entities")
+	return parsed is Dictionary and int(parsed.get("version", 0)) in [1, 2, 3, SAVE_VERSION] and parsed.has("entities")
 
 func delete_saved_run() -> void:
 	if FileAccess.file_exists(SAVE_PATH):
@@ -818,6 +820,8 @@ func _migrate_run_data(saved_run: Dictionary) -> Dictionary:
 	migrated["weapon_state"] = migrated.get("weapon_state", {"unhurt_actions": 0, "precision": 0, "technique_kill_stacks": 0, "last_action_kind": "", "followup_basic": false})
 	migrated["last_player_action"] = migrated.get("last_player_action", {})
 	migrated["boss_unlocks_awarded"] = migrated.get("boss_unlocks_awarded", [])
+	migrated["pending_summon_transfers"] = migrated.get("pending_summon_transfers", [])
+	migrated["last_stage_heal_transition_key"] = String(migrated.get("last_stage_heal_transition_key", ""))
 	return migrated
 
 func _format_map_number(map_number: Variant) -> String:
@@ -1674,7 +1678,7 @@ func advance_stage() -> bool:
 	if run.route.is_empty() or String(run.route.back()) != stage_id:
 		run.route.append(stage_id)
 	run.route_choices = [stage_id]
-	_new_stage(stage_id, stage_index == 5, false)
+	_new_stage(stage_id, stage_index == 5, false, true)
 	save_run()
 	return true
 
@@ -1734,7 +1738,7 @@ func enter_next_map() -> bool:
 	var stage_id := String(templates[0])
 	run.route = [stage_id]
 	run.route_choices = [String(templates[1])] if templates.size() > 1 else [stage_id]
-	_new_stage(stage_id, false, true)
+	_new_stage(stage_id, false, true, true)
 	save_run()
 	return true
 
@@ -2138,14 +2142,137 @@ func state_digest() -> String:
 	if run.is_empty():
 		return ""
 	var player: Dictionary = get_player()
-	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "grid": run.grid, "objects": run.objects, "known": run.known, "schools": run.get("schools", []), "disciplines": run.get("disciplines", []), "discoveries": run.get("discoveries", []), "spellbook_resolutions": run.get("spellbook_resolutions", {}), "reward_choice_resolved": run.get("reward_choice_resolved", false), "reward_chosen_index": run.get("reward_chosen_index", -1), "reward_choices": run.get("reward_choices", []), "xp": run.xp, "level": run.level, "skill_points": run.skill_points, "objective": run.objective})
+	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "pending_summon_transfers": run.get("pending_summon_transfers", []), "last_stage_heal_transition_key": run.get("last_stage_heal_transition_key", ""), "grid": run.grid, "objects": run.objects, "known": run.known, "schools": run.get("schools", []), "disciplines": run.get("disciplines", []), "discoveries": run.get("discoveries", []), "spellbook_resolutions": run.get("spellbook_resolutions", {}), "reward_choice_resolved": run.get("reward_choice_resolved", false), "reward_chosen_index": run.get("reward_chosen_index", -1), "reward_choices": run.get("reward_choices", []), "xp": run.xp, "level": run.level, "skill_points": run.skill_points, "objective": run.objective})
 
-func _new_stage(stage_id: String, is_boss: bool, suppress_recovery: bool = false) -> void:
+func _apply_stage_transition_heal(stage_id: String) -> void:
+	var player: Dictionary = get_player()
+	if player.is_empty(): return
+	var transition_key := "%s:%s:%s:%s" % [String(run.get("stages_completed", "0")), String(run.get("map_depth", "1")), str(int(run.get("stage_index", 0))), stage_id]
+	if String(run.get("last_stage_heal_transition_key", "")) == transition_key: return
+	var maximum_health := maxi(1, int(player.get("max_hp", 1)))
+	var healing := maxi(1, int(floor(float(maximum_health) * STAGE_ENTRY_HEAL_PERCENT)))
+	player.hp = mini(maximum_health, int(player.get("hp", 0)) + healing)
+	run["last_stage_heal_transition_key"] = transition_key
+
+func _summon_transfer_is_eligible(entity: Dictionary) -> bool:
+	if not bool(entity.get("is_summon", false)) or String(entity.get("kind", "")) != "summon": return false
+	if String(entity.get("owner", "")) != "player" or not bool(entity.get("alive", false)) or int(entity.get("hp", 0)) <= 0 or bool(entity.get("dismissed", false)): return false
+	if entity.has("remaining_duration") and int(entity.get("remaining_duration", 0)) <= 0: return false
+	if entity.has("summon_duration_remaining") and int(entity.get("summon_duration_remaining", 0)) <= 0: return false
+	if entity.has("expires_at") and int(entity.get("expires_at", 0)) <= int(run.get("time", 0)): return false
+	if entity.has("summon_expires_at") and int(entity.get("summon_expires_at", 0)) <= int(run.get("time", 0)): return false
+	return true
+
+func _collect_transferable_summons() -> Array:
+	var by_id: Dictionary = {}
+	for snapshot_value in run.get("pending_summon_transfers", []):
+		if not (snapshot_value is Dictionary): continue
+		var snapshot: Dictionary = snapshot_value
+		var snapshot_id := String(snapshot.get("id", ""))
+		if snapshot_id != "" and _summon_transfer_is_eligible(snapshot) and not by_id.has(snapshot_id):
+			by_id[snapshot_id] = snapshot.duplicate(true)
+	for entity_id in run.get("entities", {}):
+		var entity: Dictionary = run.entities[entity_id]
+		var stable_id := String(entity.get("id", entity_id))
+		if stable_id != "" and _summon_transfer_is_eligible(entity) and not by_id.has(stable_id):
+			by_id[stable_id] = entity.duplicate(true)
+	var result: Array = []
+	var stable_ids: Array = by_id.keys()
+	stable_ids.sort()
+	for stable_id in stable_ids: result.append(by_id[stable_id])
+	return result
+
+func _summon_transfer_cell_is_clear(cell: Vector2i, summon: Dictionary) -> bool:
+	if not _inside(cell): return false
+	var footprint := maxi(1, int(summon.get("footprint", 1)))
+	for y in range(cell.y, cell.y + footprint):
+		for x in range(cell.x, cell.x + footprint):
+			var occupied_cell := Vector2i(x, y)
+			if not _inside(occupied_cell) or _terrain_at(occupied_cell) == "wall": return false
+			for entity_id in run.get("entities", {}):
+				if String(entity_id) == String(summon.get("id", "")): continue
+				var other: Dictionary = run.entities[entity_id]
+				if not bool(other.get("alive", false)): continue
+				var other_pos := _pos(other)
+				var other_size := maxi(1, int(other.get("footprint", 1)))
+				if occupied_cell.x >= other_pos.x and occupied_cell.y >= other_pos.y and occupied_cell.x < other_pos.x + other_size and occupied_cell.y < other_pos.y + other_size:
+					return false
+			if _object_index_at(occupied_cell) >= 0: return false
+	return true
+
+func _find_summon_transfer_cell(summon: Dictionary, preferred: Vector2i) -> Vector2i:
+	for radius in range(maxi(WIDTH, HEIGHT)):
+		for y in range(1, HEIGHT - 1):
+			for x in range(1, WIDTH - 1):
+				var candidate := Vector2i(x, y)
+				if _dist(preferred, candidate) == radius and _summon_transfer_cell_is_clear(candidate, summon):
+					return candidate
+	return Vector2i(-1, -1)
+
+func _restore_transferred_summons(summons: Array) -> void:
+	var pending: Array = []
+	var owner_pos := _pos(get_player())
+	var command_used := 0
+	run["pending_summon_transfers"] = []
+	for snapshot_value in summons:
+		if not (snapshot_value is Dictionary): continue
+		var summon: Dictionary = snapshot_value.duplicate(true)
+		if not _summon_transfer_is_eligible(summon): continue
+		var summon_id := String(summon.get("id", ""))
+		if summon_id == "": continue
+		command_used += maxi(0, int(summon.get("command_cost", 1)))
+		if run.entities.has(summon_id):
+			pending.append(summon)
+			continue
+		var cell := _find_summon_transfer_cell(summon, owner_pos)
+		if cell == Vector2i(-1, -1):
+			pending.append(summon)
+			continue
+		summon["pos"] = [cell.x, cell.y]
+		run.entities[summon_id] = summon
+	run["pending_summon_transfers"] = pending
+	var command: Array = get_player().resources.get("Command", [0, 0])
+	command[0] = command_used
+	get_player().resources["Command"] = command
+
+func _place_pending_summons() -> void:
+	var pending: Array = run.get("pending_summon_transfers", [])
+	if pending.is_empty(): return
+	var remaining: Array = []
+	var owner_pos := _pos(get_player())
+	for snapshot_value in pending:
+		if not (snapshot_value is Dictionary): continue
+		var summon: Dictionary = snapshot_value.duplicate(true)
+		if not _summon_transfer_is_eligible(summon): continue
+		var summon_id := String(summon.get("id", ""))
+		if summon_id == "" or run.entities.has(summon_id):
+			remaining.append(summon)
+			continue
+		var cell := _find_summon_transfer_cell(summon, owner_pos)
+		if cell == Vector2i(-1, -1):
+			remaining.append(summon)
+			continue
+		summon["pos"] = [cell.x, cell.y]
+		run.entities[summon_id] = summon
+	run["pending_summon_transfers"] = remaining
+	var command_used := 0
+	for entity_id in run.entities:
+		var entity: Dictionary = run.entities[entity_id]
+		if _summon_transfer_is_eligible(entity): command_used += maxi(0, int(entity.get("command_cost", 1)))
+	for snapshot_value in remaining:
+		if snapshot_value is Dictionary:
+			command_used += maxi(0, int(snapshot_value.get("command_cost", 1)))
+	var command: Array = get_player().resources.get("Command", [0, 0])
+	command[0] = command_used
+	get_player().resources["Command"] = command
+
+func _new_stage(stage_id: String, is_boss: bool, suppress_recovery: bool = false, apply_stage_transition_heal: bool = false) -> void:
 	var player: Dictionary = run.entities.get("player", {})
 	if player.is_empty():
 		return
 	if stage_id == "" or not content.get("stages", {}).has(stage_id):
 		return
+	var carried_summons := _collect_transferable_summons()
 	var planned_boss: Dictionary = _get_map_boss_definition(run.get("current_map", {})) if is_boss else {}
 	if is_boss and planned_boss.is_empty():
 		push_error("Cannot start Stage 6 without its generated boss definition.")
@@ -2167,7 +2294,8 @@ func _new_stage(stage_id: String, is_boss: bool, suppress_recovery: bool = false
 		var stamina: Array = player.resources.Stamina
 		stamina[0] = mini(int(stamina[1]), int(stamina[0]) + 15)
 		player.resources.Stamina = stamina
-		player.hp = mini(int(player.max_hp), int(player.hp) + 6)
+	if apply_stage_transition_heal and bool(run.get("stage_completed", false)):
+		_apply_stage_transition_heal(stage_id)
 	run.objects = []
 	run.corpses = []
 	run.objective = {}
@@ -2210,6 +2338,7 @@ func _new_stage(stage_id: String, is_boss: bool, suppress_recovery: bool = false
 			_set_grid(Vector2i(x, 7), "floor")
 	_set_grid(Vector2i(3, 8), "floor")
 	_set_grid(Vector2i(21, 8), "floor")
+	_restore_transferred_summons(carried_summons)
 	run.visible = _bool_grid(false)
 	run.explored = _bool_grid(false)
 	var current_map: Dictionary = run.get("current_map", {})
@@ -2594,11 +2723,24 @@ func evolve_ability(ability_id: String) -> bool:
 	save_run()
 	return true
 
+func _next_entity_id(prefix: String) -> String:
+	var suffix := maxi(0, run.get("entities", {}).size())
+	var pending_ids: Dictionary = {}
+	for snapshot_value in run.get("pending_summon_transfers", []):
+		if snapshot_value is Dictionary:
+			var pending_id := String(snapshot_value.get("id", ""))
+			if pending_id != "": pending_ids[pending_id] = true
+	var candidate := "%s_%03d" % [prefix, suffix]
+	while run.get("entities", {}).has(candidate) or pending_ids.has(candidate):
+		suffix += 1
+		candidate = "%s_%03d" % [prefix, suffix]
+	return candidate
+
 func _spawn_enemy(enemy_id: String, cell: Vector2i, is_boss: bool) -> String:
 	var definition: Dictionary = content.enemies.get(enemy_id, {})
 	if definition.is_empty():
 		return ""
-	var id := "%s_%03d" % [enemy_id, run.entities.size()]
+	var id := _next_entity_id(enemy_id)
 	var entity := definition.duplicate(true)
 	var scaling := get_enemy_scaling(run.get("map_depth", "1"))
 	entity["hp"] = _scaled_combat_stat(int(entity.get("hp", 20)), float(scaling.get("health_multiplier", 1.0)))
@@ -2644,7 +2786,7 @@ func _spawn_summon(summon_id: String, cell: Vector2i) -> bool:
 		spawn_at = _find_spawn(cell)
 		if spawn_at == Vector2i(-1, -1):
 			return false
-	var id := "%s_%03d" % [summon_id, run.entities.size()]
+	var id := _next_entity_id(summon_id)
 	var entity := definition.duplicate(true)
 	entity["id"] = id
 	entity["enemy_id"] = summon_id
@@ -3137,6 +3279,7 @@ func _move_actor_to(actor_id: String, destination: Vector2i, style: String) -> b
 	if _terrain_at(destination) == "water": _apply_status(actor_id, "Wet", 1)
 	if _terrain_at(destination) == "fire": _damage(actor_id, 5, "Fire", "the burning ground")
 	_check_objective_at_player() if actor_id == "player" else null
+	_place_pending_summons()
 	return true
 
 func _hostiles_on_line(actor_id: String, aim: Vector2i, maximum_distance: int, maximum_targets: int) -> Array[String]:
@@ -3446,6 +3589,10 @@ func _enemy_turn(actor_id: String) -> void:
 	actor["technique_turn_count"] = int(actor.get("technique_turn_count", 0)) + 1
 	_emit_combat_event("ActorTurnStarted", actor_id, "", {})
 	_emit_trigger("OnTurn", {"entity_id": actor_id, "faction": actor.get("faction", "")})
+	if bool(actor.get("follow_owner", false)):
+		_companion_turn(actor_id)
+		return
+	var behavior: String = actor.get("summon_behavior", actor.get("behavior", "melee"))
 	var target_id := _choose_target(actor_id)
 	if target_id == "":
 		return
@@ -3453,7 +3600,6 @@ func _enemy_turn(actor_id: String) -> void:
 	var origin := _pos(actor)
 	var target_pos := _pos(target)
 	var distance := _distance_to_entity(origin, target)
-	var behavior: String = actor.get("summon_behavior", actor.get("behavior", "melee"))
 	if _enemy_tactical_ability(actor_id, target_id):
 		return
 	if behavior == "boss" and String(actor.get("enemy_id", "")) == "grave_tyrant":
@@ -3509,6 +3655,70 @@ func _enemy_turn(actor_id: String) -> void:
 			_apply_status(actor_id, "Wet", 1)
 		else:
 			_add_log("%s advances." % actor.name)
+
+func _choose_companion_target(actor_id: String, owner_id: String) -> String:
+	if not run.entities.has(actor_id) or not run.entities.has(owner_id): return ""
+	var actor: Dictionary = run.entities[actor_id]
+	var owner_position := _pos(run.entities[owner_id])
+	var selected := ""
+	var selected_owner_distance := 2147483647
+	var selected_actor_distance := 2147483647
+	var leash := maxi(0, int(actor.get("companion_engage_distance", 4)))
+	var sight := maxi(0, int(actor.get("sight", 8)))
+	for candidate_id in run.entities:
+		if candidate_id == actor_id or not run.entities[candidate_id].get("alive", false) or not _is_hostile(actor_id, String(candidate_id)): continue
+		var candidate: Dictionary = run.entities[candidate_id]
+		var owner_distance := _distance_to_entity(owner_position, candidate)
+		var actor_distance := _distance_to_entity(_pos(actor), candidate)
+		if owner_distance > leash or actor_distance > sight or not _line_of_sight(_pos(actor), _pos(candidate)): continue
+		if owner_distance < selected_owner_distance or (owner_distance == selected_owner_distance and (actor_distance < selected_actor_distance or (actor_distance == selected_actor_distance and String(candidate_id) < selected))):
+			selected = String(candidate_id)
+			selected_owner_distance = owner_distance
+			selected_actor_distance = actor_distance
+	return selected
+
+func _companion_turn(actor_id: String) -> void:
+	var actor: Dictionary = run.entities.get(actor_id, {})
+	var owner_id := String(actor.get("owner", ""))
+	if actor.is_empty() or not run.entities.has(owner_id) or not run.entities[owner_id].get("alive", false): return
+	var origin := _pos(actor)
+	var owner_position := _pos(run.entities[owner_id])
+	var owner_distance := _dist(origin, owner_position)
+	var return_distance := maxi(3, int(actor.get("companion_return_distance", 4)))
+	var minimum_distance := maxi(1, int(actor.get("companion_min_follow_distance", 1)))
+	var preferred_distance := maxi(1, int(actor.get("companion_follow_distance", 2)))
+	if owner_distance > return_distance:
+		_companion_follow_owner(actor_id, owner_position)
+		return
+	var target_id := _choose_companion_target(actor_id, owner_id)
+	if target_id != "":
+		var target: Dictionary = run.entities[target_id]
+		var target_distance := _distance_to_entity(origin, target)
+		var attack_range := maxi(0, int(actor.get("range", 1)))
+		if target_distance <= attack_range and _line_of_sight(origin, _pos(target)):
+			_emit_combat_event("Attack", actor_id, target_id, {"style": "projectile" if String(actor.get("summon_behavior", "")) == "orbit_assault" else "melee", "damage_type": String(actor.get("damage_type", "Blunt"))})
+			_damage(target_id, int(actor.get("damage", 5)), String(actor.get("damage_type", "Blunt")), String(actor.get("name", "A companion")), actor_id)
+			_add_log("%s attacks %s." % [String(actor.get("name", "A companion")), String(target.get("name", "a foe"))])
+			return
+		var step := _next_step(origin, _pos(target), actor_id)
+		if step != origin:
+			_move_actor_to(actor_id, step, "companion")
+			return
+	if owner_distance < minimum_distance or owner_distance > preferred_distance:
+		_companion_follow_owner(actor_id, owner_position)
+
+func _companion_follow_owner(actor_id: String, owner_position: Vector2i) -> void:
+	var origin := _pos(run.entities[actor_id])
+	if origin == owner_position:
+		for direction in DIRECTIONS:
+			var candidate: Vector2i = owner_position + direction
+			if _movement_cell_passable(candidate, actor_id):
+				_move_actor_to(actor_id, candidate, "follow")
+				return
+		return
+	var step := _next_step(origin, owner_position, actor_id)
+	if step != origin:
+		_move_actor_to(actor_id, step, "follow")
 
 func _enemy_tactical_ability(actor_id: String, target_id: String) -> bool:
 	var actor: Dictionary = run.entities.get(actor_id, {})
@@ -3832,6 +4042,7 @@ func _on_death(entity_id: String, source: String, source_id: String = "") -> voi
 		_complete_stage()
 		_add_log("The boss falls. The run continues beyond this map.")
 	_check_objective()
+	_place_pending_summons()
 
 func _reduce_sword_technique_cooldowns(amount: int) -> void:
 	if amount <= 0: return

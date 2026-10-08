@@ -40,6 +40,12 @@ This bundle accompanies the Project Arcanist prompts supplied separately by the 
 10. `../PLANNED_IMPLEMENTATIONS.md`
    - Persistent queue for approved ideas deferred until their dependencies exist. Swordplay's initial scope is implemented; external Swordplay hybrids remain blocked until their dependency mechanics exist.
 
+11. `CORE_COMPANION_STAGE_CONTINUITY.md`
+   - Core rules for scheduled companion following, saveable summon transfer across Stages/Maps, and once-per-transition Health recovery.
+
+12. `SUMMON_STAGE_VISUAL_QA.md`
+   - Retained desktop and Android-layout captures and inspection notes for companion following and post-transition summon/Health state.
+
 ## Priority when resolving ambiguity
 
 1. The user's current Codex prompt.
@@ -53,6 +59,8 @@ Do not silently contradict an established design rule. If implementation constra
 Begin every future implementation prompt by reviewing `PLANNED_IMPLEMENTATIONS.md`. For each `BLOCKED` entry, verify whether its dependency now exists. If satisfied, mark it `READY`, determine whether the current update includes it, and implement only when in scope and safe. Test it and then record `IMPLEMENTED` with the relevant code/document reference. Leave unresolved dependencies `BLOCKED`; do not implement unrelated entries.
 
 For work touching maps, stages, bosses, active-run saves, rewards or the World Map, also read `ENDLESS_MAP_PROGRESSION.md`. For packages, prerequisites, tags, unlocks or stable save identities, also read `CONTENT_FOUNDATION.md`.
+
+For work touching summon ownership, companion AI or stage-transition continuity, also read `CORE_COMPANION_STAGE_CONTINUITY.md`.
 
 ## BUILD ARTIFACT POLICY
 

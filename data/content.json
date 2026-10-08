@@ -123,7 +123,7 @@
     "grave_tyrant": {"name": "Grave Tyrant", "faction": "Undead", "hp": 180, "damage": 17, "damage_type": "Shadow", "range": 1, "time": 125, "behavior": "boss", "xp": 160, "tier": 3, "resist": {"Poison": 0.75, "Shadow": 0.5}, "footprint": 2, "symbol": "T"}
   },
   "summons": {
-    "phantom_blade": {"name": "Phantom Blade", "hp": 20, "damage": 9, "damage_type": "Arcane", "range": 5, "time": 72, "summon_behavior": "orbit_assault", "command": 1, "ethereal": true, "symbol": "✦"}
+    "phantom_blade": {"name": "Phantom Blade", "hp": 20, "damage": 9, "damage_type": "Arcane", "range": 5, "time": 72, "summon_behavior": "orbit_assault", "command": 1, "ethereal": true, "follow_owner": true, "companion_min_follow_distance": 1, "companion_follow_distance": 2, "companion_engage_distance": 4, "companion_return_distance": 4, "symbol": "✦"}
   },
   "maps": {
     "ruined_village": {"name": "Ruined Village", "subtitle": "Ash clings to the old stone road.", "stage_templates": ["ruined_village"], "tags": ["physical"], "starting": true, "weight": 1.0, "minimum_depth": 1},

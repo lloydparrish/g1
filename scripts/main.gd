@@ -184,7 +184,7 @@ func _ready() -> void:
 					page = "battle"
 					if capture_scenario.begins_with("swordplay_") and not sim.profile.get("enabled_package_ids", []).has("swordplay"):
 						sim.set_package_enabled("swordplay", true)
-					var capture_character := "berserker" if capture_scenario.begins_with("swordplay_") else "aldren" if capture_scenario == "summon" else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
+					var capture_character := "berserker" if capture_scenario.begins_with("swordplay_") else "aldren" if capture_scenario in ["summon", "summon_follow", "summon_stage_entry"] else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
 					if capture_scenario.begins_with("swordplay_ability_"):
 						var selected_capture_ability := capture_scenario.trim_prefix("swordplay_ability_")
 						var selected_capture_definition: Dictionary = sim.content.get("abilities", {}).get(selected_capture_ability, {})
@@ -3760,6 +3760,38 @@ func _prepare_capture_scenario() -> void:
 			var summon_result: Dictionary = sim.act({"type": "cast", "id": "phantom_blade", "target": player_position})
 			_commit_action(summon_result)
 			_focus_capture_event("Summon")
+		"summon_follow":
+			for entity_id in sim.run.entities.keys():
+				if String(entity_id) != "player": sim.run.entities.erase(entity_id)
+			var follow_spawn_position: Array = sim.get_player().pos
+			sim._spawn_summon("phantom_blade", Vector2i(int(follow_spawn_position[0]), int(follow_spawn_position[1])))
+			var follow_blade_id := ""
+			for entity_id in sim.run.entities:
+				if String(sim.run.entities[entity_id].get("enemy_id", "")) == "phantom_blade": follow_blade_id = String(entity_id)
+			if follow_blade_id != "": sim.run.entities[follow_blade_id].pos = [8, 8]
+			var follow_distant_enemy := sim._spawn_enemy("goblin", Vector2i(21, 13), false)
+			if follow_distant_enemy != "": sim.run.entities[follow_distant_enemy].next_time = 1000
+			sim.run.visible = sim._bool_grid(true)
+			sim.run.explored = sim._bool_grid(true)
+			sim.get_player().next_time = 0
+			if follow_blade_id != "": sim.run.entities[follow_blade_id].next_time = 35
+			sim._spend_player_time(150, "")
+		"summon_stage_entry":
+			for entity_id in sim.run.entities.keys():
+				if String(entity_id) != "player": sim.run.entities.erase(entity_id)
+			var entry_spawn_position: Array = sim.get_player().pos
+			sim._spawn_summon("phantom_blade", Vector2i(int(entry_spawn_position[0]), int(entry_spawn_position[1])))
+			var entry_blade_id := ""
+			for entity_id in sim.run.entities:
+				if String(sim.run.entities[entity_id].get("enemy_id", "")) == "phantom_blade": entry_blade_id = String(entity_id)
+			if entry_blade_id != "":
+				sim.run.entities[entry_blade_id].pos = [10, 8]
+				sim.run.entities[entry_blade_id].hp = 11
+				sim.run.entities[entry_blade_id].statuses = {"Haste": {"stacks": 1, "duration": 2}}
+			sim.get_player().hp = 10
+			sim.run.stage_completed = true
+			sim.run.stages_completed = "1"
+			sim.advance_stage()
 	queue_redraw()
 
 func _capture_adjacent_enemy() -> String:

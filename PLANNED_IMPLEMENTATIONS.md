@@ -12,6 +12,17 @@ Statuses:
 - `READY` — dependencies are satisfied and a future in-scope prompt may implement it.
 - `IMPLEMENTED` — shipped in the referenced implementation and verified.
 
+## Core Companion and Stage Continuity
+
+### CORE-001 — Companion following, summon persistence and stage-entry recovery
+
+- **Status:** IMPLEMENTED
+- **Origin:** User-approved Core mini-fix for Phantom Blade targeting/following, summon continuity across Stages/Maps and modest completed-stage Health recovery.
+- **Intended behavior:** Use shared scheduled companion movement and targeting; retain living player-owned summons through Stage and Map transitions with save-safe legal placement; restore `max(1, floor(MaxHealth × 0.05))` Health once when entering the next Stage after a completed Stage.
+- **Dependencies:** Existing simulation-owned entities, faction/Command rules, pathfinding, save migration, endless Stage/Map flow and player Health state.
+- **Implementation notes:** Phantom Blade's companion behavior is definition-driven and reusable. Version-4 runs serialize deferred summon placement and an idempotency key for stage healing. Initial run creation and save/resume do not trigger recovery. No package-specific branch was added.
+- **Implementation:** `scripts/game_sim.gd`, `data/content.json`, `tests/summon_stage_fix_runner.gd`; [`docs/CORE_COMPANION_STAGE_CONTINUITY.md`](docs/CORE_COMPANION_STAGE_CONTINUITY.md) and [`docs/ENDLESS_MAP_PROGRESSION.md`](docs/ENDLESS_MAP_PROGRESSION.md).
+
 ## Swordplay Content Package
 
 ### SWP-001 — Swordplay package scope
