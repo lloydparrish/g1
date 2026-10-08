@@ -2,6 +2,8 @@
 
 This document defines the content architecture and progression rules introduced for the content-development phase. Read it and the [design contract](PROJECT_ARCANIST_DESIGN_CONTRACT.md) before changing content, saves, rewards, character selection or progression. The design contract remains authoritative; this document records its content-system details.
 
+For endless Map/Stage generation, Stage-6 boss eligibility, package injection into map generation, depth scaling and active-run continuation, also read [`ENDLESS_MAP_PROGRESSION.md`](ENDLESS_MAP_PROGRESSION.md). Review [`PLANNED_IMPLEMENTATIONS.md`](../PLANNED_IMPLEMENTATIONS.md) at the start of every future implementation task.
+
 ## Content packages and stable identity
 
 Core and packaged definitions use the same definition shape and stable content IDs. `data/core_manifest.json` identifies Core. A package manifest declares its stable package ID, display name, semantic version, kind, dependencies, content file and asset paths. Definitions are data-driven and currently resolve against existing game mechanics. The registry loads Core first, then enabled packages in deterministic dependency-first order with stable ID tie-breaking. A disabled package contributes no definitions. Its shared content catalog already accepts definition sections for characters, abilities, passives, equipment/items, relics/artifacts, enemies/bosses, maps, stages, events, evolutions, unlocks, visual-asset metadata and tags; records for future gameplay families remain inert until a runtime feature consumes them. Missing dependencies, cycles, malformed manifests, duplicate content IDs, unknown tags and missing assets are validation errors intended for development diagnostics.

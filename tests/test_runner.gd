@@ -263,7 +263,7 @@ func run_suite() -> void:
 			tyrant_id = entity_id
 	_check(tyrant_id != "" and int(boss.run.entities[tyrant_id].footprint) == 2, "boss spawns as a multi-tile creature")
 	boss._damage(tyrant_id, 999, "Slashing", boss.get_player().name)
-	_check(boss.run.outcome == "victory", "boss death completes the run")
+	_check(boss.run.outcome == "" and bool(boss.run.stage_completed) and String(boss.run.maps_completed) == "1", "boss death completes the map without ending the run")
 
 	var stress = SimScript.new()
 	stress.start_run(2026, "jim")

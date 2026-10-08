@@ -125,6 +125,16 @@
   "summons": {
     "phantom_blade": {"name": "Phantom Blade", "hp": 20, "damage": 9, "damage_type": "Arcane", "range": 5, "time": 72, "summon_behavior": "orbit_assault", "command": 1, "ethereal": true, "symbol": "✦"}
   },
+  "maps": {
+    "ruined_village": {"name": "Ruined Village", "subtitle": "Ash clings to the old stone road.", "stage_templates": ["ruined_village"], "tags": ["physical"], "starting": true, "weight": 1.0, "minimum_depth": 1},
+    "graveyard": {"name": "Old Graveyard", "subtitle": "The earth remembers every name.", "stage_templates": ["graveyard"], "tags": ["necromancy"], "weight": 0.9, "minimum_depth": 1},
+    "flooded_ruins": {"name": "Flooded Ruins", "subtitle": "Black water laps at the broken stairs.", "stage_templates": ["flooded_ruins"], "tags": ["physical"], "weight": 1.0, "minimum_depth": 1},
+    "goblin_warrens": {"name": "Goblin Warrens", "subtitle": "Small footprints lead into the dark.", "stage_templates": ["goblin_warrens"], "tags": ["physical"], "weight": 1.0, "minimum_depth": 1},
+    "thornwood": {"name": "Thornwood", "subtitle": "Branches tighten around the path.", "stage_templates": ["thornwood"], "tags": ["nature"], "weight": 1.0, "minimum_depth": 1}
+  },
+  "bosses": {
+    "grave_tyrant": {"name": "Grave Tyrant", "enemy_id": "grave_tyrant", "weight": 1.0, "minimum_depth": 1, "stage_only": 6, "rare": false, "themes": []}
+  },
   "stages": {
     "ruined_village": {"name": "Ruined Village", "subtitle": "Ash clings to the old stone road.", "factions": ["Undead", "Bandits"], "enemies": ["skeleton", "zombie", "bandit", "skeleton_archer"], "objectives": ["Eliminate", "Reach Exit", "Destroy Targets"], "enemy_count_curve": [2, 3, 4, 5, 5], "exploration_loot": {"min_count": 1, "max_count": 2, "types": ["chest", "skill_book", "item"]}, "terrain": {"water": 0.025, "fire": 0.025, "blood": 0.035, "vegetation": 0.07, "wall": 0.10}},
     "graveyard": {"name": "Old Graveyard", "subtitle": "The earth remembers every name.", "factions": ["Undead"], "enemies": ["skeleton", "skeleton_archer", "zombie", "necromancer"], "objectives": ["Eliminate", "Survive", "Destroy Targets"], "enemy_count_curve": [2, 3, 4, 5, 5], "exploration_loot": {"min_count": 0, "max_count": 0, "types": []}, "terrain": {"water": 0.035, "fire": 0.0, "blood": 0.06, "vegetation": 0.11, "wall": 0.07}},

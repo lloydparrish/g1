@@ -1,6 +1,6 @@
 # Project Arcanist
 
-A deterministic, touch-first tactical roguelike built with Godot 4.7.2. The game runs from character selection through branching encounters and rewards to the Grave Tyrant, victory, or death. The authoritative design brief and supplied UI reference are preserved in [`docs/`](docs/).
+A deterministic, touch-first tactical roguelike built with Godot 4.7.2. A run continues through procedurally generated six-stage maps until the hero dies, then presents a run summary. The authoritative design brief and supplied UI reference are preserved in [`docs/`](docs/).
 
 ## Run it
 
@@ -25,12 +25,12 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 ## What is implemented
 
 - Seeded, serializable simulation with a deterministic initiative timeline and no real time player decision clock.
-- Data defined actors, factions, weapons, abilities, resources, status effects, stage definitions, objectives, rewards, artifacts and spellbooks in `data/content.json`.
+- Data-defined actors, factions, weapons, abilities, resources, status effects, map themes, stage definitions, objectives, bosses, rewards, artifacts and spellbooks in `data/content.json`.
 - Square battlefield generation, eight direction movement, walk/path checks, line of sight, visible/explored fog and multi tile occupancy.
 - Four weak starting classes (The Mundane, The Archer, The Apprentice and The Defender) plus five advanced classes discovered through profile unlocks; eleven enemies, stage-aware threat bands, an extensible damage/status registry and reusable terrain rules.
-- Weapons with different range, time and stamina behavior; target based spells; skeleton and owner bound phantom blade summons; the 2x2 Grave Tyrant encounter.
+- Six stages per procedural map; Stage 6 selects an eligible content-defined boss. Map themes, stage templates and bosses can be added by enabled content packages. The 2×2 Grave Tyrant is the current Core boss.
 - 32 currently playable abilities and passives (29 active, 3 passive) span martial, magical, hybrid and discovery paths. The prerequisite graph is data-driven and larger than the visible UI; its interface pans, filters and zooms, with no viewport-based node cap.
-- A compact 6×5 inventory grid, contextual item inspection, all nine equipment slots, two-handed hand reservation, 30 item capacity, rewards, consumables, branching routes, codex discoveries, pause/resume save and death/victory screens.
+- A compact 6×5 inventory grid, contextual item inspection, all nine equipment slots, two-handed hand reservation, 30 item capacity, rewards, consumables, exploration loot, codex discoveries, autosave/resume, map transitions that preserve the active hero/build, and death/run-summary screens.
 - Sequential combat-event playback with Normal, Fast and Instant presentation speeds, visibility-safe floating feedback, a six-entry Recent Events panel and a paged 100-record encounter history, full/assist/no-participation XP credit, and character-profile growth.
 - Eight configurable quickbar slots store stable ability/item IDs, preserve empty consumable assignments and save across resume; gameplay input is blocked until event playback finishes or is skipped.
 - Custom symbolic battlefield and touch-sized contextual screens guided by the supplied dark tactical reference.
@@ -41,8 +41,10 @@ The game accepts mouse or touchscreen taps for selection, movement, abilities, t
 - `data/content.json` defines the starter content and effect/trigger rules.
 - `scripts/main.gd` renders the simulation and maps touch, mouse and keyboard input to game commands.
 - `scenes/main.tscn` is the normal game entry point.
-- `tests/content_foundation_runner.gd` and the existing headless suites cover content, progression and save rules; production-flow and mobile suites exercise mouse and touch through the production scene.
+- `tests/content_foundation_runner.gd` and `tests/endless_progression_runner.gd` cover packages, progression, saves, deterministic map generation and a 60-map stress run; production-flow and mobile suites exercise mouse and touch through the production scene.
 - `docs/PROJECT_ARCANIST_DESIGN_CONTRACT.md` and `docs/Project_Arcanist_UI_Reference.png` retain the source design materials.
+- [`docs/ENDLESS_MAP_PROGRESSION.md`](docs/ENDLESS_MAP_PROGRESSION.md) defines endless-map generation, Stage-6 bosses, difficulty/reward scaling, autosave and run summaries.
+- [`PLANNED_IMPLEMENTATIONS.md`](PLANNED_IMPLEMENTATIONS.md) tracks approved deferred work; Swordplay remains blocked for a future user-led design pass.
 - [`DESIGN_RULES.md`](DESIGN_RULES.md) keeps the non negotiable architecture and product rules visible for later work.
 
 ## Windows build
@@ -63,15 +65,15 @@ The toolchain uses OpenJDK 17, Android Platform Tools, Build Tools 35.0.1, Andro
 
 ## Verification and visual QA
 
-`scripts\arcanist.ps1 Test` runs nine suites: core 62, production flow 35, mobile acceptance 32, Prompt 6A UI 64, progression/inventory 52, playtest regressions 43, balance 6, combat presentation 37, and content foundation 109 (440 checks total). `BuildAll` runs these suites and exports the current Windows and Android development builds. Balance samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Content foundation coverage includes packages, tags, character unlocks, rewards, exploration loot, saves and the declined-stage regression.
+`scripts\arcanist.ps1 Test` runs ten suites: core 62, production flow 36, mobile acceptance 32, Prompt 6A UI 64, progression/inventory 52, playtest regressions 43, balance 6, combat presentation 37, content foundation 109 and endless progression 1,185 (1,626 checks total). The endless suite stress-tests 60 complete maps (360 stages) and covers deterministic generation/reload, package injection, Stage-6 bosses, long counters, carry-forward, unknown/revealed destinations and death cleanup. `BuildAll` runs the suites and exports current Windows and Android development builds. Balance samples 300 opening seeds, 400 stage samples and 60 deterministic tactical opening runs. Platform suites compare mouse/touch results, Android Back, lifecycle saves, safe-area/layout bounds and minimum touch regions. Content foundation coverage includes packages, tags, character unlocks, rewards, exploration loot, saves and the declined-transition regression.
 
-`scripts\capture_visual_qa.ps1` writes production screenshots under `build/visual-qa/` at 1920×1080, 2560×1440, 2400×1080, 2340×1080 and 1280×720, plus inventory, ability web, a panned ability branch, action palette, spellbook inventory and Codex, targeting, route, reward, pause, encounter-history, sequential enemy/damage/summon/level-up playback, all three speed modes, customized/unavailable quickbars, and selected/full inventory states. The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel and action tray while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
+`scripts\capture_visual_qa.ps1` retains the existing production screen captures. `scripts\capture_endless_visual_qa.ps1` captures Map 1 with its unknown destination, Stage-6 boss communication, next-map reveal, Map 2, long journey history (including older-page navigation), resume/new-run confirmation, run summaries and long summary builds on desktop and mobile. Captures are stored under `build/visual-qa/endless/`; the reviewed endless-map capture set is indexed in [`docs/ENDLESS_MAP_VISUAL_QA.md`](docs/ENDLESS_MAP_VISUAL_QA.md). The base design remains 1440×810 with canvas-item expansion; wide-phone layouts use available width for the inspection panel and action tray while keeping square battlefield tiles. Low-processor mode idles the static turn-based UI until input or a notice requires redraw.
 
 The Prompt 2 build was physically tested by the user. The Prompt 5 APK was installed and launched in an accelerated Android 36 emulator at 2400×1080 landscape. Touch-style ADB input started a run, committed movement and a Lunge attack, changed presentation speed, opened the expanded ability palette, inventory and encounter history, and used Android Back to cancel targeting. Background/resume returned to the same turn state. The existing user-profile AVD could not create its snapshot lock under this workspace's permissions, so verification used a separate workspace-local emulator profile. Codex did not use a physical handset for Prompt 5; recheck touch feel, text size, performance/heat, suspend/resume and the device's cutout behavior on the intended phone.
 
 ## Content editing
 
-`data/content.json` is the starter content source. IDs referenced by another definition must exist in the same content registry; the validator checks references before the rest of the suite runs. Ability effects are arrays of reusable operations, costs are resource maps, targets declare their range/shape, and event rules use named triggers plus conditions/modifiers. Add mechanics to the generic resolver before adding a one-off ability implementation. Run saves are JSON at Godot's `user://run_save.json` with format version 1; the seeded RNG state is stored alongside the route, current encounter, entities, resources, inventory and progression.
+`data/content.json` is the Core content source. IDs referenced by another definition must exist in the same content registry; the validator checks references before the rest of the suite runs. Ability effects are arrays of reusable operations, costs are resource maps, targets declare their range/shape, and event rules use named triggers plus conditions/modifiers. Add mechanics to the generic resolver before adding a one-off ability implementation. Run saves are JSON at Godot's `user://run_save.json` with format version 2 and version-1 migration. The saved RNG state, generated map/history and stage/boss plans are stored alongside the current encounter, entities, resources, inventory and progression.
 
 ## Design boundaries
 

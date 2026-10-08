@@ -16,6 +16,8 @@ func run_suite() -> void:
 	root.add_child(mobile)
 	await process_frame
 	await process_frame
+	mobile.sim.delete_saved_run()
+	mobile.overlay = ""
 	mobile.sim.profile["unlocked_character_ids"] = mobile.sim.get_starting_character_ids().duplicate()
 	mobile.sim.profile["pending_character_reveals"] = []
 	mobile.sim.save_profile()
@@ -104,8 +106,15 @@ func run_suite() -> void:
 	mobile._notification(NOTIFICATION_APPLICATION_RESUMED)
 	_check(int(mobile.sim.run.time) == saved_time and FileAccess.file_exists("user://run_save.json"), "application pause saves the active run without advancing turns")
 	var resumed = SimScript.new()
-	_check(resumed.resume_run() and JSON.stringify(resumed.run) == JSON.stringify(mobile.sim.run), "the lifecycle save resumes to the same deterministic run state")
+	var resumed_ok := resumed.resume_run()
+	_check(resumed_ok and resumed.run == mobile.sim.run, "the lifecycle save resumes to the same deterministic run state")
 
+	# The preceding production interaction may legitimately reveal an authored unlock.
+	# Dismiss that reveal so this check isolates Android Back's targeting behavior.
+	var pending_reveal: String = mobile.sim.get_pending_character_reveal()
+	if pending_reveal != "": mobile.sim.consume_character_reveal(pending_reveal)
+	mobile.reveal_character_id = ""
+	mobile.overlay = ""
 	mobile.target_mode = "arcane_bolt"
 	mobile.last_android_back_msec = -500
 	mobile._handle_back_request()

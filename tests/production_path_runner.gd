@@ -14,6 +14,7 @@ func run_flow() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
+	main.sim.delete_saved_run()
 	main.sim.profile["unlocked_character_ids"] = main.sim.get_starting_character_ids().duplicate()
 	main.sim.profile["pending_character_reveals"] = []
 	main.sim.save_profile()
@@ -118,11 +119,8 @@ func run_flow() -> void:
 	_check(main.sim.run.equipment.get("Body", "") == "scale_armor", "the lower inventory equips the claimed armor")
 	await _tap_action(main, "lower_panel", "inventory")
 	_check(not main.ui_state.lower_dock_expanded and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss"]), "the persistent desktop map has no direct travel actions")
-	var next_route: String = String(main.sim.run.route_choices[0])
 	await _tap_action(main, "next_stage")
-	_check(main.overlay == "destinations", "the completed encounter opens the dedicated destination picker")
-	await _tap_action(main, "destination_route", next_route)
-	_check(main.sim.run.stage_index == 1 and main.sim.run.stage_id == next_route and not main.sim.get_visible_entities().is_empty(), "the dedicated route selection creates the later encounter")
+	_check(main.overlay == "" and int(main.sim.run.stage_index) == 1 and not main.sim.get_visible_entities().is_empty(), "the completed encounter advances directly within its generated map")
 
 	main.sim.run.stage_index = 4
 	main.sim.run.stage_completed = true
@@ -132,13 +130,12 @@ func run_flow() -> void:
 	await process_frame
 	_check(not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss"]), "the persistent map does not expose the final boss travel action")
 	await _tap_action(main, "next_stage")
-	_check(main.overlay == "destinations", "the final encounter opens the dedicated boss destination picker")
-	await _tap_action(main, "destination_route", "grave_tyrant")
+	_check(main.overlay == "" and int(main.sim.run.stage_index) == 5, "Stage 5 advances into the map's boss stage")
 	var tyrant_id := ""
 	for entity_id in main.sim.run.entities:
 		if main.sim.run.entities[entity_id].get("kind") == "boss":
 			tyrant_id = String(entity_id)
-	_check(main.sim.run.stage_id == "graveyard" and tyrant_id != "", "dedicated destination control enters the 2x2 Grave Tyrant encounter")
+	_check(String(main.sim.run.objective.kind) == "Boss" and tyrant_id != "", "the saved map boss plan enters the 2x2 Grave Tyrant encounter")
 	if tyrant_id != "":
 		main.sim._set_grid(Vector2i(14, 7), "floor")
 		main.sim._set_grid(Vector2i(15, 7), "floor")
@@ -150,10 +147,17 @@ func run_flow() -> void:
 		main.sim.run.entities[tyrant_id].next_time = int(main.sim.get_player().next_time) + 100000
 		await _tap_action(main, "target_mode", "attack")
 		await _tap(main, _cell_center(Vector2i(14, 7)))
-	_check(main.sim.run.outcome == "victory" and main.page == "outcome", "production weapon action wins the final boss and displays victory")
-
-	await _tap_action(main, "title")
-	await _tap(main, Vector2(635, 725))
+	if tyrant_id != "" and not (main.sim.run.outcome == "" and bool(main.sim.run.stage_completed) and main.page == "battle"):
+		var boss_state: Dictionary = main.sim.run.entities.get(tyrant_id, {})
+		print("BOSS FLOW DIAGNOSTIC outcome=%s stage_completed=%s page=%s boss_alive=%s boss_hp=%s boss_pos=%s player_hp=%s player_pos=%s" % [main.sim.run.outcome, main.sim.run.stage_completed, main.page, boss_state.get("alive", false), boss_state.get("hp", -1), boss_state.get("pos", []), main.sim.get_player().get("hp", -1), main.sim.get_player().get("pos", [])])
+	_check(main.sim.run.outcome == "" and bool(main.sim.run.stage_completed) and main.page == "battle", "production weapon action defeats the boss and completes its map without ending the run")
+	var health_before_next_map := int(main.sim.get_player().hp)
+	var mana_before_next_map := int(main.sim.get_player().resources.Mana[0])
+	var stamina_before_next_map := int(main.sim.get_player().resources.Stamina[0])
+	await _tap_action(main, "next_stage")
+	_check(main.overlay == "map_reveal" and bool(main.sim.run.map_reveal_pending), "completing Stage 6 reveals the generated next map")
+	await _tap_action(main, "enter_next_map")
+	_check(String(main.sim.run.map_depth) == "2" and int(main.sim.run.stage_index) == 0 and int(main.sim.get_player().hp) == health_before_next_map and int(main.sim.get_player().resources.Mana[0]) == mana_before_next_map and int(main.sim.get_player().resources.Stamina[0]) == stamina_before_next_map, "entering Map 2 keeps the run continuous without restoring Health, Mana or Stamina")
 	for entity_id in main.sim.run.entities.keys():
 		if entity_id != "player":
 			main.sim.run.entities[entity_id].alive = false
@@ -181,7 +185,8 @@ func _tap_action(main: Control, action_type: String, action_id: String = "") -> 
 			if main.sim.run.quickbar[slot_index].get("type") == "ability" and main.sim.run.quickbar[slot_index].get("id") == action_id:
 				await _tap_index_action(main, "quickbar_slot", slot_index)
 				return
-	for hit in main.active_hits:
+	for hit_index in range(main.active_hits.size() - 1, -1, -1):
+		var hit: Dictionary = main.active_hits[hit_index]
 		var action: Dictionary = hit.action
 		if String(action.get("type", "")) != action_type:
 			continue

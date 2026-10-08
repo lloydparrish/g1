@@ -83,67 +83,64 @@ func _draw_desktop() -> void:
 
 func _draw_world_map_desktop(rect: Rect2) -> void:
 	var journey := _persistent_journey()
-	var history: Array = journey.history
 	var entries: Array = journey.entries
 	if entries.is_empty():
 		return
-	var current_name := String(entries[history.size() - 1].name)
-	host._draw_label(host._fit_text("CURRENT  ·  %s  ·  %d / 6" % [current_name, int(host.sim.run.get("stage_index", 0)) + 1], rect.size.x - 8.0, 7), rect.position.x + 2.0, rect.position.y + 13.0, 7, host.COLORS.gold)
-	var positions := _journey_positions(rect, entries.size())
-	for index in range(1, entries.size()):
+	var page_size := 5
+	var last_start := maxi(0, entries.size() - page_size)
+	var first := last_start if int(host.ui_state.map_history_start) < 0 else clampi(int(host.ui_state.map_history_start), 0, last_start)
+	var last := mini(first + page_size, entries.size())
+	var visible_entries: Array = entries.slice(first, last)
+	var current_name := String(host.sim.run.get("current_map", {}).get("name", host.sim.get_stage_name()))
+	host._draw_label(host._fit_text("MAP %s  ·  %s  ·  STAGE %d / 6" % [host._format_count_for_ui(host.sim.run.get("map_depth", "1")), current_name, int(host.sim.run.get("stage_index", 0)) + 1], rect.size.x - 8.0, 7), rect.position.x + 2.0, rect.position.y + 13.0, 7, host.COLORS.gold)
+	var positions := _journey_positions(rect, visible_entries.size())
+	for index in range(1, visible_entries.size()):
 		var from_point: Vector2 = positions[index - 1]
 		var to_point: Vector2 = positions[index]
 		var direction := (to_point - from_point).normalized()
-		var from_radius := 15.0 if index - 1 == history.size() - 1 else 12.0
-		var to_radius := 12.0
-		host.draw_line(from_point + direction * from_radius, to_point - direction * to_radius, host.COLORS.line, 2.0)
-	for index in range(entries.size()):
-		var entry: Dictionary = entries[index]
-		var point: Vector2 = positions[index]
+		host.draw_line(from_point + direction * 12.0, to_point - direction * 12.0, host.COLORS.line, 2.0)
+	for local_index in range(visible_entries.size()):
+		var entry: Dictionary = visible_entries[local_index]
+		var index := first + local_index
+		var point: Vector2 = positions[local_index]
 		var is_unknown := bool(entry.get("unknown", false))
 		var is_current := bool(entry.get("current", false))
 		var color: Color = host.COLORS.muted if is_unknown else host.COLORS.gold if is_current else host.COLORS.cyan
 		var radius := 15.0 if is_current else 12.0
 		host.draw_circle(point, radius, Color(color.r, color.g, color.b, 0.16) if not is_unknown else Color(0.04, 0.08, 0.12, 0.95))
 		host.draw_arc(point, radius, 0.0, TAU, 28, color, 2.5 if is_current else 1.5)
-		if is_unknown:
-			host._draw_label("?", point.x, point.y + 5.0, 12, color, HORIZONTAL_ALIGNMENT_CENTER)
-		else:
-			host._draw_label(str(index + 1), point.x, point.y + 3.0, 6, color, HORIZONTAL_ALIGNMENT_CENTER)
-		var name_lines: Array[String] = host._wrap_text_to_width(String(entry.name), maxf(48.0, rect.size.x / 3.0 - 16.0), 6, 2)
-		var text_y: float
-		if entries.size() <= 3:
-			text_y = point.y + 27.0
-		elif index < 3:
-			text_y = point.y - 17.0 - float(name_lines.size() - 1) * 8.0
-		else:
-			text_y = point.y + 24.0
+		host._draw_label("?" if is_unknown else _map_badge(entry.get("map_number", str(index + 1))), point.x, point.y + 4.0, 8 if not is_unknown else 12, color, HORIZONTAL_ALIGNMENT_CENTER)
+		var name_lines: Array[String] = host._wrap_text_to_width("UNKNOWN" if is_unknown else String(entry.name), maxf(54.0, rect.size.x / 3.0 - 14.0), 6, 2)
+		var text_y := point.y - 17.0 - float(name_lines.size() - 1) * 7.0 if local_index < 3 else point.y + 25.0
 		for line_index in range(name_lines.size()):
-			host._draw_label(name_lines[line_index], point.x, text_y + float(line_index) * 8.0, 6, color if is_current or is_unknown else host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	var journey_status := "NEXT LOCATION UNKNOWN" if bool(journey.has_unknown) else "JOURNEY COMPLETE" if String(host.sim.run.get("outcome", "")) == "victory" else "FINAL ENCOUNTER  ·  6 / 6"
+			host._draw_label(name_lines[line_index], point.x, text_y + float(line_index) * 7.0, 6, color if is_current or is_unknown else host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	var journey_status := "NEXT MAP UNKNOWN" if bool(journey.has_unknown) else "NEXT MAP REVEALED" if bool(host.sim.run.get("map_reveal_pending", false)) else "CURRENT MAP  ·  STAGE %d / 6" % (int(host.sim.run.get("stage_index", 0)) + 1)
 	host._draw_label(journey_status, rect.position.x + 2.0, rect.end.y - 5.0, 6, host.COLORS.gold if not bool(journey.has_unknown) else host.COLORS.muted)
+	if entries.size() > page_size:
+		host._draw_button(Rect2(rect.end.x - 140.0, rect.end.y - 23.0, 36.0, 20.0), "‹", {"type": "map_history_page", "delta": -1}, first > 0, 10)
+		host._draw_label("%d–%d / %d" % [first + 1, last, entries.size()], rect.end.x - 74.0, rect.end.y - 8.0, 6, host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+		host._draw_button(Rect2(rect.end.x - 42.0, rect.end.y - 23.0, 42.0, 20.0), "›", {"type": "map_history_page", "delta": 1}, first < last_start, 10)
+
+func _map_badge(value: Variant) -> String:
+	var digits: String = host.sim._normalize_counter(value)
+	if digits.length() <= 3:
+		return "M" + digits
+	if digits.length() <= 6:
+		return digits.substr(0, digits.length() - 3) + "k"
+	if digits.length() <= 9:
+		return digits.substr(0, digits.length() - 6) + "m"
+	return "e%d" % (digits.length() - 1)
 
 func _persistent_journey() -> Dictionary:
 	var sim = host.sim
-	var current_id := String(sim.run.get("stage_id", ""))
-	var history: Array = sim.run.get("route", []).duplicate()
-	if history.is_empty():
-		history.append(current_id)
-	elif String(history.back()) == "grave_tyrant" and current_id == "graveyard":
-		# Older Prompt 6 saves stored the boss choice ID as if it were the map ID.
-		history[history.size() - 1] = current_id
-	elif String(history.back()) != current_id:
-		history.append(current_id)
+	var history: Array = sim.run.get("map_history", []).duplicate(true)
 	var entries: Array = []
 	for index in range(history.size()):
-		var stage_id := String(history[index])
-		if stage_id == "grave_tyrant":
-			stage_id = "graveyard"
-		var stage: Dictionary = sim.content.stages.get(stage_id, {})
-		entries.append({"id": stage_id, "name": String(stage.get("name", stage_id.replace("_", " ").capitalize())), "current": index == history.size() - 1, "unknown": false})
-	var has_unknown := int(sim.run.get("stage_index", 0)) < 5
+		var map_entry: Dictionary = history[index]
+		entries.append({"id": String(map_entry.get("theme_id", "")), "map_number": String(map_entry.get("map_number", str(index + 1))), "name": String(map_entry.get("name", "Unknown Region")), "current": index == int(sim.run.get("current_map_index", 0)), "completed": bool(map_entry.get("completed", false)), "unknown": false})
+	var has_unknown := not bool(sim.run.get("map_reveal_pending", false))
 	if has_unknown:
-		entries.append({"id": "", "name": "UNKNOWN", "current": false, "unknown": true})
+		entries.append({"id": "", "map_number": sim._increment_decimal(sim._format_map_number(sim.run.get("map_depth", "1"))), "name": "UNKNOWN", "current": false, "unknown": true})
 	return {"history": history, "entries": entries, "has_unknown": has_unknown}
 
 func _journey_positions(rect: Rect2, count: int) -> Array[Vector2]:
@@ -369,7 +366,7 @@ func _equipment_stats_text(sim, item_id: String) -> String:
 func _section_summary(section_id: String) -> String:
 	var sim = host.sim
 	match section_id:
-		"world_map": return "%s  ·  %d / 6" % [sim.get_stage_name(), int(sim.run.get("stage_index", 0)) + 1]
+		"world_map": return "MAP %s  ·  STAGE %d / 6" % [host._format_count_for_ui(sim.run.get("map_depth", "1")), int(sim.run.get("stage_index", 0)) + 1]
 		"character": return "Level %d  ·  %d known" % [int(sim.run.get("level", 1)), sim.run.get("known", []).size()]
 		"inventory": return "%d / 30 items  ·  %d artifacts" % [sim.run.get("inventory", []).size(), sim.run.get("artifacts", []).size()]
 		"spellbook": return "%d discoveries" % sim.run.get("discovered_books", []).size()

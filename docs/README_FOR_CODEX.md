@@ -12,7 +12,7 @@ This bundle accompanies the Project Arcanist prompts supplied separately by the 
 2. `Project_Arcanist_UI_Reference.png`
    - Visual design reference and acceptance target.
    - Preserve its overall design language rather than reproducing the static screenshot literally at every size.
-   - The Prompt 6 desktop battle HUD keeps exactly three persistent lower sections: World Map, Character / Abilities, and Inventory / Equipment. Spellbooks remain reachable through the Inventory tabs. The persistent map records only the chosen journey, with an unknown `?` node until the final encounter; the post-objective picker alone reveals future choices.
+   - The current HUD keeps exactly three persistent lower sections: World Map, Character / Abilities, and Inventory / Equipment. Spellbooks remain reachable through Inventory tabs. The World Map records visited maps, highlights the current map and shows only one unknown `?` next destination until the six-stage map is complete. Later maps are revealed one at a time.
    - Android landscape keeps a contextual three-section dock with touch-sized controls and safe-area handling. The ability web remains a dedicated larger subview.
 
 3. `CONTENT_FOUNDATION.md`
@@ -25,6 +25,15 @@ This bundle accompanies the Project Arcanist prompts supplied separately by the 
 5. `CONTENT_FOUNDATION_VISUAL_QA.md`
    - Retained desktop/mobile captures and manual visual QA notes for the content foundation, including screenshots of the installed nine-portrait Treatment A set.
 
+6. `ENDLESS_MAP_PROGRESSION.md`
+   - Canonical Map-versus-Stage loop, endless generation, map themes and package injection, Stage-6 boss eligibility, depth scaling, rewards, visited-map presentation, autosave/resume and death summaries.
+
+7. `ENDLESS_MAP_VISUAL_QA.md`
+   - Reviewed desktop/mobile captures for the endless map, Stage-6 boss, map reveal, long history, resume flow, deep counters and run summary.
+
+8. `../PLANNED_IMPLEMENTATIONS.md`
+   - Persistent queue for approved ideas deferred until their dependencies exist, currently including the explicitly blocked Swordplay package scope.
+
 ## Priority when resolving ambiguity
 
 1. The user's current Codex prompt.
@@ -32,6 +41,12 @@ This bundle accompanies the Project Arcanist prompts supplied separately by the 
 3. The UI reference for presentation intent.
 
 Do not silently contradict an established design rule. If implementation constraints require a deviation, document the deviation and choose the narrowest solution that preserves future extensibility.
+
+## Required opening review for implementation work
+
+Begin every future implementation prompt by reviewing `PLANNED_IMPLEMENTATIONS.md`. For each `BLOCKED` entry, verify whether its dependency now exists. If satisfied, mark it `READY`, determine whether the current update includes it, and implement only when in scope and safe. Test it and then record `IMPLEMENTED` with the relevant code/document reference. Leave unresolved dependencies `BLOCKED`; do not implement unrelated entries.
+
+For work touching maps, stages, bosses, active-run saves, rewards or the World Map, also read `ENDLESS_MAP_PROGRESSION.md`. For packages, prerequisites, tags, unlocks or stable save identities, also read `CONTENT_FOUNDATION.md`.
 
 ## BUILD ARTIFACT POLICY
 

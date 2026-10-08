@@ -11,6 +11,7 @@ var inventory_page := 0
 var ability_page := 0
 var ability_category_page := 0
 var selected_ability_category := "pyromancy"
+var map_history_start := -1
 
 var selected_inventory_index := -1
 var selected_ability_id := ""

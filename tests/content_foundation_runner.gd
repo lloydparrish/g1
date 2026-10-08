@@ -344,7 +344,10 @@ func run_suite() -> void:
 	loot_sim.profile["unlocked_character_ids"] = starters.duplicate()
 	loot_sim.start_run(26, "jim")
 	_check(loot_sim.run.objects.any(func(object: Dictionary) -> bool: return object.get("kind", "") in ["chest", "skill_book", "item", "loot"]), "stage definitions can place exploration rewards")
-	loot_sim._new_stage("graveyard", false)
+	loot_sim.run.current_map = loot_sim._generate_map("2", "ruined_village", "graveyard")
+	loot_sim.run.map_depth = "2"
+	loot_sim.run.stage_index = 0
+	loot_sim._new_stage("graveyard", false, true)
 	_check(not loot_sim.run.objects.any(func(object: Dictionary) -> bool: return object.get("kind", "") in ["chest", "skill_book", "item", "loot"]), "a stage can explicitly contain zero exploration loot")
 	loot_sim.run.objects = [{"id": "test_chest", "kind": "chest", "name": "Travel Chest", "pos": loot_sim.get_player().pos.duplicate(), "hp": 1, "max_hp": 1}]
 	_check(not loot_sim.run.objects[0].has("contents"), "chest contents are hidden before opening")

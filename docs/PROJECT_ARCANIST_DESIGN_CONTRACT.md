@@ -142,7 +142,7 @@ Initial framework:
 9. Defense
 10. Mobility
 
-Martial disciplines are first-class build systems. A completely nonmagical build must be capable of defeating the final boss.
+Martial disciplines are first-class build systems. A completely nonmagical build must be capable of defeating eligible Stage-6 bosses and surviving a meaningful portion of an endless run.
 
 ## Magic schools
 
@@ -329,11 +329,13 @@ Bosses obey normal mechanics wherever logical. Immunities are specific, not a gl
 
 ## Run structure
 
-Use a generated branching map. Node categories may include Combat, Elite, Event, Shrine, Treasure, Unknown and Boss. Nodes provide useful but incomplete information. A successful full run should eventually target approximately 45–90 minutes.
+A run is an endless sequence of Maps. Each Map is one coherent region with exactly six Stages. Map number/depth and Stage within the current Map are separate state. Stage 6 is a boss encounter selected from enabled content definitions; completing it completes the current Map, resolves its rewards, generates/reveals one next Map, and lets the same hero continue. There is no final Map and reaching a particular Map/Stage does not produce victory. Hero death ends the run and produces a summary.
+
+Map themes, stage templates, enemy pools, encounter composition, exploration loot and bosses are data-driven and may be contributed by eligible enabled packages. Map 1 remains approachable with constrained enemy/objective generation, while later Maps increase both enemy numbers/stats and the eligibility of more dangerous compositions. Depth also increases access to higher-rarity rewards and makes rare bosses more likely without guaranteeing an upgrade or a rare encounter. See [`ENDLESS_MAP_PROGRESSION.md`](ENDLESS_MAP_PROGRESSION.md) for the initial formulas, data fields and generation boundaries.
 
 ## Post-encounter behavior
 
-Completing the objective does not immediately transition. A clear NEXT STAGE control appears. The player may continue exploring, looting, consuming corpses, interacting with shrines or manipulating terrain before leaving.
+Completing a Stage objective does not immediately transition. The player may continue exploring, looting, consuming corpses, interacting with shrines or manipulating terrain before choosing to continue. Stages 1–5 continue within the current Map. After Stage 6, the map-completion/reward flow reveals the next Map; entering it is a map transition inside the active run, not new-run initialization. Do not silently refill Health, Mana or Stamina at map entry.
 
 ## Death and persistent progression
 
@@ -345,7 +347,7 @@ Landscape first. The supplied UI mockup is a visual target, adapted intelligentl
 
 Windows and Android are both supported. Android landscape is the primary mobile presentation; Windows remains a first-class desktop build.
 
-During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. Windows desktop keeps exactly three persistent lower panels: World Map, Character / Abilities, and Inventory / Equipment. There is no persistent Spellbook / Discovery panel; spellbooks remain available through Inventory tabs and dedicated knowledge interfaces. The World Map is the player's actual journey: show visited maps in chosen order and highlight the current map. Represent unrevealed next progression with an unknown circular `?` node; never show future candidates or unchosen branches there. Reveal real route choices only through the post-objective destination picker, and append only the selected destination to the persistent route. Render the journey as a compact, responsive winding chain of circular nodes. Android landscape uses a contextual lower dock with the same three sections, where one section expands at a time and the other sections remain available as compact headers. Collapse the Android dock to restore battlefield space. On both platforms the ability web may open as a dedicated large subview. Codex, settings and other infrequent flows may use separate overlays.
+During combat the battlefield receives maximum area. Persist essentials such as Health, Mana, Stamina, relevant special resource, Command when relevant, action bar, timeline and important statuses. Full character stats, enemy details, extended effects and logs should be contextual/collapsible. Windows desktop keeps exactly three persistent lower panels: World Map, Character / Abilities, and Inventory / Equipment. There is no persistent Spellbook / Discovery panel; spellbooks remain available through Inventory tabs and dedicated knowledge interfaces. The World Map is the player's actual journey: retain completed/visited Maps, highlight the current Map, and represent the one unrevealed next Map with a circular `?`. Do not show a future theme, boss, stage layout or encounter before the current Map is complete. On completion, replace `?` with the revealed Map; do not show several future Maps. Render the trail as a winding chain of circular nodes and page/scroll through long histories without shrinking nodes into unreadability. Android landscape uses a contextual lower dock with the same three sections, where one section expands at a time and the other sections remain available as compact headers. Collapse the Android dock to restore battlefield space. On both platforms the ability web may open as a dedicated large subview. Codex, settings, map reveal, resume confirmation and run-summary flows may use focused overlays.
 
 Hover descriptions use a shared measured wrapping layout with a bounded maximum width and content-driven height. Place the complete tooltip inside the viewport. Combat action names may wrap to two centered lines before ellipsis; keep icons, resource/time costs and item counts visible in aligned, equal-height slots. Panel headings, separators, wrapped copy and following content participate in measured vertical flow: give rules clear padding from glyphs and move later content down when earlier text wraps.
 
@@ -375,7 +377,7 @@ Avoid debug-looking UI, programmer labels, raw IDs, exposed calculations, giant 
 
 ## Save behavior
 
-Android interruption is expected. Save enough state to resume an encounter exactly, including run seed, route, stage, battlefield, entities, resources, statuses, inventory, artifacts, abilities, summons, timeline and progression.
+Application interruption is expected on desktop and Android. Save enough state to resume the active run exactly, including run seed and RNG state, current/pending map data, visited maps, within-map Stage, encounter plans, battlefield, entities, resources, statuses, inventory, equipment, artifacts/relics, abilities/state, summons, timeline, weighting and statistics. Safe/versioned writes should recover from interrupted replacement where practical. The title screen must offer an explicit Resume Run if an active run exists and require a deliberate confirmation before replacing it with a new run. Hero death clears active-run resumability, preserves permanent profile progression and stores a useful run summary.
 
 ## Determinism and automated simulation
 
@@ -385,7 +387,7 @@ Given seed + game state + player actions, the simulation should be reproducible.
 
 Compilation, passing unit tests or opening a scene are not sufficient. A human must be able to:
 
-launch -> select character -> enter run -> navigate battlefield -> fight -> use abilities -> gain rewards -> equip loot -> complete encounters -> choose routes -> fight boss -> win or die -> start another run.
+launch -> select character -> enter Map 1 Stage 1 -> navigate battlefield -> fight -> use abilities -> gain rewards -> equip loot -> explore -> complete Stages -> fight the Stage-6 boss -> reveal/enter another Map -> resume the same active run -> die -> review the run summary -> start another run.
 
 ## Three-prompt production rule
 
@@ -406,7 +408,10 @@ Later prompts may expand content, but must preserve the shared deterministic sim
 - Selecting a targeted attack shows a restrained battlefield range preview from the authoritative targeting query also used for action validation. It distinguishes range from visible legal targets and never exposes hidden tiles or enemies. The preview clears on cancel, action resolution, replacement action or turn/state transition.
 - Hover descriptions and combat action labels use measured word wrapping; tooltip width stays bounded, tooltip height grows with wrapped content, and the full tooltip remains in the viewport.
 - Panel separators follow their measured headers/content with visible padding. Wrapped descriptions push later content down rather than colliding with dividers, metadata or neighboring sections.
-- Persistent World Map labels and node history come only from the selected run route and current stage. Future destination IDs, names, descriptions and encounter types remain absent until the post-objective picker. The picker reveals choices; the selected choice becomes the next route node and rejected choices stay hidden. A circular `?` represents the unknown next location until the final encounter.
+- Persistent World Map entries come from the saved visited-map history and current Map/Stage. While a Map is in progress, exactly one circular `?` represents the unknown next Map; no later theme, boss, Stage or encounter is visible. Completing Stage 6 reveals only the next Map and extends the trail. Paging through old visits never exposes future content.
+- Declining a Stage transition dismisses its prompt. Ordinary movement must not reopen that same prompt after every move, and the explicit continue/reveal control must remain available.
+- Every future implementation prompt begins by reviewing [`PLANNED_IMPLEMENTATIONS.md`](../PLANNED_IMPLEMENTATIONS.md). For each blocked idea, check dependencies; mark satisfied entries ready, implement/test only those within the current scope, then record implementation references. Leave unresolved and unrelated entries blocked.
+- Content packages can inject Map themes, Stage templates, enemy pools and Stage-6 bosses through definitions. Do not add package-specific branches to central generation when existing eligibility, tags, prerequisites and weights can express the behavior.
 - Command communicates occupied summon capacity. It is not spent like Mana; failure feedback identifies the resource that blocked the action or the full Command capacity.
 - Battlefield, timeline and inspection use the same simulation-owned entity presentation, including canonical creature glyphs.
 - Every playable ability must have a non-empty authored description in data. Content validation checks these descriptions and spellbook references.

@@ -126,25 +126,20 @@ func run_suite() -> void:
 	var map_before_ids: Array[String] = []
 	for entry in map_before_choice.entries:
 		if not bool(entry.get("unknown", false)): map_before_ids.append(String(entry.id))
-	_check(map_before_ids == desktop.sim.run.route and bool(map_before_choice.has_unknown) and bool(map_before_choice.entries.back().unknown), "the persistent World Map shows authoritative visited history followed by an unknown next node")
-	_check(not actual_choices.any(func(choice: String) -> bool: return map_before_ids.has(choice)) and not desktop.active_hits.any(func(hit: Dictionary) -> bool: return actual_choices.has(String(hit.action.get("id", "")))), "generated future destinations are not exposed through persistent map labels or controls")
+	_check(map_before_ids.size() == 1 and bool(map_before_choice.entries.back().unknown) and bool(map_before_choice.has_unknown), "the persistent World Map shows the current map followed by one unknown next node")
+	_check(actual_choices.size() == 1 and String(actual_choices[0]) == String(desktop.sim.run.current_map.stage_templates[1]), "the planned next stage comes from the current map's saved stage sequence")
+	_check(not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route", "select_map_node"]), "generated future destinations are not exposed through persistent map labels or controls")
 	desktop.sim.run.stage_completed = true
 	desktop.queue_redraw()
 	await process_frame
 	var completed_map: Dictionary = desktop.lower_dock._persistent_journey()
-	_check(not actual_choices.is_empty() and bool(completed_map.has_unknown) and not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["select_map_node", "destination_route"]), "completing the objective does not reveal branches in the persistent journey map")
-	var route_id := String(actual_choices[0])
+	_check(bool(completed_map.has_unknown) and not desktop.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["select_map_node", "destination_route"]), "completing a stage does not reveal the next map")
 	desktop._handle_action({"type": "next_stage"})
 	desktop.queue_redraw()
 	await process_frame
-	var picker_routes: Array[String] = []
-	for hit in desktop.active_hits:
-		if hit.action.get("type", "") == "destination_route": picker_routes.append(String(hit.action.get("id", "")))
-	_check(desktop.overlay == "destinations" and picker_routes.size() == actual_choices.size(), "encounter completion opens a dedicated picker populated from the authoritative route state")
-	desktop._handle_action({"type": "destination_route", "id": route_id})
+	_check(desktop.overlay == "" and int(desktop.sim.run.stage_index) == 1, "the completed encounter advances directly to Stage 2 of the same map")
 	var map_after_choice: Dictionary = desktop.lower_dock._persistent_journey()
-	var chosen_history: Array = map_after_choice.history
-	_check(String(desktop.sim.run.stage_id) == route_id and String(chosen_history.back()) == route_id and not chosen_history.has(String(actual_choices[1])), "the chosen destination joins the authoritative journey while its rejected branch stays hidden")
+	_check(map_after_choice.history.size() == 1 and bool(map_after_choice.has_unknown), "stage progression leaves the next map unknown")
 
 	var targeting = MainScene.instantiate()
 	targeting.playback_mode = "Instant"
@@ -200,11 +195,11 @@ func run_suite() -> void:
 		var next_stage_id := String(desktop.sim.run.route_choices[0])
 		_check(desktop.sim.choose_route(next_stage_id), "authoritative route selection advances the journey")
 	var fifth_map: Dictionary = desktop.lower_dock._persistent_journey()
-	_check(int(desktop.sim.run.stage_index) == 4 and fifth_map.history == desktop.sim.run.route and bool(fifth_map.has_unknown) and String(fifth_map.history.back()) == String(desktop.sim.run.stage_id), "the 5/6 journey keeps every chosen map in order and leaves the next location unknown")
+	_check(int(desktop.sim.run.stage_index) == 4 and fifth_map.history.size() == 1 and bool(fifth_map.has_unknown), "Stage 5 remains inside Map 1 and keeps the next map unknown")
 	desktop.sim.run.stage_completed = true
 	_check(desktop.sim.start_boss(), "the final destination opens through the authoritative boss progression API")
 	var sixth_map: Dictionary = desktop.lower_dock._persistent_journey()
-	_check(int(desktop.sim.run.stage_index) == 5 and sixth_map.history.size() == 6 and sixth_map.history == desktop.sim.run.route and not bool(sixth_map.has_unknown) and String(sixth_map.history.back()) == String(desktop.sim.run.stage_id), "the 6/6 map shows the ordered chosen route and omits an inappropriate unknown node")
+	_check(int(desktop.sim.run.stage_index) == 5 and sixth_map.history.size() == 1 and bool(sixth_map.has_unknown) and String(desktop.sim.run.objective.kind) == "Boss", "Stage 6 is a boss inside the current map and the next map remains unknown")
 	var icon_card := Rect2(30.0, 40.0, 130.0, 44.0)
 	for icon_size in [11, 15]:
 		var icon_layout: Dictionary = desktop.lower_dock._ability_card_icon_layout(desktop, icon_card, desktop.sim.content.abilities.cleave, icon_size)
@@ -242,16 +237,11 @@ func run_suite() -> void:
 	_check(String(mobile.sim.run.equipment.get("Body", "")) == "scale_armor", "mobile selection of an occupied slot only inspects it")
 	await _touch_action(mobile, "unequip", "Body")
 	_check(String(mobile.sim.run.equipment.get("Body", "")) == "", "mobile gear removal uses the separate Unequip action")
-	var route_choices: Array = mobile.sim.run.route_choices.duplicate()
 	mobile.sim.run.stage_completed = true
 	await _touch_action(mobile, "lower_panel", "world_map")
-	var mobile_route := String(route_choices[0]) if not route_choices.is_empty() else ""
-	_check(mobile_route != "" and not mobile.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["select_map_node", "destination_route"]), "mobile persistent map hides future destinations until the destination picker opens")
-	if mobile_route != "":
-		await _touch_action(mobile, "next_stage")
-		_check(mobile.overlay == "destinations", "mobile objective completion opens the dedicated destination picker")
-		await _touch_action(mobile, "destination_route", mobile_route)
-	_check(String(mobile.sim.run.stage_id) == mobile_route and not mobile.ui_state.lower_dock_expanded and mobile.overlay == "", "mobile destination choice travels through the dedicated picker")
+	_check(not mobile.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["select_map_node", "destination_route"]), "mobile persistent map hides future stages and map themes")
+	await _touch_action(mobile, "next_stage")
+	_check(String(mobile.sim.run.map_depth) == "1" and int(mobile.sim.run.stage_index) == 1 and not mobile.ui_state.lower_dock_expanded and mobile.overlay == "", "mobile Stage completion advances within the current map without opening a destination picker")
 	var empty_player_layout: Dictionary = mobile._player_card_layout(mobile.sim.get_player(), true)
 	var empty_status_baseline: float = empty_player_layout.status_baselines[0]
 	_check(float(empty_player_layout.rect.end.y) >= empty_status_baseline + float(empty_player_layout.bottom_padding), "mobile character card reserves bottom padding after the no-effects line")

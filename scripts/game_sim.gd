@@ -6,6 +6,12 @@ const HEIGHT := 16
 const SAVE_PATH := "user://run_save.json"
 const CODEX_PATH := "user://codex.json"
 const PROFILE_PATH := "user://profile.json"
+const SAVE_VERSION := 2
+const BASE_ENEMY_HEALTH_GROWTH := 0.12
+const BASE_ENEMY_DAMAGE_GROWTH := 0.085
+const BASE_ENEMY_ARMOR_GROWTH := 0.035
+const LATE_ENEMY_COUNT_PER_LOG_DEPTH := 1.15
+const MAX_SAFE_COMBAT_STAT := 1000000000000000.0
 const ContentRegistry = preload("res://scripts/content_registry.gd")
 const DIRECTIONS := [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
 const STAGE_ORDER := ["ruined_village", "graveyard", "flooded_ruins", "goblin_warrens", "thornwood"]
@@ -42,7 +48,7 @@ func _init() -> void:
 	_load_codex()
 
 func _load_profile() -> void:
-	profile = {"version": 1, "unlocked_character_ids": [], "pending_character_reveals": [], "enabled_package_ids": []}
+	profile = {"version": 1, "unlocked_character_ids": [], "pending_character_reveals": [], "enabled_package_ids": [], "last_run_summary": {}}
 	if FileAccess.file_exists(PROFILE_PATH):
 		var parsed = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
 		if parsed is Dictionary:
@@ -301,6 +307,24 @@ func validate_content() -> Array:
 			errors.append("%s has invalid exploration loot counts" % stage_id)
 		for loot_type in exploration.get("types", []):
 			if String(loot_type) not in ["chest", "skill_book", "item"]: errors.append("%s uses invalid exploration loot type %s" % [stage_id, String(loot_type)])
+	for map_id in content.get("maps", {}):
+		var map_definition: Dictionary = content.maps[map_id]
+		if String(map_definition.get("name", "")) == "" or map_definition.get("stage_templates", []).is_empty():
+			errors.append("%s needs a display name and at least one stage template" % String(map_id))
+		if float(map_definition.get("weight", 1.0)) <= 0.0 or int(map_definition.get("minimum_depth", 1)) < 1 or int(map_definition.get("maximum_depth", 9223372036854775807)) < int(map_definition.get("minimum_depth", 1)):
+			errors.append("%s has invalid map selection weights or depth eligibility" % String(map_id))
+		for stage_template_id in map_definition.get("stage_templates", []):
+			if not content.get("stages", {}).has(String(stage_template_id)):
+				errors.append("%s references unknown stage template %s" % [String(map_id), String(stage_template_id)])
+	for boss_id in content.get("bosses", {}):
+		var boss_definition: Dictionary = content.bosses[boss_id]
+		if not content.get("enemies", {}).has(String(boss_definition.get("enemy_id", boss_id))):
+			errors.append("%s references an unknown boss enemy" % String(boss_id))
+		if int(boss_definition.get("stage_only", 6)) != 6 or float(boss_definition.get("weight", 1.0)) <= 0.0 or int(boss_definition.get("minimum_depth", 1)) < 1:
+			errors.append("%s has invalid boss eligibility or weight" % String(boss_id))
+		for theme_id in boss_definition.get("themes", []):
+			if not content.get("maps", {}).has(String(theme_id)):
+				errors.append("%s references unknown map theme %s" % [String(boss_id), String(theme_id)])
 	for character_id in content.get("characters", {}):
 		var character: Dictionary = content.characters[character_id]
 		for school in character.get("schools", []):
@@ -513,7 +537,7 @@ func start_run(seed_value: int, character_id: String) -> bool:
 	if content.weapons[definition.weapon].hands == 2:
 		equipment["Offhand"] = "occupied"
 	run = {
-		"version": 1, "seed": seed_value, "rng_state": str(_rng.state), "character_id": character_id,
+		"version": SAVE_VERSION, "seed": seed_value, "rng_state": str(_rng.state), "character_id": character_id,
 		"character": definition.name, "aura": definition.aura, "discipline": definition.discipline,
 		"schools": definition.schools.duplicate(), "disciplines": definition.get("disciplines", [definition.get("discipline", "")]).duplicate(),
 		"discoveries": [], "school_ranks": {}, "discipline_ranks": {}, "attributes": definition.attributes.duplicate(true),
@@ -523,7 +547,10 @@ func start_run(seed_value: int, character_id: String) -> bool:
 		"temporary_abilities": {}, "xp": 0, "level": 1, "skill_points": 0, "kills": 0, "assists": 0,
 		"growth_milestones": 0, "quickbar": [], "quickbar_customized": false,
 		"combat_history": [], "combat_contributions": {}, "combat_event_sequence": 0,
-		"time": 0, "turn": 0, "stage_index": 0, "encounters_completed": 0,
+		"time": 0, "turn": 0, "stage_index": 0, "map_depth": "1", "maps_completed": "0", "stages_completed": "0", "bosses_defeated": "0", "current_map_index": 0,
+		"map_history": [], "current_map": {}, "next_map": {}, "map_reveal_pending": false, "map_reveal_index": -1, "map_complete_pending": false,
+		"enemies_defeated": "0", "exploration_rewards_found": 0,
+		"encounters_completed": 0,
 		"stage_id": "", "objective": {}, "stage_completed": false, "stage_prompt_dismissed": false, "reward_choices": [], "reward_choice_resolved": false, "reward_chosen_index": -1,
 		"route_choices": [], "route": ["ruined_village"], "outcome": "", "log": ["The March stirs beyond the gate."],
 		"fire_cast_count": 0, "living_kills": 0, "boss_summoned": false, "discovered_books": [], "spellbook_resolutions": {}, "trigger_counts": {}, "ability_states": {}
@@ -540,19 +567,22 @@ func start_run(seed_value: int, character_id: String) -> bool:
 		run.quickbar.append({"type": "empty", "id": ""})
 	var player := {"id": "player", "name": definition.name, "kind": "player", "faction": "Adventurers", "pos": [12, 8], "hp": definition.resources.Health[0], "max_hp": definition.resources.Health[1], "resources": definition.resources.duplicate(true), "statuses": {}, "next_time": 0, "footprint": 1, "armor": 0, "alive": true, "sight": 10}
 	run.entities["player"] = player
-	_new_stage("ruined_village", false)
+	run.current_map = _generate_map(1, "", "ruined_village")
+	run.map_history = [run.current_map.duplicate(true)]
+	_new_stage(String(run.current_map.stage_templates[0]), false, true)
 	_recompute_armor()
 	_save_codex()
 	save_profile()
 	return true
 
 func resume_run() -> bool:
+	_recover_interrupted_save()
 	if not FileAccess.file_exists(SAVE_PATH):
 		return false
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if not (parsed is Dictionary) or int(parsed.get("version", 0)) != 1:
+	if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [1, SAVE_VERSION]:
 		return false
-	run = _canonicalize(parsed)
+	run = _migrate_run_data(_canonicalize(parsed))
 	var saved_character_id := String(run.get("character_id", "jim"))
 	if content.get("characters", {}).has(saved_character_id):
 		if not is_character_unlocked(saved_character_id):
@@ -603,22 +633,190 @@ func resume_run() -> bool:
 func save_run() -> bool:
 	if run.is_empty():
 		return false
+	if String(run.get("outcome", "")) == "defeat":
+		profile["last_run_summary"] = get_summary()
+		save_profile()
+		delete_saved_run()
+		return true
 	run["rng_state"] = str(_rng.state)
 	run = _canonicalize(run)
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var temporary_path := SAVE_PATH + ".tmp"
+	var backup_path := SAVE_PATH + ".bak"
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null:
 		return false
 	file.store_string(JSON.stringify(run))
 	file.close()
+	var absolute_save := ProjectSettings.globalize_path(SAVE_PATH)
+	var absolute_temp := ProjectSettings.globalize_path(temporary_path)
+	var absolute_backup := ProjectSettings.globalize_path(backup_path)
+	if FileAccess.file_exists(backup_path): DirAccess.remove_absolute(absolute_backup)
+	if FileAccess.file_exists(SAVE_PATH) and DirAccess.rename_absolute(absolute_save, absolute_backup) != OK:
+		DirAccess.remove_absolute(absolute_temp)
+		return false
+	if DirAccess.rename_absolute(absolute_temp, absolute_save) != OK:
+		if FileAccess.file_exists(backup_path): DirAccess.rename_absolute(absolute_backup, absolute_save)
+		return false
+	if FileAccess.file_exists(backup_path): DirAccess.remove_absolute(absolute_backup)
 	_save_codex()
 	return true
 
 func has_saved_run() -> bool:
+	_recover_interrupted_save()
 	return FileAccess.file_exists(SAVE_PATH)
+
+func _recover_interrupted_save() -> void:
+	var save_exists := FileAccess.file_exists(SAVE_PATH)
+	var backup_path := SAVE_PATH + ".bak"
+	var temp_path := SAVE_PATH + ".tmp"
+	var backup_valid := _is_valid_run_file(backup_path)
+	var save_valid := _is_valid_run_file(SAVE_PATH)
+	if backup_valid and not save_valid:
+		if save_exists: DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+		DirAccess.rename_absolute(ProjectSettings.globalize_path(backup_path), ProjectSettings.globalize_path(SAVE_PATH))
+		return
+	if not save_exists and _is_valid_run_file(temp_path):
+		DirAccess.rename_absolute(ProjectSettings.globalize_path(temp_path), ProjectSettings.globalize_path(SAVE_PATH))
+		return
+	if save_valid and FileAccess.file_exists(backup_path): DirAccess.remove_absolute(ProjectSettings.globalize_path(backup_path))
+	if FileAccess.file_exists(temp_path): DirAccess.remove_absolute(ProjectSettings.globalize_path(temp_path))
+
+func _is_valid_run_file(path: String) -> bool:
+	if not FileAccess.file_exists(path): return false
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return parsed is Dictionary and int(parsed.get("version", 0)) in [1, SAVE_VERSION] and parsed.has("entities")
 
 func delete_saved_run() -> void:
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	for suffix in [".tmp", ".bak"]:
+		var path: String = SAVE_PATH + suffix
+		if FileAccess.file_exists(path): DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+func _migrate_run_data(saved_run: Dictionary) -> Dictionary:
+	var migrated: Dictionary = saved_run.duplicate(true)
+	var old_version := int(migrated.get("version", 1))
+	if old_version <= 1:
+		var old_route: Array = migrated.get("route", []).duplicate()
+		var source_stage := String(migrated.get("stage_id", "ruined_village"))
+		var normal_route: Array[String] = []
+		for stage_id in old_route:
+			if content.get("stages", {}).has(String(stage_id)) and String(stage_id) != "grave_tyrant":
+				normal_route.append(String(stage_id))
+		if normal_route.is_empty(): normal_route.append(source_stage if content.get("stages", {}).has(source_stage) else "ruined_village")
+		var theme_id := normal_route[0]
+		if not content.get("maps", {}).has(theme_id): theme_id = "ruined_village"
+		_rng.seed = int(migrated.get("seed", 1))
+		var migrated_map := _generate_map(1, "", theme_id)
+		if migrated_map.is_empty(): migrated_map = _generate_map(1, "", "ruined_village")
+		var stage_templates: Array = migrated_map.get("stage_templates", ["ruined_village"])
+		for index in range(mini(5, normal_route.size())):
+			stage_templates[index] = normal_route[index]
+		for index in range(normal_route.size(), 5):
+			stage_templates[index] = String(stage_templates[index - 1]) if index > 0 else theme_id
+		migrated_map["stage_templates"] = stage_templates
+		if int(migrated.get("stage_index", 0)) < 5:
+			var current_index := clampi(int(migrated.get("stage_index", 0)), 0, 4)
+			if content.get("stages", {}).has(source_stage): stage_templates[current_index] = source_stage
+			var plans: Array = migrated_map.get("stage_plans", [])
+			while plans.size() < 5: plans.append(_make_encounter_plan(String(stage_templates[plans.size()]), 1, plans.size()))
+			plans[current_index] = _make_encounter_plan(String(stage_templates[current_index]), 1, current_index)
+			migrated_map["stage_plans"] = plans
+		migrated_map["boss_id"] = "grave_tyrant"
+		migrated["current_map"] = migrated_map
+		migrated["map_history"] = [migrated_map.duplicate(true)]
+		migrated["current_map_index"] = 0
+		migrated["map_depth"] = "1"
+		migrated["maps_completed"] = "0"
+		migrated["stages_completed"] = str(int(migrated.get("encounters_completed", 0)))
+		migrated["bosses_defeated"] = "1" if String(migrated.get("outcome", "")) == "victory" else "0"
+		migrated["enemies_defeated"] = str(int(migrated.get("kills", 0)))
+		migrated["exploration_rewards_found"] = 0
+		migrated["map_reveal_pending"] = false
+		migrated["map_reveal_index"] = -1
+		migrated["next_map"] = {}
+		if String(migrated.get("outcome", "")) == "victory":
+			migrated["outcome"] = ""
+			migrated["stage_completed"] = true
+			migrated["maps_completed"] = "1"
+			migrated_map["completed"] = true
+			migrated["current_map"] = migrated_map
+			migrated["map_history"] = [migrated_map.duplicate(true)]
+			migrated["map_complete_pending"] = true
+		else:
+			migrated["map_complete_pending"] = false
+		migrated["version"] = SAVE_VERSION
+	else:
+		migrated["map_depth"] = _normalize_depth(migrated.get("map_depth", "1"))
+		migrated["maps_completed"] = _normalize_counter(migrated.get("maps_completed", "0"))
+		migrated["stages_completed"] = _normalize_counter(migrated.get("stages_completed", migrated.get("encounters_completed", 0)))
+		migrated["bosses_defeated"] = _normalize_counter(migrated.get("bosses_defeated", 0))
+		migrated["enemies_defeated"] = _normalize_counter(migrated.get("enemies_defeated", migrated.get("kills", 0)))
+		migrated["exploration_rewards_found"] = int(migrated.get("exploration_rewards_found", 0))
+		migrated["map_history"] = migrated.get("map_history", [])
+		migrated["current_map_index"] = int(migrated.get("current_map_index", maxi(0, migrated.map_history.size() - 1)))
+		migrated["map_reveal_pending"] = bool(migrated.get("map_reveal_pending", false))
+		migrated["map_reveal_index"] = int(migrated.get("map_reveal_index", -1))
+		migrated["next_map"] = migrated.get("next_map", {})
+		migrated["map_complete_pending"] = bool(migrated.get("map_complete_pending", false))
+		if migrated.get("current_map", {}).is_empty():
+			var fallback_theme := String(migrated.get("stage_id", "ruined_village"))
+			if not content.get("maps", {}).has(fallback_theme): fallback_theme = "ruined_village"
+			migrated["current_map"] = _generate_map(migrated.map_depth, "", fallback_theme)
+		if migrated.map_history.is_empty():
+			migrated["map_history"] = [migrated.current_map.duplicate(true)]
+	return migrated
+
+func _format_map_number(map_number: Variant) -> String:
+	return _normalize_depth(map_number)
+
+func _normalize_depth(value: Variant) -> String:
+	var digits := _normalize_counter(value)
+	return "1" if digits == "0" else digits
+
+func _normalize_counter(value: Variant) -> String:
+	var digits := str(value).strip_edges()
+	if digits.is_empty(): return "0"
+	for character in digits:
+		if not String(character) in "0123456789": return "0"
+	var index := 0
+	while index < digits.length() - 1 and digits.substr(index, 1) == "0": index += 1
+	return digits.substr(index)
+
+func _increment_decimal(value: String) -> String:
+	var digits := _normalize_counter(value)
+	var carry := 1
+	for index in range(digits.length() - 1, -1, -1):
+		var digit := int(digits.substr(index, 1)) + carry
+		if digit >= 10:
+			digits = digits.substr(0, index) + "0" + digits.substr(index + 1)
+		else:
+			digits = digits.substr(0, index) + str(digit) + digits.substr(index + 1)
+			carry = 0
+			break
+	if carry == 1: digits = "1" + digits
+	return digits
+
+func _depth_log(depth_text: String) -> float:
+	var digits := _normalize_depth(depth_text)
+	var sample_length := mini(15, digits.length())
+	var leading := float(digits.substr(0, sample_length))
+	return log(maxf(1.0, leading)) + float(digits.length() - sample_length) * log(10.0)
+
+func _depth_meets_minimum(depth_text: String, minimum: int) -> bool:
+	return _compare_decimal(_normalize_depth(depth_text), str(maxi(1, minimum))) >= 0
+
+func _depth_meets_maximum(depth_text: String, maximum: Variant) -> bool:
+	if str(maximum).strip_edges() == "": return true
+	return _compare_decimal(_normalize_depth(depth_text), _normalize_depth(maximum)) <= 0
+
+func _compare_decimal(left: String, right: String) -> int:
+	var a := _normalize_depth(left)
+	var b := _normalize_depth(right)
+	if a.length() < b.length(): return -1
+	if a.length() > b.length(): return 1
+	if a == b: return 0
+	return -1 if a < b else 1
 
 func get_player() -> Dictionary:
 	return run.get("entities", {}).get("player", {})
@@ -626,13 +824,23 @@ func get_player() -> Dictionary:
 func get_stage_name() -> String:
 	return content.get("stages", {}).get(run.get("stage_id", ""), {}).get("name", "Graveyard")
 
+func get_map_name() -> String:
+	return String(run.get("current_map", {}).get("name", get_stage_name()))
+
+func get_boss_name() -> String:
+	var planned_boss := _get_map_boss_definition(run.get("current_map", {}))
+	if planned_boss.is_empty():
+		return "Boss"
+	var boss: Dictionary = planned_boss.definition
+	return String(boss.get("name", content.get("enemies", {}).get(String(planned_boss.enemy_id), {}).get("name", "Boss")))
+
 func get_objective_text() -> String:
 	var objective: Dictionary = run.get("objective", {})
 	var kind: String = objective.get("kind", "Eliminate")
 	if kind == "Eliminate":
 		return "Clear the hostile creatures"
 	if kind == "Boss":
-		return "Defeat the Grave Tyrant"
+		return "Defeat %s" % get_boss_name()
 	if kind == "Survive":
 		return "Hold the ground · %d / %d turns" % [mini(int(run.get("turn", 0)), int(objective.get("turns", 6))), int(objective.get("turns", 6))]
 	if kind == "Reach Exit":
@@ -1217,29 +1425,232 @@ func claim_reward(index: int) -> bool:
 	return true
 
 func choose_route(stage_id: String) -> bool:
-	if run.is_empty() or not run.get("stage_completed", false) or not run.route_choices.has(stage_id):
+	# Compatibility entry point for older UI/tests. Route IDs now name a stage template
+	# already selected by the current map plan; they no longer choose a new map.
+	if run.is_empty() or not run.get("route_choices", []).has(stage_id):
 		return false
-	if run.stage_index >= 4:
+	return advance_stage()
+
+func start_boss() -> bool:
+	# Compatibility entry point: the map plan, not the UI, decides the Stage 6 boss.
+	if run.is_empty() or int(run.get("stage_index", 0)) != 4:
 		return false
-	if run.route.is_empty():
-		run.route.append(run.stage_id)
-	run.route.append(stage_id)
-	run.stage_index += 1
-	_new_stage(stage_id, false)
+	return advance_stage()
+
+func advance_stage() -> bool:
+	if run.is_empty() or not run.get("stage_completed", false) or String(run.get("outcome", "")) != "":
+		return false
+	var stage_index := int(run.get("stage_index", 0))
+	if stage_index >= 5:
+		return reveal_next_map()
+	if stage_index == 4 and _get_map_boss_definition(run.get("current_map", {})).is_empty():
+		push_error("The current map has no valid eligible boss definition for Stage 6.")
+		return false
+	stage_index += 1
+	run.stage_index = stage_index
+	var current_map: Dictionary = run.get("current_map", {})
+	var templates: Array = current_map.get("stage_templates", [])
+	var template_index := mini(4, maxi(0, stage_index))
+	var stage_id := String(templates[template_index]) if template_index < templates.size() else String(run.get("stage_id", "ruined_village"))
+	if run.route.is_empty() or String(run.route.back()) != stage_id:
+		run.route.append(stage_id)
+	run.route_choices = [stage_id]
+	_new_stage(stage_id, stage_index == 5, false)
 	save_run()
 	return true
 
-func start_boss() -> bool:
-	if run.is_empty() or not run.get("stage_completed", false) or int(run.stage_index) != 4:
+func reveal_next_map() -> bool:
+	if run.is_empty() or int(run.get("stage_index", 0)) != 5 or not run.get("stage_completed", false):
 		return false
-	run.stage_index = 5
-	if run.route.is_empty():
-		run.route.append(run.stage_id)
-	# Journey history records the visited map, not the boss entity offered as its entry choice.
-	run.route.append("graveyard")
-	_new_stage("graveyard", true)
+	if bool(run.get("map_reveal_pending", false)):
+		return true
+	var previous_theme := String(run.get("current_map", {}).get("theme_id", ""))
+	var next_map := _generate_map(_increment_decimal(_normalize_depth(run.get("map_depth", "1"))), previous_theme)
+	if next_map.is_empty():
+		return false
+	var history: Array = run.get("map_history", [])
+	var current_index := int(run.get("current_map_index", history.size() - 1))
+	if current_index >= 0 and current_index < history.size():
+		history[current_index]["completed"] = true
+		history[current_index]["current"] = false
+		history[current_index]["revealed"] = true
+	next_map["current"] = false
+	next_map["completed"] = false
+	next_map["revealed"] = true
+	history.append(next_map.duplicate(true))
+	run["map_history"] = history
+	run["map_reveal_index"] = history.size() - 1
+	run["map_reveal_pending"] = true
+	run["next_map"] = next_map.duplicate(true)
 	save_run()
 	return true
+
+func enter_next_map() -> bool:
+	if run.is_empty() or not bool(run.get("map_reveal_pending", false)):
+		return false
+	var next_map: Dictionary = run.get("next_map", {}).duplicate(true)
+	if next_map.is_empty(): return false
+	var history: Array = run.get("map_history", [])
+	var next_index := int(run.get("map_reveal_index", history.size() - 1))
+	if next_index < 0 or next_index >= history.size(): return false
+	next_map["current"] = true
+	next_map["revealed"] = true
+	next_map["completed"] = false
+	history[next_index] = next_map.duplicate(true)
+	run["map_history"] = history
+	run["current_map_index"] = next_index
+	run["current_map"] = next_map
+	run["map_depth"] = _normalize_depth(next_map.get("map_number", _increment_decimal(_normalize_depth(run.get("map_depth", "1")))))
+	run["stage_index"] = 0
+	run["route"] = []
+	run["map_reveal_pending"] = false
+	run["next_map"] = {}
+	run["map_reveal_index"] = -1
+	var templates: Array = next_map.get("stage_templates", [])
+	if templates.is_empty(): return false
+	var stage_id := String(templates[0])
+	run.route = [stage_id]
+	run.route_choices = [String(templates[1])] if templates.size() > 1 else [stage_id]
+	_new_stage(stage_id, false, true)
+	save_run()
+	return true
+
+func _generate_map(map_number: Variant, previous_theme_id: String, forced_theme_id: String = "") -> Dictionary:
+	var depth_text := _normalize_depth(map_number)
+	var eligible: Array[String] = []
+	for theme_id in content.get("maps", {}):
+		var theme: Dictionary = content.maps[theme_id]
+		if not _depth_meets_minimum(depth_text, int(theme.get("minimum_depth", 1))) or not _depth_meets_maximum(depth_text, theme.get("maximum_depth", "")):
+			continue
+		var templates: Array = theme.get("stage_templates", [])
+		if templates.is_empty() or not _content_prerequisites_met(theme.get("prerequisites", {})):
+			continue
+		var valid_templates := true
+		for template_id in templates:
+			if not content.get("stages", {}).has(String(template_id)):
+				valid_templates = false
+		if valid_templates and (forced_theme_id == "" or String(theme_id) == forced_theme_id):
+			eligible.append(String(theme_id))
+	if eligible.is_empty(): return {}
+	if forced_theme_id == "" and eligible.size() > 1:
+		eligible.erase(previous_theme_id)
+		if eligible.is_empty():
+			eligible.append(previous_theme_id)
+	eligible.sort()
+	var theme_candidates: Array = []
+	for theme_id in eligible:
+		var definition: Dictionary = content.maps[theme_id]
+		theme_candidates.append({"id": theme_id, "weight": maxf(0.05, float(definition.get("weight", 1.0))) * maxf(0.05, get_content_weight(definition))})
+	var selected_theme_id := forced_theme_id if forced_theme_id != "" else String(_pick_weighted_candidate(theme_candidates).get("id", eligible[0]))
+	var theme: Dictionary = content.maps[selected_theme_id]
+	var template_choices: Array = theme.get("stage_templates", []).duplicate()
+	var template_ids: Array = []
+	for stage_index in range(5):
+		template_ids.append(String(template_choices[_rng.randi_range(0, template_choices.size() - 1)]))
+	var boss_id := _select_map_boss(selected_theme_id, depth_text)
+	if boss_id == "": return {}
+	var stage_plans: Array = []
+	for stage_index in range(5):
+		stage_plans.append(_make_encounter_plan(String(template_ids[stage_index]), depth_text, stage_index))
+	var map_data := {
+		"map_number": depth_text, "theme_id": selected_theme_id,
+		"name": String(theme.get("name", selected_theme_id.replace("_", " ").capitalize())),
+		"subtitle": String(theme.get("subtitle", "A region of the Fractured March.")),
+		"tags": theme.get("tags", []).duplicate(), "stage_templates": template_ids, "stage_plans": stage_plans,
+		"boss_id": boss_id, "completed": false, "current": true, "revealed": true,
+		"generation_seed_state": str(_rng.state)
+	}
+	return map_data
+
+func _make_encounter_plan(stage_id: String, map_number: Variant, stage_index: int) -> Dictionary:
+	var stage: Dictionary = content.get("stages", {}).get(stage_id, {})
+	if stage.is_empty(): return {}
+	var objectives: Array = stage.get("objectives", []).duplicate()
+	if _normalize_depth(map_number) == "1":
+		objectives = objectives.filter(func(value: Variant) -> bool: return String(value) in ["Eliminate", "Reach Exit"])
+	if objectives.is_empty(): objectives = ["Eliminate"]
+	var objective := String(objectives[_rng.randi_range(0, objectives.size() - 1)])
+	var curve: Array = stage.get("enemy_count_curve", [2, 3, 4, 5, 5])
+	var base_count := int(curve[mini(stage_index, curve.size() - 1)]) if not curve.is_empty() else 2
+	var scaling := get_enemy_scaling(map_number)
+	var enemy_count := base_count + int(scaling.get("extra_enemies", 0))
+	var maximum_cells := maxi(1, (WIDTH - 2) * (HEIGHT - 2) - 35)
+	enemy_count = mini(enemy_count, maximum_cells)
+	var pool: Array[String] = []
+	var weights: Array[float] = []
+	for enemy_id in stage.get("enemies", []):
+		var enemy: Dictionary = content.get("enemies", {}).get(enemy_id, {})
+		var tier := int(enemy.get("tier", 0))
+		if tier > int(scaling.get("tier_limit", 0)):
+			continue
+		pool.append(String(enemy_id))
+		weights.append(1.0 + float(tier) * _depth_log(_normalize_depth(map_number)) * 0.2)
+	if pool.is_empty():
+		pool.assign(stage.get("enemies", []))
+	var selected_enemies: Array[String] = []
+	for _index in range(enemy_count):
+		selected_enemies.append(_pick_weighted_id(pool, weights))
+	return {"stage_template_id": stage_id, "objective": objective, "enemy_ids": selected_enemies, "loot": stage.get("exploration_loot", {}).duplicate(true)}
+
+func _pick_weighted_id(ids: Array[String], weights: Array[float]) -> String:
+	if ids.is_empty(): return ""
+	var total := 0.0
+	for index in range(ids.size()): total += maxf(0.05, weights[index] if index < weights.size() else 1.0)
+	var roll := _rng.randf() * total
+	for index in range(ids.size()):
+		roll -= maxf(0.05, weights[index] if index < weights.size() else 1.0)
+		if roll <= 0.0: return ids[index]
+	return ids.back()
+
+func _select_map_boss(theme_id: String, map_number: Variant) -> String:
+	var candidates := _get_eligible_boss_candidates(theme_id, map_number)
+	return String(_pick_weighted_candidate(candidates).get("id", ""))
+
+func _get_map_boss_definition(map_data: Dictionary) -> Dictionary:
+	var boss_id := String(map_data.get("boss_id", ""))
+	var boss: Dictionary = content.get("bosses", {}).get(boss_id, {})
+	var enemy_id := String(boss.get("enemy_id", boss_id))
+	if boss_id == "" or boss.is_empty() or not content.get("enemies", {}).has(enemy_id):
+		return {}
+	return {"id": boss_id, "definition": boss, "enemy_id": enemy_id}
+
+func _get_eligible_boss_candidates(theme_id: String, map_number: Variant) -> Array:
+	var candidates: Array = []
+	var depth_text := _normalize_depth(map_number)
+	for boss_id in content.get("bosses", {}):
+		var boss: Dictionary = content.bosses[boss_id]
+		var enemy_id := String(boss.get("enemy_id", boss_id))
+		if not content.get("enemies", {}).has(enemy_id) or int(boss.get("stage_only", 6)) != 6:
+			continue
+		if not _depth_meets_minimum(depth_text, int(boss.get("minimum_depth", 1))) or not _depth_meets_maximum(depth_text, boss.get("maximum_depth", "")):
+			continue
+		var themes: Array = boss.get("themes", [])
+		if not themes.is_empty() and not themes.has(theme_id):
+			continue
+		if not _content_prerequisites_met(boss.get("prerequisites", {})):
+			continue
+		candidates.append({"id": String(boss_id), "weight": get_boss_selection_weight(boss, depth_text)})
+	return candidates
+
+func get_boss_selection_weight(boss: Dictionary, map_number: Variant) -> float:
+	var weight := maxf(0.05, float(boss.get("weight", 1.0)))
+	var log_depth := _depth_log(_normalize_depth(map_number))
+	if bool(boss.get("rare", false)):
+		weight *= 1.0 + log_depth * float(boss.get("depth_weight_growth", 0.08))
+	else:
+		weight /= 1.0 + log_depth * float(boss.get("common_depth_decay", 0.015))
+	return maxf(0.05, weight)
+
+func get_enemy_scaling(map_number: Variant) -> Dictionary:
+	var log_depth := _depth_log(_normalize_depth(map_number))
+	var maximum_extra := (WIDTH - 2) * (HEIGHT - 2) - 35
+	return {
+		"health_multiplier": 1.0 + BASE_ENEMY_HEALTH_GROWTH * log_depth + 0.02 * log_depth * log_depth,
+		"damage_multiplier": 1.0 + BASE_ENEMY_DAMAGE_GROWTH * log_depth + 0.012 * log_depth * log_depth,
+		"armor_bonus": int(minf(MAX_SAFE_COMBAT_STAT, floor(BASE_ENEMY_ARMOR_GROWTH * log_depth))),
+		"extra_enemies": int(minf(float(maximum_extra), floor(LATE_ENEMY_COUNT_PER_LOG_DEPTH * log_depth))),
+		"tier_limit": int(minf(MAX_SAFE_COMBAT_STAT, floor(log_depth / log(2.0))))
+	}
 
 func equip_item(index: int) -> bool:
 	if not can_equip_item(index):
@@ -1456,7 +1867,32 @@ func get_available_abilities() -> Array:
 	return result
 
 func get_summary() -> Dictionary:
-	return {"character": run.get("character", ""), "level": run.get("level", 1), "kills": run.get("kills", 0), "encounters": run.get("encounters_completed", 0), "time": run.get("time", 0), "outcome": run.get("outcome", "")}
+	var equipment: Array[String] = []
+	for slot in run.get("equipment", {}):
+		var item_id := String(run.equipment[slot])
+		if item_id in ["", "occupied"]: continue
+		equipment.append(String(content.get("items", {}).get(item_id, {}).get("name", item_id)))
+	var abilities: Array[String] = []
+	for ability_id in run.get("known", []):
+		abilities.append(String(content.get("abilities", {}).get(ability_id, {}).get("name", ability_id)))
+	var relics: Array[String] = []
+	for relic_id in run.get("relics", []):
+		relics.append(String(content.get("relics", {}).get(relic_id, {}).get("name", relic_id)))
+	var artifacts: Array[String] = []
+	for artifact_id in run.get("artifacts", []):
+		artifacts.append(String(content.get("artifacts", {}).get(artifact_id, {}).get("name", artifact_id)))
+	return {
+		"character": run.get("character", ""), "character_id": run.get("character_id", ""),
+		"level": int(run.get("level", 1)), "kills": int(run.get("kills", 0)),
+		"enemies_defeated": _normalize_counter(run.get("enemies_defeated", run.get("kills", 0))),
+		"bosses_defeated": _normalize_counter(run.get("bosses_defeated", 0)),
+		"maps_completed": _normalize_counter(run.get("maps_completed", "0")),
+		"stages_completed": _normalize_counter(run.get("stages_completed", run.get("encounters_completed", 0))),
+		"deepest_map": _normalize_depth(run.get("map_depth", "1")), "stage_reached": int(run.get("stage_index", 0)) + 1,
+		"encounters": int(run.get("encounters_completed", 0)), "time": int(run.get("time", 0)),
+		"xp": int(run.get("xp", 0)), "abilities": abilities, "equipment": equipment,
+		"relics": relics, "artifacts": artifacts, "outcome": run.get("outcome", "")
+	}
 
 func state_digest() -> String:
 	if run.is_empty():
@@ -1464,9 +1900,15 @@ func state_digest() -> String:
 	var player: Dictionary = get_player()
 	return JSON.stringify({"seed": run.seed, "stage": run.stage_id, "time": run.time, "player_pos": player.pos, "hp": player.hp, "mana": player.resources.Mana, "stamina": player.resources.Stamina, "entities": run.entities, "grid": run.grid, "objects": run.objects, "known": run.known, "schools": run.get("schools", []), "disciplines": run.get("disciplines", []), "discoveries": run.get("discoveries", []), "spellbook_resolutions": run.get("spellbook_resolutions", {}), "reward_choice_resolved": run.get("reward_choice_resolved", false), "reward_chosen_index": run.get("reward_chosen_index", -1), "reward_choices": run.get("reward_choices", []), "xp": run.xp, "level": run.level, "skill_points": run.skill_points, "objective": run.objective})
 
-func _new_stage(stage_id: String, is_boss: bool) -> void:
+func _new_stage(stage_id: String, is_boss: bool, suppress_recovery: bool = false) -> void:
 	var player: Dictionary = run.entities.get("player", {})
 	if player.is_empty():
+		return
+	if stage_id == "" or not content.get("stages", {}).has(stage_id):
+		return
+	var planned_boss: Dictionary = _get_map_boss_definition(run.get("current_map", {})) if is_boss else {}
+	if is_boss and planned_boss.is_empty():
+		push_error("Cannot start Stage 6 without its generated boss definition.")
 		return
 	var stage: Dictionary = content.stages[stage_id]
 	run.stage_id = stage_id
@@ -1478,13 +1920,14 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 	var command: Array = player.resources.get("Command", [0, 0])
 	command[0] = 0
 	player.resources["Command"] = command
-	var mana: Array = player.resources.Mana
-	mana[0] = mini(int(mana[1]), int(mana[0]) + 6)
-	player.resources.Mana = mana
-	var stamina: Array = player.resources.Stamina
-	stamina[0] = mini(int(stamina[1]), int(stamina[0]) + 15)
-	player.resources.Stamina = stamina
-	player.hp = mini(int(player.max_hp), int(player.hp) + 6)
+	if not suppress_recovery:
+		var mana: Array = player.resources.Mana
+		mana[0] = mini(int(mana[1]), int(mana[0]) + 6)
+		player.resources.Mana = mana
+		var stamina: Array = player.resources.Stamina
+		stamina[0] = mini(int(stamina[1]), int(stamina[0]) + 15)
+		player.resources.Stamina = stamina
+		player.hp = mini(int(player.max_hp), int(player.hp) + 6)
 	run.objects = []
 	run.corpses = []
 	run.objective = {}
@@ -1527,11 +1970,18 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 	_set_grid(Vector2i(21, 8), "floor")
 	run.visible = _bool_grid(false)
 	run.explored = _bool_grid(false)
-	var objective_kind: String = "Boss" if is_boss else stage.objectives[_rng.randi_range(0, stage.objectives.size() - 1)]
+	var current_map: Dictionary = run.get("current_map", {})
+	var stage_plan: Dictionary = {}
+	if not is_boss:
+		var plans: Array = current_map.get("stage_plans", [])
+		if int(run.get("stage_index", 0)) < plans.size(): stage_plan = plans[int(run.stage_index)]
+	var objective_kind: String = "Boss" if is_boss else String(stage_plan.get("objective", stage.objectives[_rng.randi_range(0, stage.objectives.size() - 1)]))
 	if is_boss:
 		run.objective = {"kind": "Boss", "turns": 0}
-		_spawn_enemy("grave_tyrant", Vector2i(19, 7), true)
-		_add_log("The Grave Tyrant rises from the barrow.")
+		run["boss_id"] = String(planned_boss.id)
+		_spawn_enemy(String(planned_boss.enemy_id), Vector2i(19, 7), true)
+		var boss: Dictionary = planned_boss.definition
+		_add_log("%s rises to meet you." % String(boss.get("name", content.get("enemies", {}).get(String(planned_boss.enemy_id), {}).get("name", "A boss"))))
 	else:
 		run.objective = {"kind": objective_kind, "turns": 6}
 		if objective_kind == "Reach Exit":
@@ -1539,27 +1989,25 @@ func _new_stage(stage_id: String, is_boss: bool) -> void:
 		if objective_kind == "Destroy Targets":
 			run.objects.append({"id": "ward_a", "kind": "ward", "name": "Ritual Ward", "pos": [17, 5], "hp": 15, "max_hp": 15})
 			run.objects.append({"id": "ward_b", "kind": "ward", "name": "Ritual Ward", "pos": [18, 11], "hp": 15, "max_hp": 15})
-		var enemy_curve: Array = stage.get("enemy_count_curve", [2, 3, 4, 5, 5])
-		var enemy_count: int = int(enemy_curve[clampi(int(run.stage_index), 0, enemy_curve.size() - 1)])
-		var maximum_tier := 0 if int(run.stage_index) == 0 else 1 if int(run.stage_index) <= 2 else 2
-		var enemy_pool: Array = []
-		for candidate_id in stage.enemies:
-			if int(content.enemies.get(candidate_id, {}).get("tier", 0)) <= maximum_tier:
-				enemy_pool.append(candidate_id)
-		if enemy_pool.is_empty():
-			enemy_pool = stage.enemies.duplicate()
-		for i in range(enemy_count):
-			var enemy_id: String = enemy_pool[_rng.randi_range(0, enemy_pool.size() - 1)]
+		var planned_enemy_ids: Array = stage_plan.get("enemy_ids", [])
+		if planned_enemy_ids.is_empty():
+			var fallback_plan := _make_encounter_plan(stage_id, run.get("map_depth", "1"), int(run.get("stage_index", 0)))
+			planned_enemy_ids = fallback_plan.get("enemy_ids", [])
+		for i in range(planned_enemy_ids.size()):
+			var enemy_id: String = String(planned_enemy_ids[i])
 			var position := _find_spawn(Vector2i(15 + (i % 3) * 2, 5 + int(i / 3) * 5))
 			_spawn_enemy(enemy_id, position, false)
-		run.route_choices = _make_route_choices(stage_id)
+		var next_index := int(run.get("stage_index", 0)) + 1
+		var templates: Array = current_map.get("stage_templates", [])
+		run.route_choices = [String(templates[mini(4, next_index)])] if int(run.stage_index) < 4 and not templates.is_empty() else ["boss"] if int(run.stage_index) == 4 else []
 		_add_log("%s: %s." % [stage.name, get_objective_text()])
-	_spawn_exploration_loot(stage)
+	var planned_loot: Dictionary = stage_plan.get("loot", stage.get("exploration_loot", {}))
+	_spawn_exploration_loot({"exploration_loot": planned_loot})
 	run.explored = _bool_grid(false)
 	_update_vision()
 	_record_codex("creatures", "")
 	_save_codex()
-	_emit_trigger("OnEncounterStart", {"stage_id": stage_id, "objective": objective_kind})
+	_emit_trigger("OnEncounterStart", {"stage_id": stage_id, "objective": objective_kind, "map_number": _normalize_depth(run.get("map_depth", "1")), "stage_number": int(run.get("stage_index", 0)) + 1, "is_boss_stage": is_boss})
 
 func _make_route_choices(current_stage: String) -> Array:
 	var pool := STAGE_ORDER.duplicate()
@@ -1649,6 +2097,15 @@ func get_content_weight(definition: Dictionary) -> float:
 	for tag in tags:
 		build_bonus += minf(0.18, float(build_tags.get(String(tag), 0)) * 0.035)
 	weight *= 1.0 + minf(0.75, build_bonus)
+	var rarity := String(definition.get("rarity", "Common")).to_lower()
+	var rarity_rank := 0.0
+	match rarity:
+		"uncommon": rarity_rank = 1.0
+		"rare": rarity_rank = 2.0
+		"epic": rarity_rank = 3.0
+		"legendary": rarity_rank = 4.0
+	if rarity_rank > 0.0:
+		weight *= 1.0 + 0.04 * _depth_log(_normalize_depth(run.get("map_depth", "1"))) * rarity_rank
 	return maxf(0.05, weight)
 
 func _pick_weighted_candidate(candidates: Array) -> Dictionary:
@@ -1860,6 +2317,10 @@ func _spawn_enemy(enemy_id: String, cell: Vector2i, is_boss: bool) -> String:
 		return ""
 	var id := "%s_%03d" % [enemy_id, run.entities.size()]
 	var entity := definition.duplicate(true)
+	var scaling := get_enemy_scaling(run.get("map_depth", "1"))
+	entity["hp"] = _scaled_combat_stat(int(entity.get("hp", 20)), float(scaling.get("health_multiplier", 1.0)))
+	entity["damage"] = _scaled_combat_stat(int(entity.get("damage", 5)), float(scaling.get("damage_multiplier", 1.0)))
+	entity["armor"] = _scaled_combat_stat(int(entity.get("armor", 0)) + int(scaling.get("armor_bonus", 0)), 1.0)
 	entity["id"] = id
 	entity["enemy_id"] = enemy_id
 	entity["kind"] = "boss" if is_boss else "enemy"
@@ -1875,6 +2336,11 @@ func _spawn_enemy(enemy_id: String, cell: Vector2i, is_boss: bool) -> String:
 	run.entities[id] = entity
 	_record_codex("creatures", enemy_id)
 	return id
+
+func _scaled_combat_stat(base_value: int, multiplier: float) -> int:
+	if base_value <= 0: return maxi(0, base_value)
+	var scaled := float(base_value) * maxf(1.0, multiplier)
+	return int(minf(MAX_SAFE_COMBAT_STAT, maxf(1.0, floor(scaled))))
 
 func _spawn_summon(summon_id: String, cell: Vector2i) -> bool:
 	var player: Dictionary = get_player()
@@ -2247,6 +2713,7 @@ func _interact(target: Vector2i) -> Dictionary:
 		var candidates := get_reward_candidates(true)
 		if candidates.is_empty(): return {"ok": false, "message": "The chest is empty."}
 		var reward := _pick_weighted_candidate(candidates)
+		run["exploration_rewards_found"] = int(run.get("exploration_rewards_found", 0)) + 1
 		run.objects[object_index]["contents"] = {"type": reward.type, "id": reward.id}
 		run.objects[object_index]["opened"] = true
 		run.objects[object_index]["hp"] = 0
@@ -2265,6 +2732,7 @@ func _interact(target: Vector2i) -> Dictionary:
 		var item_id := String(object.get("item_id", ""))
 		if not content.get("items", {}).has(item_id): return {"ok": false, "message": "This loot has no valid item."}
 		run.inventory.append(item_id)
+		run["exploration_rewards_found"] = int(run.get("exploration_rewards_found", 0)) + 1
 		run.objects[object_index]["hp"] = 0
 		_record_build_tags(content.items[item_id].get("tags", []))
 		_add_log("Picked up %s." % content.items[item_id].get("name", item_id))
@@ -2594,6 +3062,8 @@ func _on_death(entity_id: String, source: String, source_id: String = "") -> voi
 	_emit_trigger("OnDeath", {"entity_id": entity_id, "faction": entity.get("faction", ""), "source": source, "pos": entity.get("pos", []).duplicate()})
 	if entity_id == "player":
 		entity.hp = 0
+		run["outcome"] = "defeat"
+		run["run_summary"] = get_summary()
 		return
 	if entity.get("is_summon", false):
 		var command: Array = get_player().resources.get("Command", [0, 0])
@@ -2626,6 +3096,10 @@ func _on_death(entity_id: String, source: String, source_id: String = "") -> voi
 		contributions_after_kill.erase(entity_id)
 		run.combat_contributions = contributions_after_kill
 	_add_log("%s falls." % entity.get("name", "A creature"))
+	if entity.get("kind", "") == "boss":
+		run["bosses_defeated"] = _increment_decimal(_normalize_counter(run.get("bosses_defeated", "0")))
+	if _is_hostile("player", entity_id):
+		run["enemies_defeated"] = _increment_decimal(_normalize_counter(run.get("enemies_defeated", run.get("kills", 0))))
 	if not entity.get("is_summon", false) and entity.get("kind", "enemy") != "boss" and _rng.randf() < 0.12:
 		var loot_candidates := get_reward_candidates(false)
 		if not loot_candidates.is_empty():
@@ -2637,9 +3111,8 @@ func _on_death(entity_id: String, source: String, source_id: String = "") -> voi
 				run.objects.append({"id": "enemy_loot_%03d" % run.objects.size(), "kind": "loot", "name": "Dropped Loot", "item_id": String(dropped.get("id", "")), "pos": [drop_pos.x, drop_pos.y], "hp": 1, "max_hp": 1, "marker": "star"})
 				_add_log("A star marks a useful drop nearby.")
 	if entity.get("kind") == "boss":
-		run.outcome = "victory"
 		_complete_stage()
-		_add_log("The Grave Tyrant is defeated. The March is yours.")
+		_add_log("The boss falls. The run continues beyond this map.")
 	_check_objective()
 
 func _award_xp(amount: int, reason: String = "encounter") -> void:
@@ -2776,16 +3249,27 @@ func _complete_stage() -> void:
 		return
 	run.stage_completed = true
 	run.stage_prompt_dismissed = false
+	run["stages_completed"] = _increment_decimal(_normalize_counter(run.get("stages_completed", "0")))
 	check_authored_character_unlocks()
 	_emit_combat_event("EncounterComplete", "player", "", {"stage": String(run.get("stage_id", ""))})
 	run.encounters_completed = int(run.encounters_completed) + 1
+	if int(run.get("stage_index", 0)) == 5:
+		run["maps_completed"] = _increment_decimal(_normalize_counter(run.get("maps_completed", "0")))
+		run.current_map["completed"] = true
+		var history: Array = run.get("map_history", [])
+		var current_index := int(run.get("current_map_index", history.size() - 1))
+		if current_index >= 0 and current_index < history.size():
+			history[current_index]["completed"] = true
+			history[current_index]["current"] = true
+			run["map_history"] = history
+		_add_log("Map %s is complete. A new region waits beyond the unknown path." % _format_map_number(run.get("map_depth", "1")))
 	var clear_xp := 15 + mini(int(run.stage_index), 4) * 3
 	_award_xp(clear_xp)
 	_add_log("The route rewards %d experience." % clear_xp)
 	_add_log("Objective complete. You can keep exploring before you leave.")
 	_make_rewards()
 	_emit_trigger("OnEncounterComplete", {"stage_id": run.stage_id, "objective": run.objective.get("kind", "")})
-	if run.get("outcome", "") == "victory":
+	if run.get("outcome", "") != "":
 		return
 
 func _remaining_wards() -> int:

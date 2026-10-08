@@ -236,21 +236,22 @@ func run_suite() -> void:
 	main.sim.run.reward_choices = []
 	main.overlay = ""
 	var actual_route_choices: Array = main.sim.run.route_choices.duplicate()
+	main.sim.run.stage_index = 0
 	main._open_lower_panel("world_map")
 	main.queue_redraw()
 	await process_frame
 	await process_frame
 	var persistent_journey: Dictionary = main.lower_dock._persistent_journey()
 	var exposed_future_route: bool = main.active_hits.any(func(hit: Dictionary) -> bool: return actual_route_choices.has(String(hit.action.get("id", ""))))
-	_check(not actual_route_choices.is_empty() and persistent_journey.history == main.sim.run.route and bool(persistent_journey.has_unknown) and not exposed_future_route and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route", "select_map_node"]), "the World Map shows visited journey history and an unknown next node without exposing generated branch choices")
+	_check(not actual_route_choices.is_empty() and persistent_journey.history == main.sim.run.map_history and bool(persistent_journey.has_unknown) and not exposed_future_route and not main.active_hits.any(func(hit: Dictionary) -> bool: return hit.action.get("type", "") in ["route", "boss", "destination_route", "select_map_node"]), "the World Map shows visited journey history and an unknown next node without exposing generated branch choices")
+	var next_stage_hit_size := Vector2.ZERO
+	for hit in main.active_hits:
+		if hit.action.get("type", "") == "next_stage": next_stage_hit_size = hit.rect.size
 	main._handle_action({"type": "next_stage"})
 	main.queue_redraw()
 	await process_frame
 	await process_frame
-	var route_hit_size := Vector2.ZERO
-	for hit in main.active_hits:
-		if hit.action.get("type", "") == "destination_route": route_hit_size = hit.rect.size
-	_check(main.overlay == "destinations" and route_hit_size.x >= 54.0 and route_hit_size.y >= 54.0, "the dedicated destination picker exposes a full-size touch-safe travel action")
+	_check(String(main.sim.run.map_depth) == "1" and int(main.sim.run.stage_index) == 1 and main.overlay == "" and next_stage_hit_size.x >= 54.0 and next_stage_hit_size.y >= 54.0, "the touch-safe stage action advances within the current map without opening a destination picker")
 	main.queue_free()
 
 	print("PROGRESSION + INVENTORY %d · FAILURES %d" % [checks, failures.size()])

@@ -51,6 +51,7 @@ var acting_target_id := ""
 var floating_events: Array = []
 var pending_outcome_page := ""
 var pending_outcome_overlay := ""
+var run_summary_page := 0
 var web_pan := Vector2.ZERO
 var capture_web_pan := Vector2.ZERO
 var capture_web_pan_provided := false
@@ -689,7 +690,7 @@ func _draw_player_card() -> void:
 	var name_width := 190.0 - level_width - 10.0
 	_draw_label(_fit_text(String(player.get("name", "Adventurer")), name_width, 15), 31, 44, 15, COLORS.text)
 	_draw_label(level_label, 221, 44, 13, COLORS.gold, HORIZONTAL_ALIGNMENT_RIGHT)
-	_draw_label("%s  ·  %d / 6" % [sim.get_stage_name(), int(sim.run.get("stage_index", 0)) + 1], 31, 64, 9, COLORS.muted)
+	_draw_label(_fit_text("MAP %s  ·  STAGE %d / 6" % [_format_count_for_ui(sim.run.get("map_depth", "1")), int(sim.run.get("stage_index", 0)) + 1], 188, 9), 31, 64, 9, COLORS.muted)
 	var xp_required := maxi(1, displayed_level * 35)
 	_draw_label("XP  %d / %d" % [displayed_xp, xp_required], 31, 82, 8 if mobile else 9, COLORS.gold)
 	var displayed_skill_points := int(presentation_state.get("skill_points", sim.run.get("skill_points", 0))) if playback_active else int(sim.run.get("skill_points", 0))
@@ -1114,7 +1115,7 @@ func _draw_inspection_card() -> void:
 		for line in _wrap_text_to_width(sim.get_objective_text(), content_width, 10):
 			_draw_label(String(line), content_x, cursor_y, 10, COLORS.text)
 			cursor_y += _text_line_height(10)
-		_draw_label("ENCOUNTER  ·  %d / 6" % [int(sim.run.stage_index) + 1], content_x, cursor_y + 3.0, 9, COLORS.gold)
+		_draw_label("STAGE  ·  %d / 6%s" % [int(sim.run.stage_index) + 1, "  ·  BOSS" if int(sim.run.stage_index) == 5 else ""], content_x, cursor_y + 3.0, 9, COLORS.gold)
 		cursor_y += 20.0
 		_draw_label("%d hostiles  ·  %d XP  ·  Level %d" % [sim._hostile_count(), int(sim.run.xp), int(sim.run.level)], content_x, cursor_y, 8, COLORS.muted)
 		cursor_y += 22.0
@@ -1135,7 +1136,9 @@ func _draw_inspection_card() -> void:
 	if show_next_button:
 		var button_y := rect.end.y - 49.0
 		var transition_action := {"type": "next_stage"}
-		_draw_button(Rect2(content_x, button_y, content_width, 39.0), "CHOOSE DESTINATION  ›" if int(sim.run.get("stage_index", 0)) < 5 else "VICTORY", transition_action, true, 10, COLORS.green)
+		var stage_index := int(sim.run.get("stage_index", 0))
+		var next_label := "NEXT STAGE  ·  %d / 6  ›" % (stage_index + 2) if stage_index < 4 else "ENTER BOSS STAGE  ·  6 / 6  ›" if stage_index == 4 else "REVEAL NEXT MAP  ›"
+		_draw_button(Rect2(content_x, button_y, content_width, 39.0), next_label, transition_action, true, 10, COLORS.green)
 
 func _draw_side_controls() -> void:
 	if not _is_mobile_layout():
@@ -1306,6 +1309,10 @@ func _draw_overlay() -> void:
 		_draw_action_palette(rect)
 	elif overlay == "rewards":
 		_draw_rewards(rect)
+	elif overlay == "map_reveal":
+		_draw_map_reveal(rect)
+	elif overlay == "new_run_confirm":
+		_draw_new_run_confirmation(rect)
 	elif overlay == "destinations":
 		_draw_destination_picker(rect)
 	elif overlay == "codex":
@@ -1522,7 +1529,8 @@ func _draw_action_palette(rect: Rect2) -> void:
 	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
 
 func _draw_rewards(rect: Rect2) -> void:
-	_draw_label("ENCOUNTER COMPLETE", 131, 105, 23, COLORS.text)
+	var is_map_complete := int(sim.run.get("stage_index", 0)) == 5
+	_draw_label("MAP %s COMPLETE" % _format_count_for_ui(sim.run.get("map_depth", "1")) if is_map_complete else "STAGE %d / 6 COMPLETE" % (int(sim.run.get("stage_index", 0)) + 1), 131, 105, 23, COLORS.text)
 	var resolved: bool = sim.run.get("reward_choice_resolved", false)
 	_draw_label("One choice is kept for this encounter. This decision persists with your run.", 132, 131, 12, COLORS.muted)
 	_draw_panel(Rect2(127, 164, 1185, 411), "CHOOSE ONE REWARD", COLORS.line_soft)
@@ -1553,9 +1561,47 @@ func _draw_rewards(rect: Rect2) -> void:
 			_draw_button(Rect2(card.position.x + 19, card.position.y + 221, card.size.x - 38, TOUCH_TARGET), choice_label, {"type": "claim_reward", "index": i}, true, 12, COLORS.gold)
 		else:
 			_draw_label(choice_label, card.get_center().x, card.position.y + 254, 11, COLORS.gold if chosen else COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
-	_draw_label("%d XP  ·  %d KILLS  ·  %d / 6 ENCOUNTERS" % [sim.run.xp, sim.run.kills, sim.run.encounters_completed], 155, 616, 13, COLORS.gold)
+	_draw_label("MAP %s  ·  %s XP  ·  %s ENEMIES DEFEATED  ·  %s STAGES COMPLETED" % [_format_count_for_ui(sim.run.get("map_depth", "1")), _format_count_for_ui(sim.run.get("xp", 0)), _format_count_for_ui(sim.run.get("enemies_defeated", sim.run.kills)), _format_count_for_ui(sim.run.get("stages_completed", sim.run.encounters_completed))], 155, 616, 13, COLORS.gold)
 	_draw_button(Rect2(128, 640, 205, TOUCH_TARGET), "KEEP EXPLORING", {"type": "close"}, false, 12)
-	_draw_button(Rect2(1026, 640, 286, TOUCH_TARGET), "CHOOSE DESTINATION  →", {"type": "next_stage"}, true, 12)
+	var action_label := "REVEAL NEXT MAP  →" if is_map_complete else "CONTINUE TO STAGE %d  →" % (int(sim.run.get("stage_index", 0)) + 2)
+	_draw_button(Rect2(1026, 640, 286, TOUCH_TARGET), action_label, {"type": "next_stage"}, true, 12)
+
+func _draw_map_reveal(rect: Rect2) -> void:
+	var next_map: Dictionary = sim.run.get("next_map", {})
+	if next_map.is_empty():
+		_draw_label("THE PATH AHEAD", 131, 105, 23, COLORS.text)
+		_draw_label("The next map could not be found in the saved journey.", 132, 139, 13, COLORS.muted)
+		_draw_button(Rect2(128, 640, 250, TOUCH_TARGET), "RETURN TO REWARDS", {"type": "close"}, false, 12)
+		return
+	_draw_label("THE NEXT MAP IS REVEALED", 131, 105, 23, COLORS.gold)
+	_draw_label("Your expedition continues. The next region is now known.", 132, 133, 12, COLORS.muted)
+	_draw_panel(Rect2(300, 190, 840, 340), "MAP %s" % _format_count_for_ui(next_map.get("map_number", "1")), COLORS.green)
+	draw_circle(Vector2(720, 326), 64.0, Color("#122a30"))
+	draw_arc(Vector2(720, 326), 64.0, 0.0, TAU, 48, COLORS.green, 3.0)
+	_draw_label("◇", 720, 336, 38, COLORS.green, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label(_fit_text(String(next_map.get("name", "Unknown Region")), 720, 27), 720, 431, 27, COLORS.text, HORIZONTAL_ALIGNMENT_CENTER)
+	var subtitle_lines := _wrap_text_to_width(String(next_map.get("subtitle", "")), 700, 13, 2)
+	for index in range(subtitle_lines.size()):
+		_draw_label(String(subtitle_lines[index]), 720, 461.0 + float(index) * 18.0, 13, COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_label("Health and resources are unchanged. The next stage begins when you are ready.", 720, 574, 12, COLORS.cyan, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_button(Rect2(510, 620, 420, 52), "ENTER MAP %s  →" % _format_count_for_ui(next_map.get("map_number", "1")), {"type": "enter_next_map"}, true, 14, COLORS.green)
+
+func _draw_new_run_confirmation(_rect: Rect2) -> void:
+	_draw_label("AN EXPEDITION IS ALREADY UNDER WAY", 186, 177, 22, COLORS.text)
+	_draw_label("Starting over will replace its saved run. You can resume it or discard it here.", 187, 210, 13, COLORS.muted)
+	_draw_panel(Rect2(220, 260, 1000, 250), "ACTIVE RUN", COLORS.gold)
+	_draw_label("Resume the current hero and map journey, or replace that run with a new character.", 254, 337, 16, COLORS.text)
+	_draw_button(Rect2(272, 418, 360, 64), "RESUME ACTIVE RUN", {"type": "resume"}, true, 14)
+	_draw_button(Rect2(656, 418, 440, 64), "DISCARD AND BEGIN NEW RUN", {"type": "replace_active_run"}, false, 13, COLORS.red)
+	_draw_button(Rect2(272, 530, 180, TOUCH_TARGET), "CANCEL", {"type": "close"}, false, 12)
+
+func _draw_run_summary_list(title: String, values: Array, x: float, y: float, width: float, color: Color) -> void:
+	_draw_label(title, x, y, 10, COLORS.gold)
+	if values.is_empty():
+		_draw_label("None", x, y + 23.0, 11, COLORS.muted)
+		return
+	for index in range(values.size()):
+		_draw_label(_fit_text("• " + String(values[index]), width, 10), x, y + 22.0 + float(index) * 18.0, 10, color)
 
 func _draw_destination_picker(_rect: Rect2) -> void:
 	_draw_label("CHOOSE NEXT DESTINATION", 131, 105, 23, COLORS.text)
@@ -1707,17 +1753,51 @@ func _draw_pause(rect: Rect2) -> void:
 	_draw_label("Run state is saved after every committed action.", 160, 498, 13, COLORS.muted)
 
 func _draw_outcome() -> void:
-	var victory: bool = sim.run.get("outcome", "") == "victory"
-	_draw_label("THE TYRANT IS FALLEN" if victory else "THE MARCH CLAIMS YOU", 260, 209, 34, COLORS.gold if victory else COLORS.red)
-	_draw_label("A run is a story made from the choices that survive it.", 262, 246, 17, COLORS.muted)
-	_draw_panel(Rect2(257, 286, 926, 250), "RUN RECORD", COLORS.line)
+	_draw_label("THE MARCH CLAIMS YOU", 190, 107, 32, COLORS.red)
+	_draw_label("Your expedition ends here. What you learned remains yours.", 192, 139, 15, COLORS.muted)
 	var summary: Dictionary = sim.get_summary()
-	_draw_label(String(summary.character), 294, 350, 22, COLORS.text)
-	_draw_label("LEVEL  %d     KILLS  %d     ENCOUNTERS  %d / 6" % [summary.level, summary.kills, summary.encounters], 294, 395, 17, COLORS.cyan)
-	_draw_label("XP remaining  %d     Simulated time  %d" % [sim.run.xp, sim.run.time], 294, 433, 14, COLORS.muted)
-	_draw_label("Codex discoveries remain after this run; carried power does not.", 294, 478, 14, COLORS.gold)
-	_draw_button(Rect2(417, 594, 278, 70), "CHOOSE A NEW WANDERER", {"type": "title"}, true, 14)
-	_draw_button(Rect2(724, 594, 278, 70), "FIELD CODEX", {"type": "title_codex"}, false, 14)
+	_draw_panel(Rect2(128, 172, 1184, 468), "RUN SUMMARY", COLORS.line)
+	_draw_label(String(summary.character), 158, 225, 22, COLORS.text)
+	_draw_label("LEVEL %d  ·  %s MAPS COMPLETED  ·  DEEPEST: MAP %s, STAGE %d / 6" % [int(summary.level), _format_count_for_ui(summary.maps_completed), _format_count_for_ui(summary.deepest_map), int(summary.stage_reached)], 158, 253, 12, COLORS.cyan)
+	var stats := [
+		"MAPS COMPLETED  %s" % _format_count_for_ui(summary.maps_completed),
+		"DEEPEST MAP  %s  ·  STAGE %d / 6" % [_format_count_for_ui(summary.deepest_map), int(summary.stage_reached)],
+		"STAGES CLEARED  %s" % _format_count_for_ui(summary.stages_completed),
+		"ENEMIES DEFEATED  %s" % _format_count_for_ui(summary.enemies_defeated),
+		"BOSSES DEFEATED  %s" % _format_count_for_ui(summary.bosses_defeated),
+		"LEVEL  %d  ·  XP  %d" % [int(summary.level), int(summary.xp)]
+	]
+	for index in range(stats.size()):
+		var column := index % 3
+		var row := int(index / 3)
+		var stat_rect := Rect2(157.0 + float(column) * 368.0, 279.0 + float(row) * 38.0, 350.0, 32.0)
+		_draw_panel(stat_rect, "", COLORS.line_soft)
+		_draw_label(_fit_text(String(stats[index]), stat_rect.size.x - 16.0, 10), stat_rect.position.x + 10.0, stat_rect.position.y + 20.0, 10, COLORS.gold)
+	_draw_panel(Rect2(157, 367, 1097, 218), "FINAL BUILD AND EQUIPMENT", COLORS.line_soft)
+	var build_entries: Array[String] = []
+	for value in summary.get("abilities", []): build_entries.append("Ability  ·  " + String(value))
+	for value in summary.get("equipment", []): build_entries.append("Gear  ·  " + String(value))
+	for value in summary.get("relics", []): build_entries.append("Relic  ·  " + String(value))
+	for value in summary.get("artifacts", []): build_entries.append("Artifact  ·  " + String(value))
+	var page_size := 12
+	var page_count := maxi(1, int(ceil(float(build_entries.size()) / float(page_size))))
+	run_summary_page = clampi(run_summary_page, 0, page_count - 1)
+	if build_entries.is_empty():
+		_draw_label("No learned abilities, equipment or run relics.", 178, 425, 11, COLORS.muted)
+	else:
+		var first := run_summary_page * page_size
+		var last := mini(first + page_size, build_entries.size())
+		for index in range(first, last):
+			var local_index := index - first
+			var column := local_index % 2
+			var row := int(local_index / 2)
+			_draw_label(_fit_text(build_entries[index], 510, 10), 178.0 + float(column) * 525.0, 425.0 + float(row) * 22.0, 10, COLORS.text)
+	if page_count > 1:
+		_draw_button(Rect2(177, 553, 104, 32), "‹ PREV", {"type": "run_summary_page", "delta": -1}, false, 9)
+		_draw_label("BUILD %d / %d" % [run_summary_page + 1, page_count], 705, 575, 9, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
+		_draw_button(Rect2(1128, 553, 104, 32), "NEXT ›", {"type": "run_summary_page", "delta": 1}, false, 9)
+	_draw_button(Rect2(414, 684, 280, 56), "CHOOSE A NEW WANDERER", {"type": "title"}, true, 13)
+	_draw_button(Rect2(722, 684, 280, 56), "FIELD CODEX", {"type": "title_codex"}, false, 13)
 
 func _draw_toast(text: String) -> void:
 	var width := minf(750, maxf(300, text.length() * 9.0))
@@ -2099,6 +2179,13 @@ func _fit_text(text: String, max_width: float, size: int) -> String:
 			return candidate
 	return "…"
 
+func _format_count_for_ui(value: Variant) -> String:
+	var digits := sim._normalize_counter(value)
+	if digits.length() <= 9:
+		return digits
+	var mantissa := digits.substr(0, 1) + "." + digits.substr(1, 3)
+	return "~%se%d" % [mantissa, digits.length() - 1]
+
 func _draw_line(x1: float, y1: float, x2: float, y2: float, color: Color) -> void:
 	draw_line(Vector2(x1, y1), Vector2(x2, y2), color, 1.0)
 
@@ -2268,16 +2355,14 @@ func _handle_action(action: Dictionary) -> void:
 		"select_character":
 			selected_character = String(action.id)
 		"start":
-			var seed_value := int(Time.get_unix_time_from_system())
-			if sim.start_run(seed_value, selected_character):
-				sim.save_run()
-				page = "battle"
-				overlay = ""
-				selected_enemy = ""
-				selected_object_index = -1
-				target_mode = ""
+			if sim.has_saved_run():
+				overlay = "new_run_confirm"
 			else:
-				_show_notice("Choose an unlocked character to begin.")
+				_begin_selected_run()
+		"replace_active_run":
+			sim.delete_saved_run()
+			overlay = ""
+			_begin_selected_run()
 		"resume":
 			if sim.resume_run():
 				page = "battle" if sim.run.get("outcome", "") == "" else "outcome"
@@ -2599,15 +2684,35 @@ func _handle_action(action: Dictionary) -> void:
 				selected_enemy = ""
 				selected_object_index = -1
 		"next_stage":
-			if sim.run.get("outcome", "") == "victory":
-				page = "outcome"
+			if sim.run.get("stage_completed", false):
+				if int(sim.run.get("stage_index", 0)) == 5:
+					if sim.reveal_next_map():
+						overlay = "map_reveal"
+					else:
+						_show_notice("The next map could not be generated.")
+				else:
+					if sim.advance_stage():
+						overlay = ""
+						ui_state.lower_dock_expanded = false
+						selected_enemy = ""
+						selected_object_index = -1
+		"enter_next_map":
+			if sim.enter_next_map():
 				overlay = ""
-			elif sim.run.get("stage_completed", false):
-				overlay = "destinations"
 				ui_state.lower_dock_expanded = false
+				selected_enemy = ""
+				selected_object_index = -1
+		"run_summary_page":
+			run_summary_page = maxi(0, run_summary_page + int(action.get("delta", 0)))
+		"map_history_page":
+			var journey: Dictionary = lower_dock._persistent_journey()
+			var last_start := maxi(0, journey.get("entries", []).size() - 5)
+			var current_start := last_start if int(ui_state.map_history_start) < 0 else int(ui_state.map_history_start)
+			var requested_start := clampi(current_start + int(action.get("delta", 0)), 0, last_start)
+			ui_state.map_history_start = -1 if requested_start == last_start else requested_start
 		"destination_route":
 			var destination_id := String(action.get("id", ""))
-			var traveled := sim.start_boss() if destination_id == "grave_tyrant" else sim.choose_route(destination_id)
+			var traveled := sim.start_boss() if destination_id == "boss" else sim.choose_route(destination_id)
 			if traveled:
 				overlay = ""
 				selected_enemy = ""
@@ -2660,6 +2765,18 @@ func _handle_action(action: Dictionary) -> void:
 			selected_enemy = ""
 			selected_object_index = -1
 	queue_redraw()
+
+func _begin_selected_run() -> void:
+	var seed_value := int(Time.get_unix_time_from_system())
+	if sim.start_run(seed_value, selected_character):
+		sim.save_run()
+		page = "battle"
+		overlay = ""
+		selected_enemy = ""
+		selected_object_index = -1
+		target_mode = ""
+	else:
+		_show_notice("Choose an unlocked character to begin.")
 
 func _battlefield_tap(cell: Vector2i) -> void:
 	if playback_active: return
@@ -3097,6 +3214,91 @@ func _prepare_capture_scenario() -> void:
 		"map_ready":
 			sim.run.stage_completed = true
 			ui_state.active_lower_panel = "world_map"
+		"map2_world":
+			var map_one: Dictionary = sim.run.current_map.duplicate(true)
+			map_one["completed"] = true
+			map_one["current"] = false
+			var map_two: Dictionary = sim._generate_map("2", String(map_one.get("theme_id", "")))
+			map_two["completed"] = false
+			map_two["current"] = true
+			sim.run.map_history = [map_one, map_two]
+			sim.run.current_map_index = 1
+			sim.run.current_map = map_two
+			sim.run.map_depth = "2"
+			sim.run.maps_completed = "1"
+			sim.run.stages_completed = "6"
+			sim.run.stage_index = 0
+			ui_state.active_lower_panel = "world_map"
+			ui_state.lower_dock_expanded = true
+			sim._new_stage(String(map_two.stage_templates[0]), false, true)
+		"long_map_trail", "long_map_trail_early":
+			var trail: Array = [sim.run.current_map.duplicate(true)]
+			trail[0]["completed"] = true
+			trail[0]["current"] = false
+			var previous_theme := String(trail[0].get("theme_id", ""))
+			for map_number in range(2, 15):
+				var generated: Dictionary = sim._generate_map(str(map_number), previous_theme)
+				if generated.is_empty(): break
+				generated["completed"] = map_number < 14
+				generated["current"] = map_number == 14
+				trail.append(generated)
+				previous_theme = String(generated.get("theme_id", ""))
+			sim.run.map_history = trail
+			sim.run.current_map_index = trail.size() - 1
+			sim.run.current_map = trail.back().duplicate(true)
+			sim.run.map_depth = String(trail.back().get("map_number", "14"))
+			sim.run.maps_completed = str(trail.size() - 1)
+			sim.run.stages_completed = str((trail.size() - 1) * 6 + 2)
+			sim.run.stage_index = 2
+			ui_state.active_lower_panel = "world_map"
+			ui_state.lower_dock_expanded = true
+			ui_state.map_history_start = 0 if capture_scenario == "long_map_trail_early" else -1
+			sim._new_stage(String(sim.run.current_map.stage_templates[2]), false, true)
+		"boss_stage":
+			sim.run.stage_index = 5
+			sim._new_stage(String(sim.run.current_map.stage_templates[0]), true, true)
+		"map_reveal":
+			sim.run.stage_index = 5
+			sim._new_stage(String(sim.run.current_map.stage_templates[0]), true, true)
+			for entity_id in sim.run.entities.keys():
+				if sim.run.entities[entity_id].get("kind", "") == "boss":
+					sim._on_death(String(entity_id), "The Mundane", "player")
+					break
+			if sim.reveal_next_map(): overlay = "map_reveal"
+		"resume_run":
+			page = "title"
+			overlay = ""
+			sim.start_run(912042, "jim")
+			sim.save_run()
+		"new_run_confirmation":
+			page = "title"
+			sim.start_run(912043, "jim")
+			sim.save_run()
+			overlay = "new_run_confirm"
+		"run_summary", "run_summary_long":
+			page = "outcome"
+			overlay = ""
+			sim.run.map_depth = "14"
+			sim.run.maps_completed = "13"
+			sim.run.stages_completed = "81"
+			sim.run.enemies_defeated = "214"
+			sim.run.bosses_defeated = "8"
+			sim.run.level = 18
+			sim.run.xp = 27
+			sim.run.stage_index = 3
+			sim.run.known.assign(sim.content.abilities.keys())
+			sim.run.equipment.Weapon = "greatsword"
+			sim.run.outcome = "defeat"
+			run_summary_page = 1 if capture_scenario == "run_summary_long" else 0
+		"long_map_depth":
+			var huge_depth := "9".repeat(120)
+			sim.run.map_depth = huge_depth
+			sim.run.current_map["map_number"] = huge_depth
+			var history: Array = sim.run.map_history
+			history[0]["map_number"] = huge_depth
+			sim.run.map_history = history
+			ui_state.active_lower_panel = "world_map"
+			ui_state.lower_dock_expanded = true
 		"abilities_pyromancy", "ability_tooltip":
 			ui_state.active_lower_panel = "character"
 			ui_state.character_tab = "Abilities"
