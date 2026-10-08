@@ -40,4 +40,10 @@ Visual review caught two content presentation issues. The Content/Mods summary a
 
 ## Source captures
 
-All 25 images are retained under [`../build/visual-qa/swordplay/`](../build/visual-qa/swordplay/). Regenerate the set with `scripts/capture_swordplay_visual_qa.ps1`; each scenario receives a separate profile so unlocks and saves cannot contaminate another capture.
+The 25 visual QA scenario images are retained under [`../build/visual-qa/swordplay/`](../build/visual-qa/swordplay/). Regenerate that set with `scripts/capture_swordplay_visual_qa.ps1`; each scenario receives a separate profile so unlocks and saves cannot contaminate another capture.
+
+## Android package discovery regression
+
+The installed Android build reproduced a package-discovery defect on `emulator-5554`: Content / Mods listed only Core, even though Swordplay's manifest and definitions were present in the APK. The scanner had checked a globalized absolute filesystem path before enumerating a `res://` package root; that path is not a physical directory in an Android APK. It now opens the resource root with `DirAccess.open()` and enumerates that directory directly.
+
+After rebuilding and reinstalling the APK, the same screen showed Swordplay under Official Content with its Enable control. Enabling it changed the control to Disable and persisted `swordplay` in the profile's enabled package list. The Android runtime captures are `repro-content-mods.png` (before the fix), `fixed-content-mods.png` (package visible), and `enabled-content-mods.png` (package enabled), in the retained capture directory above.

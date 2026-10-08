@@ -151,9 +151,10 @@ func get_package_disable_closure(package_id: String, requested_enabled: Array) -
 
 func _scan_root(root: String, origin: String) -> Array:
 	var result: Array = []
-	if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(root)):
+	var root_access := DirAccess.open(root)
+	if root_access == null:
 		return result
-	var directories: PackedStringArray = DirAccess.get_directories_at(root)
+	var directories: PackedStringArray = root_access.get_directories()
 	directories.sort()
 	for directory_name in directories:
 		var directory := root.rstrip("/") + "/" + String(directory_name)
