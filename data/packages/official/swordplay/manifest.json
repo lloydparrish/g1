@@ -1,0 +1,14 @@
+{
+  "id": "swordplay",
+  "name": "Swordplay",
+  "version": "1.0.0",
+  "kind": "official",
+  "description": "Sword techniques, weapons, characters and martial foes.",
+  "content_file": "content.json",
+  "dependencies": [],
+  "assets": [
+    "assets/portraits/duelist.png",
+    "assets/portraits/fencer.png",
+    "assets/portraits/berserker.png"
+  ]
+}

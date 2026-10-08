@@ -32,7 +32,7 @@ func run_suite() -> void:
 		if action.get("type", "") == "select_item": visible_inventory_slots += 1
 		if action.get("type", "") == "dpad": desktop_dpad = true
 	_check(desktop_sections == 3 and visible_inventory_slots == desktop.sim.run.inventory.size(), "desktop keeps exactly three persistent panels and the inventory grid available together")
-	_check(inventory_tabs == ["Inventory", "Equipment", "Artifacts", "Spellbooks"], "inventory sub-tabs use the requested order")
+	_check(inventory_tabs == ["Inventory", "Equipment", "Relics", "Artifacts", "Spellbooks"], "inventory sub-tabs include relics and artifacts in the requested order")
 	_check(not desktop_dpad, "desktop omits the touch movement D-pad")
 	var all_abilities: int = desktop.sim.content.abilities.size()
 	_check(all_abilities == 34 and desktop.sim.validate_content().is_empty() and desktop.sim.content.abilities.values().all(func(ability: Dictionary) -> bool: return not ability.get("categories", []).is_empty()), "every authored ability has validated category metadata")

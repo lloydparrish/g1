@@ -252,6 +252,9 @@ func _draw_character_desktop(rect: Rect2) -> void:
 	var chosen_id := String(host.ui_state.selected_ability_id)
 	var chosen: Dictionary = sim.content.abilities.get(chosen_id, {})
 	if not chosen.is_empty():
+		var description_lines: Array[String] = host._wrap_text_to_width(String(chosen.get("description", "")), rect.size.x - 8.0, 6, 2)
+		for line_index in range(description_lines.size()):
+			host._draw_label(description_lines[line_index], rect.position.x + 2.0, rect.end.y - 58.0 + float(line_index) * 8.0, 6, host.COLORS.text)
 		var footer_text := "%s  ·  %s  ·  %d" % [String(chosen.get("school", "Ability")), host._cost_text(chosen.get("costs", {})), int(chosen.get("time", 0))]
 		host._draw_label(host._fit_text(footer_text, rect.size.x - 8.0, 6), rect.position.x + 2.0, rect.end.y - 34.0, 6, host.COLORS.muted)
 		var learned: bool = sim.run.get("known", []).has(chosen_id)
@@ -263,7 +266,7 @@ func _draw_character_desktop(rect: Rect2) -> void:
 			host._draw_button(Rect2(rect.end.x - 98.0, rect.end.y - 26.0, 96.0, 24.0), "LEARN", {"type": "learn", "id": chosen_id}, true, 7, host.COLORS.green)
 
 func _draw_inventory_desktop(rect: Rect2) -> void:
-	var tabs := ["Inventory", "Equipment", "Artifacts", "Spellbooks"]
+	var tabs := ["Inventory", "Equipment", "Relics", "Artifacts", "Spellbooks"]
 	var tab_width := rect.size.x / float(tabs.size())
 	for i in range(tabs.size()):
 		var tab := String(tabs[i])
@@ -273,6 +276,7 @@ func _draw_inventory_desktop(rect: Rect2) -> void:
 	match host.ui_state.inventory_tab:
 		"Inventory": _draw_pack(body)
 		"Equipment": _draw_equipment_desktop(body)
+		"Relics": _draw_relics(body)
 		"Artifacts": _draw_artifacts(body)
 		"Spellbooks": _draw_owned_books(body)
 
@@ -368,7 +372,7 @@ func _section_summary(section_id: String) -> String:
 	match section_id:
 		"world_map": return "MAP %s  ·  STAGE %d / 6" % [host._format_count_for_ui(sim.run.get("map_depth", "1")), int(sim.run.get("stage_index", 0)) + 1]
 		"character": return "Level %d  ·  %d known" % [int(sim.run.get("level", 1)), sim.run.get("known", []).size()]
-		"inventory": return "%d / 30 items  ·  %d artifacts" % [sim.run.get("inventory", []).size(), sim.run.get("artifacts", []).size()]
+		"inventory": return "%d / 30 items  ·  %d relics  ·  %d artifacts" % [sim.run.get("inventory", []).size(), sim.run.get("relics", []).size(), sim.run.get("artifacts", []).size()]
 		"spellbook": return "%d discoveries" % sim.run.get("discovered_books", []).size()
 	return ""
 
@@ -405,6 +409,8 @@ func _draw_character(rect: Rect2) -> void:
 	var entries: Array[String] = []
 	if host.ui_state.character_tab == "Known":
 		for node in sim.get_progression_graph(): entries.append(String(node.id))
+	elif host.ui_state.character_tab == "Abilities":
+		for ability_id in sim.get_available_abilities(): entries.append(String(ability_id))
 	else:
 		for ability_id in sim.run.get("known", []):
 			if not sim.content.abilities.has(ability_id): continue
@@ -421,15 +427,16 @@ func _draw_character(rect: Rect2) -> void:
 		var ability: Dictionary = sim.content.abilities.get(ability_id, {})
 		var progress: Dictionary = sim.get_ability_progress(ability_id)
 		var learned: bool = sim.run.get("known", []).has(ability_id)
+		var granted: bool = sim._ability_grant_source(ability_id) != ""
 		var equipped: bool = host._is_quickbar_assigned("ability", ability_id)
-		var state := "EQUIPPED" if equipped else "KNOWN" if learned and ability.get("kind", "active") != "passive" else "PASSIVE" if learned else "READY" if progress.get("learnable", false) else "LOCKED"
+		var state := "EQUIPPED" if equipped else "GRANTED" if granted and not learned else "KNOWN" if learned and ability.get("kind", "active") != "passive" else "PASSIVE" if learned else "READY" if progress.get("learnable", false) else "LOCKED"
 		var color: Color = host._school_color(String(ability.get("school", "")))
 		var card_width := (rect.size.x - 8.0) * 0.5
 		var row := int(local_index / 2)
 		var column := local_index % 2
 		var card := Rect2(x + float(column) * (card_width + 6.0), y + float(row) * 58.0, card_width, 44.0)
 		var active := String(host.ui_state.selected_ability_id) == ability_id
-		host._draw_panel(card, "", host.COLORS.gold if active else color if learned or progress.get("learnable", false) else host.COLORS.line_soft)
+		host._draw_panel(card, "", host.COLORS.gold if active else color if learned or granted or progress.get("learnable", false) else host.COLORS.line_soft)
 		var label_rect := _draw_ability_card_leading(host, card, ability, color, 15, card.position.y + 23.0)
 		host._draw_label(host._fit_text(String(ability.get("name", ability_id)), label_rect.size.x, 7), label_rect.position.x, card.position.y + 17.0, 7, host.COLORS.text)
 		host._draw_label(host._fit_text(state, label_rect.size.x, 6), label_rect.position.x, card.position.y + 33.0, 6, host.COLORS.green if equipped or learned else host.COLORS.gold if progress.get("learnable", false) else host.COLORS.muted)
@@ -441,6 +448,7 @@ func _draw_character(rect: Rect2) -> void:
 	var chosen: Dictionary = sim.content.abilities.get(chosen_id, {})
 	var chosen_progress: Dictionary = sim.get_ability_progress(chosen_id) if not chosen.is_empty() else {}
 	var chosen_learned: bool = sim.run.get("known", []).has(chosen_id)
+	var chosen_granted: bool = not chosen.is_empty() and sim._ability_grant_source(chosen_id) != ""
 	var footer_y := rect.end.y - 26.0
 	if not chosen.is_empty():
 		var action_kind := String(chosen.get("kind", "active"))
@@ -449,6 +457,8 @@ func _draw_character(rect: Rect2) -> void:
 		if chosen_learned and action_kind != "passive":
 			var assigned: bool = host._is_quickbar_assigned("ability", chosen_id)
 			host._draw_button(Rect2(rect.end.x - 96.0, footer_y - 20.0, 94.0, 38.0), "REMOVE BAR" if assigned else "EQUIP SLOT", {"type": "remove_quickbar_assignment" if assigned else "begin_quickbar_assignment", "kind": "ability", "id": chosen_id}, assigned, 7, host.COLORS.gold)
+		elif chosen_granted and action_kind != "passive":
+			host._draw_button(Rect2(rect.end.x - 96.0, footer_y - 20.0, 94.0, 38.0), "USE", {"type": "ability", "id": chosen_id}, true, 8, host.COLORS.cyan)
 		elif not chosen_learned and chosen_progress.get("learnable", false):
 			host._draw_button(Rect2(rect.end.x - 96.0, footer_y - 20.0, 94.0, 38.0), "LEARN", {"type": "learn", "id": chosen_id}, true, 8, host.COLORS.green)
 	if page_count > 1:
@@ -481,7 +491,7 @@ func _ability_card_icon_layout(draw_host, card: Rect2, ability: Dictionary, icon
 
 func _draw_inventory(rect: Rect2) -> void:
 	var sim = host.sim
-	var tabs := ["Inventory", "Equipment", "Artifacts", "Spellbooks"]
+	var tabs := ["Inventory", "Equipment", "Relics", "Artifacts", "Spellbooks"]
 	var tab_width := rect.size.x / float(tabs.size())
 	for i in range(tabs.size()):
 		var tab := String(tabs[i])
@@ -491,6 +501,7 @@ func _draw_inventory(rect: Rect2) -> void:
 	match host.ui_state.inventory_tab:
 		"Equipment": _draw_equipment_mobile(body)
 		"Inventory": _draw_pack(body)
+		"Relics": _draw_relics(body)
 		"Artifacts": _draw_artifacts(body)
 		"Spellbooks": _draw_owned_books(body)
 
@@ -682,6 +693,42 @@ func _draw_artifacts(rect: Rect2) -> void:
 	if pages > 1:
 		host._draw_button(Rect2(rect.position.x + 3.0, rect.end.y - 31.0, 42.0, 30.0), "‹", {"type": "inventory_page", "delta": -1}, true, 11)
 		host._draw_label("%d / %d  ·  NO SLOT CAP" % [int(host.ui_state.inventory_page) + 1, pages], rect.get_center().x, rect.end.y - 10.0, 6, host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
+		host._draw_button(Rect2(rect.end.x - 45.0, rect.end.y - 31.0, 42.0, 30.0), "›", {"type": "inventory_page", "delta": 1}, true, 11)
+
+func _draw_relics(rect: Rect2) -> void:
+	var sim = host.sim
+	var values: Array = sim.run.get("relics", [])
+	var page_size := 18
+	var pages := maxi(1, int(ceil(float(values.size()) / float(page_size))))
+	host.ui_state.inventory_page = clampi(int(host.ui_state.inventory_page), 0, pages - 1)
+	if values.is_empty():
+		host._draw_label("No relics carried. Relics are run-changing augments.", rect.position.x + 4.0, rect.position.y + 28.0, 7, host.COLORS.muted)
+		return
+	var start := int(host.ui_state.inventory_page) * page_size
+	var columns := 6
+	var cell_width := rect.size.x / float(columns)
+	var grid_top := rect.position.y + 2.0
+	for i in range(start, mini(start + page_size, values.size())):
+		var relic_id := String(values[i])
+		var local_index := i - start
+		var column := local_index % columns
+		var row_index := int(local_index / columns)
+		var tile := Rect2(rect.position.x + float(column) * cell_width + 1.0, grid_top + float(row_index) * 35.0, cell_width - 3.0, 32.0)
+		var selected := int(host.ui_state.selected_relic_index) == i
+		host._draw_panel(tile, "", host.COLORS.gold if selected else host.COLORS.cyan)
+		host._draw_label("⟡", tile.get_center().x, tile.position.y + 22.0, 17, host.COLORS.cyan, HORIZONTAL_ALIGNMENT_CENTER)
+		host.active_hits.append({"rect": host._panel_hit_rect(tile), "action": {"type": "select_relic", "index": i}})
+	if int(host.ui_state.selected_relic_index) < start or int(host.ui_state.selected_relic_index) >= mini(start + page_size, values.size()):
+		host.ui_state.selected_relic_index = start
+	var selected_id := String(values[int(host.ui_state.selected_relic_index)])
+	var selected_relic: Dictionary = sim.content.relics.get(selected_id, {})
+	var displayed := mini(page_size, values.size() - start)
+	var detail_y := grid_top + float(ceil(float(displayed) / float(columns))) * 35.0 + 4.0
+	host._draw_label(host._fit_text(String(selected_relic.get("name", selected_id)), rect.size.x, 8), rect.position.x + 2.0, detail_y + 10.0, 8, host.COLORS.text)
+	host._draw_label(host._fit_text(String(selected_relic.get("description", "A run-changing combat augment.")), rect.size.x, 7), rect.position.x + 2.0, detail_y + 27.0, 7, host.COLORS.muted)
+	if pages > 1:
+		host._draw_button(Rect2(rect.position.x + 3.0, rect.end.y - 31.0, 42.0, 30.0), "‹", {"type": "inventory_page", "delta": -1}, true, 11)
+		host._draw_label("%d / %d" % [int(host.ui_state.inventory_page) + 1, pages], rect.get_center().x, rect.end.y - 10.0, 6, host.COLORS.muted, HORIZONTAL_ALIGNMENT_CENTER)
 		host._draw_button(Rect2(rect.end.x - 45.0, rect.end.y - 31.0, 42.0, 30.0), "›", {"type": "inventory_page", "delta": 1}, true, 11)
 
 func _draw_owned_books(rect: Rect2) -> void:

@@ -28,11 +28,17 @@ This bundle accompanies the Project Arcanist prompts supplied separately by the 
 6. `ENDLESS_MAP_PROGRESSION.md`
    - Canonical Map-versus-Stage loop, endless generation, map themes and package injection, Stage-6 boss eligibility, depth scaling, rewards, visited-map presentation, autosave/resume and death summaries.
 
-7. `ENDLESS_MAP_VISUAL_QA.md`
+7. `SWORDPLAY_CONTENT_PACKAGE.md`
+   - Canonical scope, stable IDs, tags, technique costs/evolutions/combinations, characters/unlocks, Blade Pair resolution, weapons, relics/artifacts, fantasy enemies, Sword Lord and procedural integration for the first official content package.
+
+8. `SWORDPLAY_VISUAL_QA.md`
+   - Retained desktop/mobile capture inventory and visual inspection notes for Swordplay package, characters, techniques, equipment, enemies, boss/reward and later-map presentation.
+
+9. `ENDLESS_MAP_VISUAL_QA.md`
    - Reviewed desktop/mobile captures for the endless map, Stage-6 boss, map reveal, long history, resume flow, deep counters and run summary.
 
-8. `../PLANNED_IMPLEMENTATIONS.md`
-   - Persistent queue for approved ideas deferred until their dependencies exist, currently including the explicitly blocked Swordplay package scope.
+10. `../PLANNED_IMPLEMENTATIONS.md`
+   - Persistent queue for approved ideas deferred until their dependencies exist. Swordplay's initial scope is implemented; external Swordplay hybrids remain blocked until their dependency mechanics exist.
 
 ## Priority when resolving ambiguity
 

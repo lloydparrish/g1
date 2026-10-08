@@ -6,6 +6,7 @@ var character_tab := "Abilities"
 var inventory_tab := "Inventory"
 var selected_equipment_slot := ""
 var selected_artifact_index := -1
+var selected_relic_index := -1
 var selected_spellbook_id := ""
 var inventory_page := 0
 var ability_page := 0

@@ -104,7 +104,7 @@ func run_suite() -> void:
 	for removed_key in ["current_map", "map_history", "map_depth", "maps_completed", "stages_completed", "bosses_defeated", "enemies_defeated", "next_map", "map_reveal_pending", "map_reveal_index"]:
 		legacy_victory.erase(removed_key)
 	var migrated_victory: Dictionary = persistence._migrate_run_data(legacy_victory)
-	_check(int(migrated_victory.get("version", 0)) == 2 and str(migrated_victory.get("outcome", "")) == "" and bool(migrated_victory.get("stage_completed", false)) and str(migrated_victory.get("maps_completed", "")) == "1" and bool(migrated_victory.get("map_complete_pending", false)), "a legacy finite-run victory save migrates into a continuing completed Map state")
+	_check(int(migrated_victory.get("version", 0)) == SimScript.SAVE_VERSION and str(migrated_victory.get("outcome", "")) == "" and bool(migrated_victory.get("stage_completed", false)) and str(migrated_victory.get("maps_completed", "")) == "1" and bool(migrated_victory.get("map_complete_pending", false)), "a legacy finite-run victory save migrates into a continuing completed Map state")
 	var player: Dictionary = persistence.get_player()
 	player.hp = maxi(1, int(player.hp) - 7)
 	player.resources.Mana[0] = maxi(0, int(player.resources.Mana[0]) - 3)

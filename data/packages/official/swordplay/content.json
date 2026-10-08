@@ -1,0 +1,2698 @@
+{
+  "tag_registry": {
+    "precision": {
+      "name": "Precision"
+    },
+    "forced_movement": {
+      "name": "Forced Movement"
+    },
+    "rapier": {
+      "name": "Rapier"
+    },
+    "swordplay": {
+      "name": "Swordplay"
+    },
+    "piercing": {
+      "name": "Piercing"
+    },
+    "disruption": {
+      "name": "Disruption"
+    }
+  },
+  "abilities": {
+    "swordplay_pommel_strike": {
+      "name": "Pommel Strike",
+      "school": "Swordsmanship",
+      "categories": [
+        "swordsmanship"
+      ],
+      "description": "Strike at close range for modest Blunt damage and briefly disrupt the target.",
+      "time": 75,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 5
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 6,
+          "damage": "Blunt"
+        },
+        {
+          "type": "status",
+          "id": "Stunned",
+          "stacks": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "disruption"
+      ]
+    },
+    "swordplay_whirlwind": {
+      "name": "Whirlwind",
+      "school": "Swordsmanship",
+      "categories": [
+        "swordsmanship"
+      ],
+      "description": "Spend heavy Stamina to strike every hostile adjacent to you.",
+      "time": 135,
+      "range": 0,
+      "target": "self",
+      "costs": {
+        "Stamina": 20
+      },
+      "effects": [
+        {
+          "type": "radial_damage",
+          "radius": 1,
+          "amount": 11,
+          "damage": "Slashing"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "heavy"
+      ],
+      "cooldown": 2,
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 4
+      }
+    },
+    "swordplay_execute": {
+      "name": "Execute",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Attack at close range. Below 35% Health, the strike deals severe bonus damage; a kill restores Stamina.",
+      "time": 125,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 14
+      },
+      "effects": [
+        {
+          "type": "execute_damage",
+          "amount": 10,
+          "bonus": 20,
+          "threshold": 0.35,
+          "damage": "Slashing"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "heavy"
+      ],
+      "cooldown": 2,
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "execute",
+        "target_health_below": 0.35,
+        "priority": 7
+      },
+      "on_kill": {
+        "resources": {
+          "Stamina": 8
+        },
+        "cooldown_refund": 1
+      }
+    },
+    "swordplay_impale": {
+      "name": "Impale",
+      "school": "Swordsmanship",
+      "categories": [
+        "swordsmanship"
+      ],
+      "description": "Thrust along a clear straight line up to three tiles, piercing the target and one foe behind it.",
+      "time": 100,
+      "range": 3,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 10
+      },
+      "effects": [
+        {
+          "type": "line_damage",
+          "amount": 12,
+          "damage": "Piercing",
+          "max_targets": 2
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "precision",
+        "piercing"
+      ],
+      "geometry": "line",
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "line",
+        "priority": 4
+      }
+    },
+    "swordplay_advance": {
+      "name": "Advance",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Strike a nearby foe, then step into its tile if it dies or is driven away and the space is clear.",
+      "time": 105,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 8
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 11,
+          "damage": "Slashing"
+        },
+        {
+          "type": "advance_if_vacated"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility"
+      ],
+      "qualifying_movement": true,
+      "ai": {
+        "role": "advance",
+        "priority": 3
+      }
+    },
+    "swordplay_reposition": {
+      "name": "Reposition",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Strike a nearby foe, then make one legal step to a safer adjacent tile.",
+      "time": 95,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 8
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 8,
+          "damage": "Slashing"
+        },
+        {
+          "type": "reposition",
+          "distance": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility"
+      ],
+      "qualifying_movement": true,
+      "ai": {
+        "role": "reposition",
+        "priority": 2
+      }
+    },
+    "swordplay_driving_blow": {
+      "name": "Driving Blow",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Hit at close range and drive the target up to two tiles away; walls or actors stop the shove and cause a collision.",
+      "time": 115,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 11
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 12,
+          "damage": "Blunt"
+        },
+        {
+          "type": "knockback",
+          "distance": 2,
+          "collision_damage": 6,
+          "collision_stun": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "forced_movement",
+        "heavy"
+      ],
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "knockback",
+        "priority": 4
+      }
+    },
+    "swordplay_blade_rush": {
+      "name": "Blade Rush",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Choose a clear straight route up to four tiles. Rush to the first hostile and strike; blocked cells stop the charge.",
+      "time": 135,
+      "range": 4,
+      "target": "tile",
+      "costs": {
+        "Stamina": 18
+      },
+      "effects": [
+        {
+          "type": "charge_line",
+          "distance": 4,
+          "amount": 15,
+          "damage": "Slashing",
+          "continue_through_kills": false
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility",
+        "forced_movement"
+      ],
+      "geometry": "line",
+      "cooldown": 2,
+      "qualifying_movement": true,
+      "rarity": "Rare",
+      "ai": {
+        "role": "gap_close",
+        "priority": 6
+      }
+    },
+    "swordplay_parry": {
+      "name": "Parry",
+      "school": "Defense",
+      "categories": [
+        "defense"
+      ],
+      "description": "Brace for the next incoming melee strike. It sharply reduces that hit, but does not counterattack.",
+      "time": 65,
+      "range": 0,
+      "target": "self",
+      "costs": {
+        "Stamina": 6
+      },
+      "effects": [
+        {
+          "type": "status",
+          "id": "Parrying",
+          "stacks": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "defense",
+        "precision"
+      ],
+      "cooldown": 1,
+      "rarity": "Common",
+      "ai": {
+        "role": "parry",
+        "when_targeted": true,
+        "priority": 8
+      }
+    },
+    "swordplay_thrust": {
+      "name": "Thrust",
+      "school": "Swordsmanship",
+      "categories": [
+        "swordsmanship"
+      ],
+      "description": "Make a precise straight thrust at a visible enemy up to two tiles away. A clear line is required.",
+      "time": 85,
+      "range": 2,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 7
+      },
+      "effects": [
+        {
+          "type": "line_damage",
+          "amount": 10,
+          "damage": "Piercing",
+          "max_targets": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "precision",
+        "piercing"
+      ],
+      "geometry": "line",
+      "rarity": "Common",
+      "ai": {
+        "role": "line",
+        "priority": 3
+      }
+    },
+    "swordplay_feint": {
+      "name": "Feint",
+      "school": "Swordsmanship",
+      "categories": [
+        "swordsmanship"
+      ],
+      "description": "Deal slight damage and leave the foe Exposed; your next sword hit against it deals increased damage.",
+      "time": 70,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 5
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 3,
+          "damage": "Slashing"
+        },
+        {
+          "type": "status",
+          "id": "Exposed",
+          "stacks": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "precision"
+      ],
+      "rarity": "Common",
+      "ai": {
+        "role": "setup",
+        "priority": 2
+      }
+    },
+    "swordplay_disengage": {
+      "name": "Disengage",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Strike at close range, then retreat up to two legal steps away from the target.",
+      "time": 105,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 10
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 7,
+          "damage": "Slashing"
+        },
+        {
+          "type": "retreat",
+          "distance": 2
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility",
+        "forced_movement"
+      ],
+      "cooldown": 1,
+      "qualifying_movement": true,
+      "ai": {
+        "role": "retreat",
+        "only_when_adjacent": true,
+        "priority": 3
+      }
+    },
+    "swordplay_overhead_strike": {
+      "name": "Overhead Strike",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Deliver a committed blow that ignores some armor and gains extra force against heavily armored foes.",
+      "time": 145,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 17
+      },
+      "effects": [
+        {
+          "type": "heavy_damage",
+          "amount": 17,
+          "armor_penetration": 3,
+          "bonus_per_armor": 2,
+          "damage": "Slashing"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "heavy"
+      ],
+      "cooldown": 2,
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "heavy",
+        "priority": 4
+      }
+    },
+    "swordplay_sweeping_blow": {
+      "name": "Sweeping Blow",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Strike the three-tile frontal arc and push each foe away; collisions can stun and deal extra damage.",
+      "time": 125,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 14
+      },
+      "effects": [
+        {
+          "type": "sweep",
+          "amount": 10,
+          "damage": "Slashing",
+          "knockback": 2,
+          "collision_damage": 7,
+          "collision_stun": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "forced_movement"
+      ],
+      "cooldown": 1,
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 5
+      }
+    },
+    "swordplay_reckless_swing": {
+      "name": "Reckless Swing",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Hit nearby foes in a wide arc for heavy damage, then become Off Balance and take increased damage until your next action.",
+      "time": 130,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 16
+      },
+      "effects": [
+        {
+          "type": "wide_arc_damage",
+          "amount": 17,
+          "damage": "Slashing",
+          "radius": 2
+        },
+        {
+          "type": "status",
+          "id": "OffBalance",
+          "stacks": 1,
+          "target": "self"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "heavy"
+      ],
+      "cooldown": 2,
+      "rarity": "Uncommon",
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 5
+      }
+    },
+    "swordplay_blade_dance": {
+      "name": "Blade Dance",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Move along a legal route of up to three tiles, striking nearby foes as you pass. Walls and occupied cells stop you.",
+      "time": 145,
+      "range": 3,
+      "target": "tile",
+      "costs": {
+        "Stamina": 18
+      },
+      "effects": [
+        {
+          "type": "dance_route",
+          "distance": 3,
+          "radius": 1,
+          "amount": 9,
+          "damage": "Slashing"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "mobility"
+      ],
+      "evolution": {
+        "from": "swordplay_whirlwind",
+        "min_level": 1
+      },
+      "qualifying_movement": true,
+      "rarity": "Rare",
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 6
+      }
+    },
+    "swordplay_executioners_stroke": {
+      "name": "Executioner's Stroke",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "A stricter finishing cut. A kill below 40% Health restores 16 Stamina and shortens this technique's cooldown.",
+      "time": 130,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 16
+      },
+      "effects": [
+        {
+          "type": "execute_damage",
+          "amount": 13,
+          "bonus": 22,
+          "threshold": 0.4,
+          "damage": "Slashing"
+        }
+      ],
+      "on_kill": {
+        "restore": {
+          "Stamina": 16
+        },
+        "cooldown_reduction": 1
+      },
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "heavy"
+      ],
+      "evolution": {
+        "from": "swordplay_execute",
+        "min_level": 1
+      },
+      "cooldown": 2,
+      "rarity": "Rare",
+      "ai": {
+        "role": "execute",
+        "target_health_below": 0.4,
+        "priority": 8
+      },
+      "on_kill": {
+        "resources": {
+          "Stamina": 16
+        },
+        "cooldown_refund": 2
+      }
+    },
+    "swordplay_skewer": {
+      "name": "Skewer",
+      "school": "Swordsmanship",
+      "categories": [
+        "swordsmanship"
+      ],
+      "description": "Thrust along a clear line up to four tiles, piercing up to three enemies.",
+      "time": 115,
+      "range": 4,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 13
+      },
+      "effects": [
+        {
+          "type": "line_damage",
+          "amount": 14,
+          "damage": "Piercing",
+          "max_targets": 3
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "precision",
+        "piercing"
+      ],
+      "evolution": {
+        "from": "swordplay_impale",
+        "min_level": 1
+      },
+      "geometry": "line",
+      "rarity": "Rare",
+      "ai": {
+        "role": "line",
+        "priority": 5
+      }
+    },
+    "swordplay_perfect_parry": {
+      "name": "Perfect Parry",
+      "school": "Defense",
+      "categories": [
+        "defense"
+      ],
+      "description": "Perfectly negate the next incoming melee attack and strongly disrupt its attacker. It never counters automatically.",
+      "time": 75,
+      "range": 0,
+      "target": "self",
+      "costs": {
+        "Stamina": 10
+      },
+      "effects": [
+        {
+          "type": "status",
+          "id": "PerfectParrying",
+          "stacks": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "defense",
+        "precision"
+      ],
+      "evolution": {
+        "from": "swordplay_parry",
+        "min_level": 1
+      },
+      "cooldown": 2,
+      "rarity": "Rare",
+      "ai": {
+        "role": "parry",
+        "when_targeted": true,
+        "priority": 9
+      }
+    },
+    "swordplay_unstoppable_charge": {
+      "name": "Unstoppable Charge",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Rush up to six tiles in a clear line, striking enemies along the route and continuing through foes you kill.",
+      "time": 165,
+      "range": 6,
+      "target": "tile",
+      "costs": {
+        "Stamina": 24
+      },
+      "effects": [
+        {
+          "type": "charge_line",
+          "distance": 6,
+          "amount": 17,
+          "damage": "Slashing",
+          "continue_through_kills": true
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility",
+        "forced_movement"
+      ],
+      "evolution": {
+        "from": "swordplay_blade_rush",
+        "min_level": 1
+      },
+      "geometry": "line",
+      "cooldown": 3,
+      "qualifying_movement": true,
+      "rarity": "Epic",
+      "ai": {
+        "role": "gap_close",
+        "priority": 7
+      }
+    },
+    "swordplay_battering_blow": {
+      "name": "Battering Blow",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Drive one foe up to three tiles. Wall or actor collisions deal heavy bonus damage and stun.",
+      "time": 145,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 17
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 14,
+          "damage": "Blunt"
+        },
+        {
+          "type": "knockback",
+          "distance": 3,
+          "collision_damage": 13,
+          "collision_stun": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "forced_movement",
+        "heavy"
+      ],
+      "evolution": {
+        "from": "swordplay_driving_blow",
+        "min_level": 1
+      },
+      "cooldown": 2,
+      "rarity": "Rare",
+      "ai": {
+        "role": "knockback",
+        "priority": 5
+      }
+    },
+    "swordplay_berserkers_arc": {
+      "name": "Berserker's Arc",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "A larger frontal sweep deals severe damage, then leaves you Off Balance and vulnerable through the next enemy action.",
+      "time": 155,
+      "range": 2,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 21
+      },
+      "effects": [
+        {
+          "type": "wide_arc_damage",
+          "amount": 22,
+          "damage": "Slashing",
+          "radius": 2
+        },
+        {
+          "type": "status",
+          "id": "OffBalance",
+          "stacks": 1,
+          "target": "self"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "heavy"
+      ],
+      "evolution": {
+        "from": "swordplay_reckless_swing",
+        "min_level": 1
+      },
+      "cooldown": 3,
+      "rarity": "Rare",
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 6
+      }
+    },
+    "swordplay_transfixing_charge": {
+      "name": "Transfixing Charge",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Charge along a clear line and pierce up to three enemies. Requires Lunge and Impale; neither is consumed.",
+      "time": 150,
+      "range": 5,
+      "target": "tile",
+      "costs": {
+        "Stamina": 20
+      },
+      "effects": [
+        {
+          "type": "charge_line",
+          "distance": 5,
+          "amount": 16,
+          "damage": "Piercing",
+          "max_targets": 3,
+          "continue_through_kills": true
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility",
+        "forced_movement",
+        "precision"
+      ],
+      "combination": true,
+      "requires": [
+        "lunge",
+        "swordplay_impale"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "geometry": "line",
+      "cooldown": 3,
+      "rarity": "Rare",
+      "drop_weight": 0.18,
+      "qualifying_movement": true,
+      "ai": {
+        "role": "gap_close",
+        "priority": 7
+      }
+    },
+    "swordplay_sundering_sweep": {
+      "name": "Sundering Sweep",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Sweep the frontal arc and drive foes back with powerful collision force. Requires Cleave and Driving Blow.",
+      "time": 155,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 20
+      },
+      "effects": [
+        {
+          "type": "sweep",
+          "amount": 15,
+          "damage": "Slashing",
+          "knockback": 3,
+          "collision_damage": 12,
+          "collision_stun": 1
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "forced_movement",
+        "heavy"
+      ],
+      "combination": true,
+      "requires": [
+        "cleave",
+        "swordplay_driving_blow"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "cooldown": 3,
+      "rarity": "Rare",
+      "drop_weight": 0.16,
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 7
+      }
+    },
+    "swordplay_relentless_advance": {
+      "name": "Relentless Advance",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Execute a weakened foe, then advance into its vacated tile. A kill restores 6 Stamina; momentum never creates an extra attack.",
+      "time": 145,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 17
+      },
+      "effects": [
+        {
+          "type": "execute_damage",
+          "amount": 12,
+          "bonus": 20,
+          "threshold": 0.35,
+          "damage": "Slashing"
+        },
+        {
+          "type": "advance_if_vacated"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility",
+        "heavy"
+      ],
+      "combination": true,
+      "requires": [
+        "swordplay_advance",
+        "swordplay_execute"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "cooldown": 2,
+      "rarity": "Rare",
+      "drop_weight": 0.14,
+      "qualifying_movement": true,
+      "on_kill": {
+        "resources": {
+          "Stamina": 6
+        }
+      },
+      "ai": {
+        "role": "execute",
+        "target_health_below": 0.35,
+        "priority": 8
+      }
+    },
+    "swordplay_masterstroke": {
+      "name": "Masterstroke",
+      "school": "Defense",
+      "categories": [
+        "defense"
+      ],
+      "description": "Set a precise exposed mark and brace against the next melee strike. It does not counterattack. Requires Parry and Feint.",
+      "time": 105,
+      "range": 2,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 12
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 5,
+          "damage": "Piercing"
+        },
+        {
+          "type": "status",
+          "id": "Exposed",
+          "stacks": 1
+        },
+        {
+          "type": "status",
+          "id": "Parrying",
+          "stacks": 1,
+          "target": "self"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "defense",
+        "precision"
+      ],
+      "combination": true,
+      "requires": [
+        "swordplay_parry",
+        "swordplay_feint"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "cooldown": 2,
+      "rarity": "Rare",
+      "drop_weight": 0.14,
+      "ai": {
+        "role": "setup",
+        "priority": 4
+      }
+    },
+    "swordplay_dancing_steel": {
+      "name": "Dancing Steel",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Move up to three legal tiles and strike nearby hostiles along the route. Requires Whirlwind and Reposition.",
+      "time": 155,
+      "range": 3,
+      "target": "tile",
+      "costs": {
+        "Stamina": 20
+      },
+      "effects": [
+        {
+          "type": "dance_route",
+          "distance": 3,
+          "radius": 1,
+          "amount": 12,
+          "damage": "Slashing"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "mobility"
+      ],
+      "combination": true,
+      "requires": [
+        "swordplay_whirlwind",
+        "swordplay_reposition"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "cooldown": 3,
+      "rarity": "Rare",
+      "drop_weight": 0.14,
+      "qualifying_movement": true,
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 6
+      }
+    },
+    "swordplay_armor_splitter": {
+      "name": "Armor Splitter",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "Concentrate a piercing blow that ignores most armor and deals extra damage to armored foes. Requires Overhead Strike and Impale.",
+      "time": 155,
+      "range": 2,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 20
+      },
+      "effects": [
+        {
+          "type": "heavy_damage",
+          "amount": 20,
+          "armor_penetration": 6,
+          "bonus_per_armor": 3,
+          "damage": "Piercing"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "precision",
+        "heavy"
+      ],
+      "combination": true,
+      "requires": [
+        "swordplay_overhead_strike",
+        "swordplay_impale"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "cooldown": 3,
+      "rarity": "Rare",
+      "drop_weight": 0.12,
+      "geometry": "line",
+      "ai": {
+        "role": "heavy",
+        "priority": 7
+      }
+    },
+    "swordplay_parting_thrust": {
+      "name": "Parting Thrust",
+      "school": "Mobility",
+      "categories": [
+        "mobility"
+      ],
+      "description": "Retreat up to two legal steps while thrusting through a clear line up to three tiles. Requires Disengage and Thrust.",
+      "time": 130,
+      "range": 3,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 16
+      },
+      "effects": [
+        {
+          "type": "line_damage",
+          "amount": 13,
+          "damage": "Piercing",
+          "max_targets": 1
+        },
+        {
+          "type": "retreat",
+          "distance": 2
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "mobility",
+        "precision"
+      ],
+      "combination": true,
+      "requires": [
+        "swordplay_disengage",
+        "swordplay_thrust"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "geometry": "line",
+      "cooldown": 2,
+      "rarity": "Rare",
+      "drop_weight": 0.12,
+      "qualifying_movement": true,
+      "ai": {
+        "role": "retreat",
+        "only_when_adjacent": true,
+        "priority": 5
+      }
+    },
+    "swordplay_great_cleaver": {
+      "name": "Great Cleaver",
+      "school": "Swordsmanship",
+      "categories": [
+        "heavy_weapons"
+      ],
+      "description": "A huge frontal displacement attack that leaves you Off Balance. Requires Sweeping Blow and Reckless Swing.",
+      "time": 175,
+      "range": 1,
+      "target": "enemy",
+      "costs": {
+        "Stamina": 25
+      },
+      "effects": [
+        {
+          "type": "sweep",
+          "amount": 21,
+          "damage": "Slashing",
+          "knockback": 4,
+          "collision_damage": 15,
+          "collision_stun": 1
+        },
+        {
+          "type": "status",
+          "id": "OffBalance",
+          "stacks": 1,
+          "target": "self"
+        }
+      ],
+      "tags": [
+        "martial",
+        "sword",
+        "melee",
+        "technique",
+        "area",
+        "forced_movement",
+        "heavy"
+      ],
+      "combination": true,
+      "requires": [
+        "swordplay_sweeping_blow",
+        "swordplay_reckless_swing"
+      ],
+      "prerequisites": {
+        "minimum_level": 3
+      },
+      "cooldown": 3,
+      "rarity": "Epic",
+      "drop_weight": 0.08,
+      "ai": {
+        "role": "area",
+        "min_targets": 2,
+        "priority": 8
+      }
+    }
+  },
+  "weapons": {
+    "rapier": {
+      "name": "Rapier",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 2,
+      "time": 75,
+      "stamina": 6,
+      "damage": 9,
+      "type": "Piercing",
+      "style": "reach",
+      "discipline": "Swordsmanship",
+      "tags": [
+        "physical",
+        "sword",
+        "rapier",
+        "precision",
+        "melee",
+        "weapon"
+      ]
+    },
+    "goblinbane": {
+      "name": "Goblinbane",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 1,
+      "time": 100,
+      "stamina": 7,
+      "damage": 11,
+      "type": "Slashing",
+      "style": "balanced",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "damage_vs_goblinoids": 4,
+        "cooldown_reduction_on_kill": 1
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "martial",
+        "weapon"
+      ]
+    },
+    "needle": {
+      "name": "Needle",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 2,
+      "time": 80,
+      "stamina": 6,
+      "damage": 9,
+      "type": "Piercing",
+      "style": "reach",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "line_extra_targets": 1
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "rapier",
+        "precision",
+        "melee",
+        "weapon"
+      ]
+    },
+    "headsmans_mercy": {
+      "name": "Headsman's Mercy",
+      "slot": "Weapon",
+      "hands": 2,
+      "range": 1,
+      "time": 155,
+      "stamina": 15,
+      "damage": 20,
+      "type": "Slashing",
+      "style": "cleave",
+      "discipline": "Heavy Weapons",
+      "modifiers": {
+        "execute_threshold_bonus": 0.1,
+        "ordinary_attack_damage_penalty": -2
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "greatsword",
+        "heavy",
+        "weapon"
+      ]
+    },
+    "wayfarers_blade": {
+      "name": "Wayfarer's Blade",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 1,
+      "time": 90,
+      "stamina": 6,
+      "damage": 10,
+      "type": "Slashing",
+      "style": "balanced",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "movement_technique_stamina_discount": 2
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "martial",
+        "mobility",
+        "weapon"
+      ]
+    },
+    "stonebreaker": {
+      "name": "Stonebreaker",
+      "slot": "Weapon",
+      "hands": 2,
+      "range": 1,
+      "time": 145,
+      "stamina": 14,
+      "damage": 18,
+      "type": "Slashing",
+      "style": "cleave",
+      "discipline": "Heavy Weapons",
+      "modifiers": {
+        "armor_penetration_bonus": 2,
+        "collision_damage_bonus": 6
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "greatsword",
+        "heavy",
+        "weapon"
+      ]
+    },
+    "second_hand": {
+      "name": "The Second Hand",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 1,
+      "time": 105,
+      "stamina": 8,
+      "damage": 10,
+      "type": "Slashing",
+      "style": "balanced",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "followup_basic_damage_bonus": 6
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "martial",
+        "weapon"
+      ]
+    },
+    "cowards_end": {
+      "name": "Coward's End",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 2,
+      "time": 75,
+      "stamina": 6,
+      "damage": 9,
+      "type": "Piercing",
+      "style": "reach",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "bonus_damage_vs_displaced": 5
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "rapier",
+        "precision",
+        "melee",
+        "weapon"
+      ]
+    },
+    "bloodless_edge": {
+      "name": "Bloodless Edge",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 1,
+      "time": 95,
+      "stamina": 7,
+      "damage": 10,
+      "type": "Slashing",
+      "style": "balanced",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "precision_per_unhurt_action": 1,
+        "precision_damage_per_stack": 2,
+        "precision_max_stacks": 4
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "precision",
+        "weapon"
+      ]
+    },
+    "oathkeeper": {
+      "name": "Oathkeeper",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 1,
+      "time": 90,
+      "stamina": 6,
+      "damage": 8,
+      "type": "Slashing",
+      "style": "balanced",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "parry_reduction_bonus": 0.2,
+        "ordinary_attack_damage_penalty": -2
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "defense",
+        "weapon"
+      ]
+    },
+    "swordplay_sword_of_the_goblin_horde": {
+      "name": "Sword of the Goblin Horde",
+      "slot": "Weapon",
+      "hands": 1,
+      "range": 1,
+      "time": 110,
+      "stamina": 7,
+      "damage": 12,
+      "type": "Slashing",
+      "style": "balanced",
+      "discipline": "Swordsmanship",
+      "modifiers": {
+        "first_technique_stamina_discount": 8,
+        "technique_kill_stack_bonus": 2,
+        "technique_kill_stack_max": 4
+      },
+      "tags": [
+        "physical",
+        "sword",
+        "martial",
+        "technique",
+        "weapon"
+      ]
+    }
+  },
+  "items": {
+    "rapier": {
+      "name": "Rapier",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "rapier",
+      "description": "A light one-handed sword with two-tile reach. Its quick thrusts favor Mobility and Precision.",
+      "rarity": "Uncommon",
+      "tags": [
+        "sword",
+        "rapier",
+        "martial",
+        "precision",
+        "weapon"
+      ]
+    },
+    "goblinbane": {
+      "name": "Goblinbane",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "goblinbane",
+      "description": "A balanced sword that deals extra damage to Goblinoids. A Goblinoid kill with it shortens technique cooldowns.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "martial",
+        "weapon"
+      ],
+      "modifiers": {},
+      "grants_abilities": []
+    },
+    "needle": {
+      "name": "Needle",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "needle",
+      "description": "A quick rapier that lets Thrust reach into deeper lines. It grants Thrust while equipped; removing it removes only that temporary grant.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "rapier",
+        "martial",
+        "precision",
+        "weapon"
+      ],
+      "modifiers": {
+        "line_extra_targets": 1
+      },
+      "grants_abilities": [
+        "swordplay_thrust"
+      ]
+    },
+    "headsmans_mercy": {
+      "name": "Headsman's Mercy",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "headsmans_mercy",
+      "description": "A slow Greatsword that makes Execute effective against healthier foes, at the cost of weaker ordinary attacks.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "greatsword",
+        "heavy",
+        "martial",
+        "weapon"
+      ],
+      "modifiers": {
+        "execute_threshold_bonus": 0.1,
+        "ordinary_attack_damage_penalty": -2
+      },
+      "grants_abilities": []
+    },
+    "wayfarers_blade": {
+      "name": "Wayfarer's Blade",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "wayfarers_blade",
+      "description": "A light sword that reduces Stamina costs for techniques that move you.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "martial",
+        "mobility",
+        "weapon"
+      ],
+      "modifiers": {
+        "movement_technique_stamina_discount": 2
+      },
+      "grants_abilities": []
+    },
+    "stonebreaker": {
+      "name": "Stonebreaker",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "stonebreaker",
+      "description": "A committed Greatsword that breaks armor and deals more damage when a forced movement ends in a collision.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "greatsword",
+        "heavy",
+        "martial",
+        "weapon"
+      ],
+      "modifiers": {
+        "armor_penetration_bonus": 2,
+        "collision_damage_bonus": 6
+      },
+      "grants_abilities": []
+    },
+    "second_hand": {
+      "name": "The Second Hand",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "second_hand",
+      "description": "After a sword technique, your next basic attack gains bonus damage. This rhythm uses no Time magic.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "martial",
+        "technique",
+        "weapon"
+      ],
+      "modifiers": {
+        "followup_basic_damage_bonus": 6
+      },
+      "grants_abilities": []
+    },
+    "cowards_end": {
+      "name": "Coward's End",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "cowards_end",
+      "description": "A long rapier that deals extra damage to foes left Unbalanced by displacement or collision.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "rapier",
+        "martial",
+        "precision",
+        "weapon"
+      ],
+      "modifiers": {
+        "bonus_damage_vs_displaced": 5
+      },
+      "grants_abilities": []
+    },
+    "bloodless_edge": {
+      "name": "Bloodless Edge",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "bloodless_edge",
+      "description": "Each unhurt action builds temporary Precision, adding damage to sword attacks. Taking damage clears the benefit.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "martial",
+        "precision",
+        "weapon"
+      ],
+      "modifiers": {
+        "precision_per_unhurt_action": 1,
+        "precision_damage_per_stack": 2,
+        "precision_max_stacks": 4
+      },
+      "grants_abilities": []
+    },
+    "oathkeeper": {
+      "name": "Oathkeeper",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "oathkeeper",
+      "description": "A defensive sword that further reduces a successfully parried melee hit, while ordinary attacks deal less damage.",
+      "rarity": "Rare",
+      "tags": [
+        "sword",
+        "martial",
+        "defense",
+        "weapon"
+      ],
+      "modifiers": {
+        "parry_reduction_bonus": 0.2,
+        "ordinary_attack_damage_penalty": -2
+      },
+      "grants_abilities": []
+    },
+    "swordplay_sword_of_the_goblin_horde": {
+      "name": "Sword of the Goblin Horde",
+      "type": "equipment",
+      "slot": "Weapon",
+      "weapon": "swordplay_sword_of_the_goblin_horde",
+      "description": "Your first sword technique each encounter costs 8 less Stamina. Technique kills briefly stack a martial damage bonus.",
+      "rarity": "Legendary",
+      "tags": [
+        "sword",
+        "martial",
+        "technique",
+        "weapon"
+      ],
+      "modifiers": {
+        "first_technique_stamina_discount": 8,
+        "technique_kill_stack_bonus": 2,
+        "technique_kill_stack_max": 4
+      },
+      "grants_abilities": []
+    },
+    "swordplay_offhand_sword": {
+      "name": "Offhand Sword",
+      "type": "equipment",
+      "slot": "Offhand",
+      "weapon": "sword",
+      "description": "A second one-handed sword. Dual-wield attacks add a lighter offhand hit but cost more Stamina and time; a two-handed weapon occupies both hands.",
+      "rarity": "Uncommon",
+      "tags": [
+        "sword",
+        "martial",
+        "weapon"
+      ]
+    }
+  },
+  "characters": {
+    "duelist": {
+      "name": "The Duelist",
+      "class_title": "The Duelist",
+      "class_description": "A precise swordsman who favors measured technique.",
+      "portrait_path": "res://data/packages/official/swordplay/assets/portraits/duelist.png",
+      "aura": "None",
+      "weapon": "sword",
+      "growth_profile": [
+        "Dexterity",
+        "Perception",
+        "Might"
+      ],
+      "known": [
+        "lunge"
+      ],
+      "starting": false,
+      "selection_order": 100,
+      "affinities": {
+        "sword": 1.5,
+        "martial": 1.4,
+        "precision": 1.45
+      },
+      "schools": [],
+      "disciplines": [
+        "Swordsmanship",
+        "Defense"
+      ],
+      "discipline": "Swordsmanship",
+      "attributes": {
+        "Might": 9,
+        "Dexterity": 14,
+        "Vitality": 10,
+        "Intelligence": 8,
+        "Willpower": 9,
+        "Perception": 14
+      },
+      "resources": {
+        "Health": [
+          38,
+          38
+        ],
+        "Mana": [
+          4,
+          4
+        ],
+        "Stamina": [
+          52,
+          52
+        ],
+        "Command": [
+          0,
+          1
+        ],
+        "Blood": [
+          0,
+          0
+        ]
+      },
+      "unlock_id": "swordplay_unlock_duelist",
+      "unlock": {
+        "conditions": [
+          {
+            "type": "counter",
+            "id": "successful_parries",
+            "minimum": 5
+          }
+        ]
+      },
+      "unlock_requirement": "Successfully Parry 5 melee attacks in one run."
+    },
+    "fencer": {
+      "name": "The Fencer",
+      "class_title": "The Fencer",
+      "class_description": "A mobile Rapier fighter built for reach and precision.",
+      "portrait_path": "res://data/packages/official/swordplay/assets/portraits/fencer.png",
+      "aura": "None",
+      "weapon": "rapier",
+      "growth_profile": [
+        "Dexterity",
+        "Perception",
+        "Vitality"
+      ],
+      "known": [
+        "swordplay_thrust"
+      ],
+      "starting": false,
+      "selection_order": 101,
+      "affinities": {
+        "sword": 1.35,
+        "rapier": 1.5,
+        "mobility": 1.4,
+        "precision": 1.4
+      },
+      "schools": [],
+      "disciplines": [
+        "Swordsmanship",
+        "Mobility"
+      ],
+      "discipline": "Swordsmanship",
+      "attributes": {
+        "Might": 8,
+        "Dexterity": 15,
+        "Vitality": 9,
+        "Intelligence": 8,
+        "Willpower": 10,
+        "Perception": 14
+      },
+      "resources": {
+        "Health": [
+          36,
+          36
+        ],
+        "Mana": [
+          4,
+          4
+        ],
+        "Stamina": [
+          55,
+          55
+        ],
+        "Command": [
+          0,
+          1
+        ],
+        "Blood": [
+          0,
+          0
+        ]
+      },
+      "unlock_id": "swordplay_unlock_fencer",
+      "unlock": {
+        "conditions": [
+          {
+            "type": "counter",
+            "id": "technique_movement_actions",
+            "minimum": 8
+          }
+        ]
+      },
+      "unlock_requirement": "Move successfully with sword techniques 8 times in one run."
+    },
+    "berserker": {
+      "name": "The Berserker",
+      "class_title": "The Berserker",
+      "class_description": "A committed Greatsword fighter built for heavy offense.",
+      "portrait_path": "res://data/packages/official/swordplay/assets/portraits/berserker.png",
+      "aura": "None",
+      "weapon": "greatsword",
+      "growth_profile": [
+        "Might",
+        "Vitality",
+        "Might"
+      ],
+      "known": [
+        "cleave"
+      ],
+      "starting": false,
+      "selection_order": 102,
+      "affinities": {
+        "sword": 1.35,
+        "greatsword": 1.5,
+        "heavy": 1.45,
+        "martial": 1.3
+      },
+      "schools": [],
+      "disciplines": [
+        "Heavy Weapons",
+        "Swordsmanship"
+      ],
+      "discipline": "Heavy Weapons",
+      "attributes": {
+        "Might": 14,
+        "Dexterity": 8,
+        "Vitality": 13,
+        "Intelligence": 8,
+        "Willpower": 11,
+        "Perception": 9
+      },
+      "resources": {
+        "Health": [
+          54,
+          54
+        ],
+        "Mana": [
+          4,
+          4
+        ],
+        "Stamina": [
+          62,
+          62
+        ],
+        "Command": [
+          0,
+          1
+        ],
+        "Blood": [
+          0,
+          0
+        ]
+      },
+      "unlock_id": "swordplay_unlock_berserker",
+      "unlock": {
+        "conditions": [
+          {
+            "type": "boss_defeated",
+            "id": "sword_lord_of_the_goblin_horde"
+          }
+        ]
+      },
+      "unlock_requirement": "Defeat the Sword Lord of the Goblin Horde."
+    }
+  },
+  "unlocks": {
+    "swordplay_unlock_duelist": {
+      "name": "Duelist's Record",
+      "character_id": "duelist",
+      "requirements": {
+        "conditions": [
+          {
+            "type": "counter",
+            "id": "successful_parries",
+            "minimum": 5
+          }
+        ]
+      }
+    },
+    "swordplay_unlock_fencer": {
+      "name": "Fencer's Record",
+      "character_id": "fencer",
+      "requirements": {
+        "conditions": [
+          {
+            "type": "counter",
+            "id": "technique_movement_actions",
+            "minimum": 8
+          }
+        ]
+      }
+    },
+    "swordplay_unlock_berserker": {
+      "name": "Sword Lord's Defeat",
+      "character_id": "berserker",
+      "requirements": {
+        "conditions": [
+          {
+            "type": "boss_defeated",
+            "id": "sword_lord_of_the_goblin_horde"
+          }
+        ]
+      }
+    }
+  },
+  "statuses": {
+    "Parrying": {
+      "max_stacks": 1,
+      "duration": 2,
+      "harmful": false
+    },
+    "PerfectParrying": {
+      "max_stacks": 1,
+      "duration": 2,
+      "harmful": false
+    },
+    "Exposed": {
+      "max_stacks": 1,
+      "duration": 2,
+      "harmful": true
+    },
+    "OffBalance": {
+      "max_stacks": 1,
+      "duration": 1,
+      "harmful": true
+    },
+    "Unbalanced": {
+      "max_stacks": 1,
+      "duration": 2,
+      "harmful": true
+    }
+  },
+  "enemies": {
+    "goblin_swordsman": {
+      "name": "Goblin Swordsman",
+      "description": "A straightforward Goblin fighter who closes in and tests a clear line before thrusting.",
+      "faction": "Goblinoids",
+      "hp": 25,
+      "damage": 7,
+      "damage_type": "Slashing",
+      "range": 1,
+      "time": 100,
+      "behavior": "melee",
+      "xp": 18,
+      "tier": 0,
+      "symbol": "g",
+      "techniques": [
+        "swordplay_thrust"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Goblinoids"
+      ],
+      "spawn_weight": 0.55
+    },
+    "goblin_fencer": {
+      "name": "Goblin Fencer",
+      "description": "A quick skirmisher that lunges to close, thrusts at reach, then withdraws when cornered.",
+      "faction": "Goblinoids",
+      "hp": 22,
+      "damage": 7,
+      "damage_type": "Piercing",
+      "range": 1,
+      "time": 82,
+      "behavior": "melee",
+      "xp": 23,
+      "tier": 1,
+      "symbol": "f",
+      "techniques": [
+        "lunge",
+        "swordplay_thrust",
+        "swordplay_disengage"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Goblinoids"
+      ],
+      "spawn_weight": 0.38
+    },
+    "goblin_blade_dancer": {
+      "name": "Goblin Blade Dancer",
+      "description": "A mobile area threat that waits for clustered heroes before spinning through nearby targets.",
+      "faction": "Goblinoids",
+      "hp": 32,
+      "damage": 9,
+      "damage_type": "Slashing",
+      "range": 1,
+      "time": 90,
+      "behavior": "melee",
+      "xp": 28,
+      "tier": 2,
+      "symbol": "d",
+      "techniques": [
+        "swordplay_whirlwind",
+        "swordplay_reposition"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Goblinoids"
+      ],
+      "spawn_weight": 0.22
+    },
+    "kobold_duelist": {
+      "name": "Kobold Duelist",
+      "description": "A precise fighter who parries after being pressed, then marks a foe with a Feint.",
+      "faction": "Kobolds",
+      "hp": 28,
+      "damage": 8,
+      "damage_type": "Piercing",
+      "range": 1,
+      "time": 95,
+      "behavior": "melee",
+      "xp": 23,
+      "tier": 1,
+      "symbol": "k",
+      "techniques": [
+        "swordplay_parry",
+        "swordplay_feint",
+        "swordplay_thrust"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Goblinoids",
+        "Kobolds"
+      ],
+      "spawn_weight": 0.3
+    },
+    "kobold_skirmisher": {
+      "name": "Kobold Skirmisher",
+      "description": "Uses two-tile reach and withdraws only when adjacent to a threat.",
+      "faction": "Kobolds",
+      "hp": 24,
+      "damage": 7,
+      "damage_type": "Piercing",
+      "range": 1,
+      "time": 88,
+      "behavior": "melee",
+      "xp": 23,
+      "tier": 1,
+      "symbol": "s",
+      "techniques": [
+        "swordplay_thrust",
+        "swordplay_disengage"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Kobolds"
+      ],
+      "spawn_weight": 0.34
+    },
+    "orc_cleaver": {
+      "name": "Orc Cleaver",
+      "description": "A heavy area attacker that uses wide arcs when surrounded.",
+      "faction": "Orcs",
+      "hp": 48,
+      "damage": 12,
+      "damage_type": "Slashing",
+      "range": 1,
+      "time": 118,
+      "behavior": "melee",
+      "xp": 28,
+      "tier": 2,
+      "symbol": "c",
+      "techniques": [
+        "cleave",
+        "swordplay_sweeping_blow"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Orcs"
+      ],
+      "armor": 2,
+      "spawn_weight": 0.28
+    },
+    "orc_breaker": {
+      "name": "Orc Breaker",
+      "description": "A slow armored threat that leans on armor pressure, knockback, and collisions.",
+      "faction": "Orcs",
+      "hp": 62,
+      "damage": 14,
+      "damage_type": "Blunt",
+      "range": 1,
+      "time": 135,
+      "behavior": "melee",
+      "xp": 33,
+      "tier": 3,
+      "symbol": "B",
+      "techniques": [
+        "swordplay_overhead_strike",
+        "swordplay_driving_blow"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Orcs"
+      ],
+      "armor": 4,
+      "spawn_weight": 0.2
+    },
+    "orc_berserker": {
+      "name": "Orc Berserker",
+      "description": "An aggressive fighter that commits to a dangerous swing or rush when it can connect.",
+      "faction": "Orcs",
+      "hp": 42,
+      "damage": 15,
+      "damage_type": "Slashing",
+      "range": 1,
+      "time": 82,
+      "behavior": "melee",
+      "xp": 33,
+      "tier": 3,
+      "symbol": "r",
+      "techniques": [
+        "swordplay_reckless_swing",
+        "swordplay_blade_rush"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Orcs"
+      ],
+      "armor": 1,
+      "spawn_weight": 0.18
+    },
+    "goblin_bladeguard": {
+      "name": "Goblin Bladeguard",
+      "description": "An elite guard who parries a blow aimed at it and uses controlled displacement.",
+      "faction": "Goblinoids",
+      "hp": 44,
+      "damage": 10,
+      "damage_type": "Slashing",
+      "range": 1,
+      "time": 100,
+      "behavior": "melee",
+      "xp": 28,
+      "tier": 2,
+      "symbol": "G",
+      "techniques": [
+        "swordplay_parry",
+        "swordplay_driving_blow",
+        "swordplay_reposition"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Goblinoids"
+      ],
+      "armor": 2,
+      "spawn_weight": 0.2
+    },
+    "sword_lord_goblin_horde": {
+      "name": "Sword Lord of the Goblin Horde",
+      "description": "A rare master who changes tactics with distance, pressure, and the hero's condition.",
+      "faction": "Goblinoids",
+      "hp": 285,
+      "damage": 23,
+      "damage_type": "Slashing",
+      "range": 1,
+      "time": 100,
+      "behavior": "boss",
+      "xp": 38,
+      "tier": 4,
+      "symbol": "L",
+      "techniques": [
+        "lunge",
+        "swordplay_blade_rush",
+        "swordplay_perfect_parry",
+        "swordplay_impale",
+        "cleave",
+        "swordplay_reposition",
+        "swordplay_execute"
+      ],
+      "tags": [
+        "martial",
+        "sword"
+      ],
+      "eligible_factions": [
+        "Goblinoids"
+      ],
+      "armor": 3,
+      "sight": 12,
+      "spawn_weight": 0.1
+    }
+  },
+  "stages": {
+    "swordplay_goblin_court": {
+      "name": "Goblin Blade Court",
+      "subtitle": "Training scars cross the stone floor.",
+      "factions": [
+        "Goblinoids",
+        "Kobolds"
+      ],
+      "enemies": [
+        "goblin_swordsman",
+        "goblin_fencer",
+        "kobold_skirmisher",
+        "goblin_bladeguard"
+      ],
+      "objectives": [
+        "Eliminate",
+        "Reach Exit"
+      ],
+      "enemy_count_curve": [
+        2,
+        3,
+        4,
+        5,
+        5
+      ],
+      "exploration_loot": {
+        "min_count": 1,
+        "max_count": 2,
+        "types": [
+          "chest",
+          "skill_book",
+          "item"
+        ]
+      },
+      "terrain": {
+        "wall": 0.08,
+        "water": 0.01,
+        "blood": 0.03
+      }
+    },
+    "swordplay_kobold_duel_yard": {
+      "name": "Kobold Duel Yard",
+      "subtitle": "Narrow lanes reward patience and timing.",
+      "factions": [
+        "Goblinoids",
+        "Kobolds"
+      ],
+      "enemies": [
+        "kobold_duelist",
+        "kobold_skirmisher",
+        "goblin_fencer",
+        "goblin_blade_dancer"
+      ],
+      "objectives": [
+        "Eliminate",
+        "Reach Exit"
+      ],
+      "enemy_count_curve": [
+        2,
+        3,
+        4,
+        5,
+        5
+      ],
+      "exploration_loot": {
+        "min_count": 1,
+        "max_count": 2,
+        "types": [
+          "chest",
+          "item"
+        ]
+      },
+      "terrain": {
+        "wall": 0.12,
+        "water": 0.01,
+        "vegetation": 0.03
+      }
+    },
+    "swordplay_orc_foundry": {
+      "name": "Orc Sword Foundry",
+      "subtitle": "Heavy blades ring against the forge stone.",
+      "factions": [
+        "Orcs",
+        "Goblinoids"
+      ],
+      "enemies": [
+        "orc_cleaver",
+        "orc_breaker",
+        "orc_berserker",
+        "goblin_swordsman"
+      ],
+      "objectives": [
+        "Eliminate",
+        "Destroy Targets"
+      ],
+      "enemy_count_curve": [
+        2,
+        3,
+        4,
+        4,
+        5
+      ],
+      "exploration_loot": {
+        "min_count": 1,
+        "max_count": 2,
+        "types": [
+          "chest",
+          "item"
+        ]
+      },
+      "terrain": {
+        "wall": 0.1,
+        "fire": 0.025,
+        "blood": 0.03
+      }
+    }
+  },
+  "maps": {
+    "swordplay_blade_warrens": {
+      "name": "Blade Warrens",
+      "subtitle": "Goblins and their rivals train beyond the old warrens.",
+      "stage_templates": [
+        "swordplay_goblin_court",
+        "swordplay_kobold_duel_yard",
+        "swordplay_orc_foundry"
+      ],
+      "tags": [
+        "sword",
+        "martial",
+        "swordplay"
+      ],
+      "weight": 0.8,
+      "minimum_depth": 2,
+      "prerequisites": {
+        "conditions": [
+          {
+            "type": "package",
+            "id": "swordplay"
+          }
+        ]
+      }
+    }
+  },
+  "bosses": {
+    "sword_lord_of_the_goblin_horde": {
+      "name": "Sword Lord of the Goblin Horde",
+      "enemy_id": "sword_lord_goblin_horde",
+      "stage_only": 6,
+      "minimum_depth": 1,
+      "rare": true,
+      "weight": 0.16,
+      "depth_weight_growth": 0.2,
+      "themes": [],
+      "prerequisites": {
+        "conditions": [
+          {
+            "type": "package",
+            "id": "swordplay"
+          }
+        ]
+      },
+      "ai_mode": "tactical_abilities",
+      "unlock_character_id": "berserker",
+      "guaranteed_reward_id": "swordplay_sword_of_the_goblin_horde",
+      "description": "A rare, dangerous Goblin master. His movement, parries, lines and executions make him more than a wall of Health."
+    }
+  },
+  "relics": {
+    "swordplay_stride_medallion": {
+      "name": "Stride Medallion",
+      "description": "The first successful movement technique each turn restores 3 Stamina.",
+      "rarity": "Uncommon",
+      "drop_weight": 0.65,
+      "tags": [
+        "sword",
+        "martial",
+        "mobility"
+      ],
+      "modifiers": {
+        "stamina_after_movement_technique": 3
+      }
+    },
+    "swordplay_mirror_guard": {
+      "name": "Mirror Guard",
+      "description": "After a successful Parry, gain Guard against the next hit and restore 3 Stamina.",
+      "rarity": "Rare",
+      "drop_weight": 0.45,
+      "tags": [
+        "sword",
+        "martial",
+        "defense"
+      ],
+      "modifiers": {
+        "stamina_on_parry": 3,
+        "guard_after_parry": 1
+      }
+    },
+    "swordplay_masons_tooth": {
+      "name": "Mason's Tooth",
+      "description": "Forced-movement collisions deal 6 additional damage.",
+      "rarity": "Uncommon",
+      "drop_weight": 0.55,
+      "tags": [
+        "sword",
+        "martial",
+        "forced_movement"
+      ],
+      "modifiers": {
+        "collision_damage_bonus": 6
+      }
+    },
+    "swordplay_low_crescent": {
+      "name": "Low Crescent",
+      "description": "Execute and its evolutions can finish foes at 8% more Health.",
+      "rarity": "Rare",
+      "drop_weight": 0.42,
+      "tags": [
+        "sword",
+        "martial",
+        "heavy"
+      ],
+      "modifiers": {
+        "execute_threshold_bonus": 0.08
+      }
+    },
+    "swordplay_long_measure": {
+      "name": "Long Measure",
+      "description": "Thrust and Impale reach one tile farther when a clear line remains.",
+      "rarity": "Uncommon",
+      "drop_weight": 0.55,
+      "tags": [
+        "sword",
+        "martial",
+        "precision"
+      ],
+      "modifiers": {
+        "thrust_reach_bonus": 1
+      }
+    },
+    "swordplay_killing_rhythm": {
+      "name": "Killing Rhythm",
+      "description": "A technique that hits at least two enemies restores 4 Stamina for each enemy beyond the first.",
+      "rarity": "Rare",
+      "drop_weight": 0.4,
+      "tags": [
+        "sword",
+        "martial",
+        "area"
+      ],
+      "modifiers": {
+        "stamina_per_additional_technique_target": 4
+      }
+    },
+    "swordplay_martial_chart": {
+      "name": "Martial Chart",
+      "description": "Sword, Martial, and Precision rewards gain modestly more weight.",
+      "rarity": "Uncommon",
+      "drop_weight": 0.6,
+      "tags": [
+        "sword",
+        "martial",
+        "precision"
+      ],
+      "reward_weight_by_tag": {
+        "sword": 0.16,
+        "martial": 0.16,
+        "precision": 0.1
+      }
+    },
+    "swordplay_alternating_seal": {
+      "name": "Alternating Seal",
+      "description": "Alternating basic attacks and sword techniques grants a small damage bonus to the next action.",
+      "rarity": "Rare",
+      "drop_weight": 0.42,
+      "tags": [
+        "sword",
+        "martial",
+        "technique"
+      ],
+      "modifiers": {
+        "alternating_attack_damage_bonus": 3
+      }
+    },
+    "swordplay_opening_buckle": {
+      "name": "Opening Buckle",
+      "description": "The first sword technique after entering a stage costs 5 less Stamina.",
+      "rarity": "Rare",
+      "drop_weight": 0.4,
+      "tags": [
+        "sword",
+        "martial",
+        "technique"
+      ],
+      "modifiers": {
+        "first_technique_stage_discount": 5
+      }
+    }
+  },
+  "artifacts": {
+    "swordplay_arc_of_blades": {
+      "name": "Arc of Blades",
+      "description": "Your basic sword attacks also clip one additional adjacent hostile for reduced damage.",
+      "rarity": "Epic",
+      "drop_weight": 0.24,
+      "tags": [
+        "sword",
+        "martial",
+        "area"
+      ],
+      "modifiers": {
+        "adjacent_basic_targets": 1
+      }
+    },
+    "swordplay_perfect_timing": {
+      "name": "Perfect Timing",
+      "description": "Parry fully negates a melee hit and stuns its attacker, but all sword techniques cost 25% more Stamina.",
+      "rarity": "Epic",
+      "drop_weight": 0.2,
+      "tags": [
+        "sword",
+        "martial",
+        "defense"
+      ],
+      "modifiers": {
+        "parry_full_negate": 1,
+        "parry_stun": 1,
+        "sword_technique_cost_multiplier": 1.25
+      }
+    },
+    "swordplay_collision_engine": {
+      "name": "Collision Engine",
+      "description": "Forced movement travels one tile farther and collisions deal 12 additional damage.",
+      "rarity": "Epic",
+      "drop_weight": 0.18,
+      "tags": [
+        "sword",
+        "martial",
+        "forced_movement"
+      ],
+      "modifiers": {
+        "forced_movement_bonus": 1,
+        "collision_damage_bonus": 12
+      }
+    },
+    "swordplay_endless_form": {
+      "name": "Endless Form",
+      "description": "The first sword technique each encounter costs no Stamina. It can trigger only once until the next stage.",
+      "rarity": "Legendary",
+      "drop_weight": 0.1,
+      "tags": [
+        "sword",
+        "martial",
+        "technique"
+      ],
+      "modifiers": {
+        "first_technique_free_per_stage": 1
+      }
+    }
+  }
+}

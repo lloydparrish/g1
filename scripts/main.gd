@@ -18,6 +18,7 @@ var portrait_texture_cache: Dictionary = {}
 var page := "title"
 var overlay := ""
 var selected_character := "jim"
+var character_page := 0
 var reveal_character_id := ""
 var selected_enemy := ""
 
@@ -25,6 +26,9 @@ var selected_object_index := -1
 var selected_ability := ""
 var target_mode := ""
 var selected_book_abilities: Array = []
+var berserker_pair_actions: Array[Dictionary] = []
+var berserker_pair_targets: Array[Dictionary] = []
+var berserker_pair_page := 0
 var codex_book_id := ""
 var selected_ward := ""
 
@@ -150,12 +154,15 @@ func _ready() -> void:
 					if capture_fresh_profile:
 						sim.profile = {"version": 1, "unlocked_character_ids": sim.get_starting_character_ids(), "pending_character_reveals": [], "enabled_package_ids": []}
 						sim.save_profile()
+					var needs_swordplay_capture := capture_scenario.begins_with("swordplay_") or capture_scenario in ["title_reveal_duelist", "title_reveal_fencer", "title_reveal_berserker"]
+					if needs_swordplay_capture and not sim.profile.get("enabled_package_ids", []).has("swordplay"):
+						sim.set_package_enabled("swordplay", true)
 					if capture_scenario == "title_reveal":
 						sim.unlock_character("aldren")
 						reveal_character_id = "aldren"
 						overlay = "character_reveal"
 					elif capture_scenario.begins_with("title_reveal_"):
-						var reveal_ids := {"spellblade": "aldren", "bloodletter": "mara", "warrior": "brakka", "necromancer": "orin", "ranger": "sylvi"}
+						var reveal_ids := {"spellblade": "aldren", "bloodletter": "mara", "warrior": "brakka", "necromancer": "orin", "ranger": "sylvi", "duelist": "duelist", "fencer": "fencer", "berserker": "berserker"}
 						var requested_reveal := String(reveal_ids.get(capture_scenario.trim_prefix("title_reveal_"), ""))
 						if requested_reveal != "":
 							sim.unlock_character(requested_reveal)
@@ -167,9 +174,23 @@ func _ready() -> void:
 							if not capture_unlocks.has(capture_id): capture_unlocks.append(capture_id)
 						sim.profile["unlocked_character_ids"] = capture_unlocks
 						sim.save_profile()
+					elif capture_scenario in ["swordplay_characters_locked", "swordplay_characters_unlocked", "swordplay_berserker_locked", "swordplay_berserker_unlocked"]:
+						character_page = 1
+						if capture_scenario in ["swordplay_characters_unlocked", "swordplay_berserker_unlocked"]:
+							for capture_id in ["duelist", "fencer"]:
+								sim.unlock_character(capture_id)
+						if capture_scenario == "swordplay_berserker_unlocked": sim.unlock_character("berserker")
 				else:
 					page = "battle"
-					var capture_character := "aldren" if capture_scenario == "summon" else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
+					if capture_scenario.begins_with("swordplay_") and not sim.profile.get("enabled_package_ids", []).has("swordplay"):
+						sim.set_package_enabled("swordplay", true)
+					var capture_character := "berserker" if capture_scenario.begins_with("swordplay_") else "aldren" if capture_scenario == "summon" else "brakka" if capture_scenario in ["abilities_cleave", "passives", "known"] else "mara"
+					if capture_scenario.begins_with("swordplay_ability_"):
+						var selected_capture_ability := capture_scenario.trim_prefix("swordplay_ability_")
+						var selected_capture_definition: Dictionary = sim.content.get("abilities", {}).get(selected_capture_ability, {})
+						var selected_capture_categories: Array = selected_capture_definition.get("categories", [])
+						if selected_capture_categories.has("defense"): capture_character = "duelist"
+						elif selected_capture_categories.has("mobility"): capture_character = "fencer"
 					if not sim.is_character_unlocked(capture_character): sim.profile.unlocked_character_ids.append(capture_character)
 					sim.start_run(912041, capture_character)
 					sim.save_run()
@@ -486,11 +507,14 @@ func _draw_title() -> void:
 		var order_b := int(sim.content.characters[b].get("selection_order", 99))
 		return order_a < order_b if order_a != order_b else String(a) < String(b)
 	)
-	for character_index in range(characters.size()):
+	var character_page_count := maxi(1, int(ceil(float(characters.size()) / 9.0)))
+	character_page = clampi(character_page, 0, character_page_count - 1)
+	for local_index in range(mini(9, characters.size() - character_page * 9)):
+		var character_index := character_page * 9 + local_index
 		var character_id: String = characters[character_index]
 		var definition: Dictionary = sim.content.characters[character_id]
-		var col := character_index % 3
-		var row := int(character_index / 3)
+		var col := local_index % 3
+		var row := int(local_index / 3)
 		var rect := Rect2(70 + col * 437, 234 + row * 140, 414, 136)
 		var presentation := _character_card_presentation(character_id)
 		var unlocked := bool(presentation.get("unlocked", false))
@@ -522,6 +546,10 @@ func _draw_title() -> void:
 			var requirement_lines := _wrap_text_to_width(requirement, rect.size.x - 105, 9, 2)
 			for line_index in range(requirement_lines.size()):
 				_draw_label(String(requirement_lines[line_index]), rect.position.x + 91, rect.position.y + 92 + line_index * 12, 9, COLORS.muted)
+	if character_page_count > 1:
+		_draw_button(Rect2(1110, 207, 44, 26), "‹", {"type": "character_page", "delta": -1}, character_page > 0, 12)
+		_draw_label("PAGE %d / %d" % [character_page + 1, character_page_count], 1227, 225, 9, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
+		_draw_button(Rect2(1300, 207, 44, 26), "›", {"type": "character_page", "delta": 1}, character_page < character_page_count - 1, 12)
 	_draw_button(Rect2(481, 690, 310, 70), "BEGIN THE MARCH", {"type": "start"}, true, 18)
 	if sim.has_saved_run():
 		_draw_button(Rect2(805, 690, 235, 70), "RESUME RUN", {"type": "resume"}, false, 17)
@@ -592,8 +620,8 @@ func _draw_content_mods(_rect: Rect2) -> void:
 				var row := Rect2(x + 14, 205 + index * 72, column.size.x - 28, 62)
 				_draw_panel(row, "", COLORS.line_soft)
 				_draw_label(_fit_text(String(package.get("name", "Content")), row.size.x - 154, 13), row.position.x + 12, row.position.y + 23, 13, COLORS.text)
-				if not package.get("dependencies", []).is_empty():
-					_draw_label("Needs other installed content", row.position.x + 12, row.position.y + 43, 9, COLORS.muted)
+				var description := String(package.get("description", "Official base game content."))
+				_draw_label(_fit_text(description, row.size.x - 150, 9), row.position.x + 12, row.position.y + 43, 9, COLORS.muted)
 				var toggle_rect := Rect2(row.end.x - 119, row.position.y + 11, 105, 38)
 				if package.get("required", false):
 					draw_rect(toggle_rect, Color("#14221f"))
@@ -649,7 +677,8 @@ func _battle_layout() -> Dictionary:
 	var group_target_width := minf(screen_size.x * 0.68, 1280.0)
 	var end_turn_width := 126.0
 	var action_gap := 6.0
-	var ordinary_count := 11 + (1 if target_mode != "" and not playback_active else 0)
+	var has_berserker_power := not playback_active and String(sim.run.get("character_id", "")) == "berserker"
+	var ordinary_count := 11 + (1 if has_berserker_power else 0) + (1 if target_mode != "" and not playback_active else 0)
 	var slot_width := clampf((group_target_width - end_turn_width - float(ordinary_count) * action_gap) / float(ordinary_count), 64.0, 96.0)
 	var action_width := float(ordinary_count) * slot_width + end_turn_width + float(ordinary_count) * action_gap
 	var action_x := (screen_size.x - action_width) * 0.5
@@ -1189,6 +1218,10 @@ func _draw_action_bar() -> void:
 		x += slot_width + gap
 	_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("wait"), "WAIT", "100T", {"type": "wait"}, false, COLORS.muted)
 	x += slot_width + gap
+	if String(sim.run.get("character_id", "")) == "berserker":
+		var power_used := bool(sim.run.get("berserker_power_used", false))
+		_draw_action_icon_slot(Rect2(x, y, slot_width, h), "⚔", "USED" if power_used else "BLADE PAIR", "ONCE / MAP" if not power_used else "NEXT MAP", {"type": "begin_berserker_pair"}, false, COLORS.orange if not power_used else COLORS.line_soft)
+		x += slot_width + gap
 	if target_mode != "" and not playback_active:
 		_draw_action_icon_slot(Rect2(x, y, slot_width, h), _ui_glyph("cancel"), "CANCEL", "", {"type": "cancel_target"}, false, COLORS.orange)
 		x += slot_width + gap
@@ -1321,6 +1354,8 @@ func _draw_overlay() -> void:
 		_draw_spellbook_codex(rect)
 	elif overlay == "combat_history":
 		_draw_combat_history(rect)
+	elif overlay == "berserker_pair":
+		_draw_berserker_pair(rect)
 	elif overlay == "inspect":
 		_draw_inspect(rect)
 	elif overlay == "pause":
@@ -1528,6 +1563,52 @@ func _draw_action_palette(rect: Rect2) -> void:
 		_draw_button(Rect2(1128, 611, 164, TOUCH_TARGET), "REMOVE BAR" if palette_assigned else "ADD TO BAR", {"type": "remove_quickbar_assignment" if palette_assigned else "begin_quickbar_assignment", "kind": "ability", "id": selected_ability}, palette_assigned, 10, COLORS.gold)
 	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
 
+func _berserker_pair_options() -> Array[Dictionary]:
+	var options: Array[Dictionary] = [{"type": "attack", "id": "attack", "name": "Weapon Attack", "detail": "Basic weapon attack"}]
+	for ability_id in sim.get_available_abilities():
+		var ability: Dictionary = sim.content.abilities.get(String(ability_id), {})
+		if sim.is_berserker_offensive_action("cast", String(ability_id)):
+			options.append({"type": "cast", "id": String(ability_id), "name": String(ability.get("name", ability_id)), "detail": String(ability.get("description", ""))})
+	return options
+
+func _draw_berserker_pair(_rect: Rect2) -> void:
+	_draw_label("BERSERKER  ·  SIMULTANEOUS ACTION", 131, 103, 20, COLORS.text)
+	_draw_label("Choose two attacks before targeting. Both resolve in one turn; the second keeps its chosen foe or is skipped.", 132, 128, 11, COLORS.muted)
+	var chosen_names: Array[String] = []
+	for chosen in berserker_pair_actions:
+		chosen_names.append(String(chosen.get("name", "Attack")))
+	_draw_label("FIRST  ·  %s" % (chosen_names[0] if chosen_names.size() > 0 else "Choose an attack"), 132, 157, 10, COLORS.gold)
+	_draw_label("SECOND  ·  %s" % (chosen_names[1] if chosen_names.size() > 1 else "Choose another attack"), 472, 157, 10, COLORS.gold)
+	var options := _berserker_pair_options()
+	var page_count := maxi(1, int(ceil(float(options.size()) / 12.0)))
+	berserker_pair_page = clampi(berserker_pair_page, 0, page_count - 1)
+	_draw_panel(Rect2(124, 177, 1188, 492), "OFFENSIVE ACTIONS  ·  %d AVAILABLE" % options.size(), COLORS.line_soft)
+	for local_index in range(12):
+		var option_index := berserker_pair_page * 12 + local_index
+		if option_index >= options.size():
+			continue
+		var option: Dictionary = options[option_index]
+		var is_attack := String(option.type) == "attack"
+		var targeting_id := "attack" if is_attack else String(option.id)
+		var affordable := sim.is_berserker_action_available(String(option.type), String(option.id))
+		var duplicate_cooldown_action := not is_attack and berserker_pair_actions.any(func(selected: Dictionary) -> bool: return selected.get("type", "") == "cast" and selected.get("id", "") == option.id)
+		var card := Rect2(139 + (local_index % 4) * 290, 196 + int(local_index / 4) * 151, 278, 137)
+		var selected_color := COLORS.gold if berserker_pair_actions.any(func(selected: Dictionary) -> bool: return selected.get("id", "") == option.id and selected.get("type", "") == option.type) else COLORS.cyan if affordable and not duplicate_cooldown_action else COLORS.line_soft
+		_draw_panel(card, "", selected_color)
+		_draw_label(_fit_text(String(option.name), card.size.x - 20, 12), card.position.x + 12, card.position.y + 25, 12, COLORS.text)
+		var detail_lines := _wrap_text_to_width(String(option.detail), card.size.x - 22, 9, 3)
+		for line_index in range(detail_lines.size()):
+			_draw_label(String(detail_lines[line_index]), card.position.x + 12, card.position.y + 48 + line_index * 13, 9, COLORS.muted)
+		var cost_line := "Weapon cost %d STA" % int(sim._equipped_weapon_definition().get("stamina", 0)) if is_attack else "%s  ·  %dT  ·  CD %d" % [_cost_text(sim._ability_effective_costs(String(option.id), sim.content.abilities[String(option.id)])), int(sim.content.abilities[String(option.id)].get("time", 100)), int(sim.content.abilities[String(option.id)].get("cooldown", 0))]
+		_draw_label(_fit_text(cost_line, card.size.x - 22, 8), card.position.x + 12, card.end.y - 12, 8, COLORS.green if affordable else COLORS.red)
+		active_hits.append({"rect": _touch_hit_rect(card), "action": {"type": "pair_select_action", "index": option_index}})
+	_draw_button(Rect2(139, 632, 108, TOUCH_TARGET), "‹ PAGE", {"type": "berserker_pair_page", "delta": -1}, berserker_pair_page > 0, 10)
+	_draw_label("PAGE %d / %d" % [berserker_pair_page + 1, page_count], 348, 660, 10, COLORS.gold, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_button(Rect2(570, 632, 108, TOUCH_TARGET), "PAGE ›", {"type": "berserker_pair_page", "delta": 1}, berserker_pair_page < page_count - 1, 10)
+	_draw_button(Rect2(899, 632, 176, TOUCH_TARGET), "REMOVE LAST", {"type": "pair_remove_action"}, not berserker_pair_actions.is_empty(), 10)
+	_draw_button(Rect2(1084, 632, 205, TOUCH_TARGET), "CHOOSE TARGETS", {"type": "pair_choose_targets"}, berserker_pair_actions.size() == 2, 10, COLORS.orange)
+	_draw_button(Rect2(121, 710, 180, TOUCH_TARGET), "BACK TO BATTLE", {"type": "close"}, false, 12)
+
 func _draw_rewards(rect: Rect2) -> void:
 	var is_map_complete := int(sim.run.get("stage_index", 0)) == 5
 	_draw_label("MAP %s COMPLETE" % _format_count_for_ui(sim.run.get("map_depth", "1")) if is_map_complete else "STAGE %d / 6 COMPLETE" % (int(sim.run.get("stage_index", 0)) + 1), 131, 105, 23, COLORS.text)
@@ -1536,7 +1617,7 @@ func _draw_rewards(rect: Rect2) -> void:
 	_draw_panel(Rect2(127, 164, 1185, 411), "CHOOSE ONE REWARD", COLORS.line_soft)
 	for i in range(sim.run.reward_choices.size()):
 		var reward: Dictionary = sim.run.reward_choices[i]
-		var entry: Dictionary = sim.content.artifacts[reward.id] if reward.type == "artifact" else sim.content.items[reward.id]
+		var entry: Dictionary = sim.content.artifacts[reward.id] if reward.type == "artifact" else sim.content.relics[reward.id] if reward.type == "relic" else sim.content.items[reward.id]
 		var card := Rect2(153 + i * 376, 213, 350, 292)
 		var chosen := int(sim.run.get("reward_chosen_index", -1)) == i
 		var available := not resolved and bool(reward.get("available", true))
@@ -1544,14 +1625,14 @@ func _draw_rewards(rect: Rect2) -> void:
 		if resolved and not chosen:
 			draw_rect(card, Color(0.02, 0.03, 0.04, 0.35), true)
 		var rarity: String = String(entry.get("rarity", "FIELD GEAR"))
-		_draw_label(String(rarity).to_upper(), card.position.x + 19, card.position.y + 31, 10, COLORS.purple if reward.type == "artifact" or entry.get("type") == "spellbook" else COLORS.gold)
+		_draw_label(String(rarity).to_upper(), card.position.x + 19, card.position.y + 31, 10, COLORS.purple if reward.type == "artifact" or entry.get("type") == "spellbook" else COLORS.cyan if reward.type == "relic" else COLORS.gold)
 		_draw_label(String(entry.name), card.position.x + 19, card.position.y + 67, 19, COLORS.text)
 		var description := String(entry.get("description", "A useful object for the road ahead."))
 		var lines := _wrap(description, 34)
 		for line_index in range(mini(4, lines.size())):
 			_draw_label(lines[line_index], card.position.x + 19, card.position.y + 105 + line_index * 21, 13, COLORS.muted)
-		if reward.type == "artifact":
-			_draw_label("PERSISTENT RUN MODIFIER", card.position.x + 19, card.position.y + 206, 10, COLORS.cyan)
+		if reward.type in ["artifact", "relic"]:
+			_draw_label("RUN-CHANGING AUGMENT" if reward.type == "relic" else "PERSISTENT RUN MODIFIER", card.position.x + 19, card.position.y + 206, 10, COLORS.cyan)
 		elif entry.get("type") == "spellbook":
 			_draw_label("CONTENTS VISIBLE BEFORE STUDY", card.position.x + 19, card.position.y + 206, 10, COLORS.purple)
 		else:
@@ -1873,6 +1954,19 @@ func _draw_hover_tooltip() -> void:
 			if String(hit.action.get("type", "")) == "select_lower_ability" and String(hit.action.get("id", "")) == tooltip_ability_id:
 				hover_position = hit.rect.get_center()
 				break
+	if capture_requested and capture_scenario.begins_with("swordplay_ability_"):
+		var tooltip_ability_id := capture_scenario.trim_prefix("swordplay_ability_")
+		for hit in active_hits:
+			if String(hit.action.get("type", "")) == "select_lower_ability" and String(hit.action.get("id", "")) == tooltip_ability_id:
+				hover_position = hit.rect.get_center()
+				break
+	if capture_requested and capture_scenario == "swordplay_weapon":
+		for hit in active_hits:
+			if String(hit.action.get("type", "")) != "select_item": continue
+			var item_index := int(hit.action.get("index", -1))
+			if item_index >= 0 and item_index < sim.run.inventory.size() and String(sim.run.inventory[item_index]) == "goblinbane":
+				hover_position = hit.rect.get_center()
+				break
 	if _is_mobile_layout() or hover_position.x < 0.0:
 		return
 	var source: Dictionary = {}
@@ -1947,6 +2041,10 @@ func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
 		result.append(String(item.get("name", item_id)))
 		result.append(String(item.get("type", "item")).capitalize())
 		result.append(String(item.get("description", "")))
+		if not item.get("grants_abilities", []).is_empty():
+			var granted_names: Array[String] = []
+			for granted_id in item.get("grants_abilities", []): granted_names.append(String(sim.content.abilities.get(String(granted_id), {}).get("name", granted_id)))
+			result.append("Granted while equipped  ·  %s" % ", ".join(granted_names))
 		if item.get("type", "") == "equipment":
 			result.append("Slot  ·  %s" % String(item.get("slot", "")))
 			var stats: Dictionary = sim.get_equipment_item_stats(item_id)
@@ -1968,6 +2066,16 @@ func _tooltip_lines_for_action(action: Dictionary) -> Array[String]:
 		if artifact.is_empty(): return result
 		result.append(String(artifact.get("name", artifact_id)))
 		result.append(String(artifact.get("description", "Persistent run modifier")))
+	elif kind == "select_relic":
+		var relics: Array = sim.run.get("relics", [])
+		var index := int(action.get("index", -1))
+		if index < 0 or index >= relics.size(): return result
+		var relic_id := String(relics[index])
+		var relic: Dictionary = sim.content.relics.get(relic_id, {})
+		if relic.is_empty(): return result
+		result.append(String(relic.get("name", relic_id)))
+		result.append("Relic  ·  %s" % String(relic.get("rarity", "Uncommon")))
+		result.append(String(relic.get("description", "A run-changing combat augment.")))
 	elif kind == "select_equipment_slot":
 		var slot := String(action.get("slot", ""))
 		var item_id := String(sim.run.get("equipment", {}).get(slot, ""))
@@ -2354,6 +2462,10 @@ func _handle_action(action: Dictionary) -> void:
 	match String(action.get("type", "")):
 		"select_character":
 			selected_character = String(action.id)
+		"character_page":
+			var character_count: int = sim.content.get("characters", {}).size()
+			var character_page_count := maxi(1, int(ceil(float(character_count) / 9.0)))
+			character_page = clampi(character_page + int(action.get("delta", 0)), 0, character_page_count - 1)
 		"start":
 			if sim.has_saved_run():
 				overlay = "new_run_confirm"
@@ -2380,6 +2492,7 @@ func _handle_action(action: Dictionary) -> void:
 		"package_toggle":
 			var package_result: Dictionary = sim.set_package_enabled(String(action.get("id", "")), bool(action.get("enabled", false)))
 			if package_result.get("ok", false):
+				character_page = 0
 				if not sim.is_character_unlocked(selected_character):
 					selected_character = sim.get_starting_character_ids()[0]
 				queue_redraw()
@@ -2463,10 +2576,13 @@ func _handle_action(action: Dictionary) -> void:
 			var page_count := maxi(1, int(ceil(float(total_abilities) / 6.0)))
 			ui_state.ability_page = posmod(int(ui_state.ability_page) + int(action.get("delta", 0)), page_count)
 		"inventory_page":
-			var page_count := maxi(1, int(ceil(float(sim.run.get("artifacts", []).size()) / 18.0)))
+			var collection: Array = sim.run.get("relics", []) if ui_state.inventory_tab == "Relics" else sim.run.get("artifacts", [])
+			var page_count := maxi(1, int(ceil(float(collection.size()) / 18.0)))
 			ui_state.inventory_page = posmod(int(ui_state.inventory_page) + int(action.get("delta", 0)), page_count)
 		"select_artifact":
 			ui_state.selected_artifact_index = int(action.get("index", -1))
+		"select_relic":
+			ui_state.selected_relic_index = int(action.get("index", -1))
 		"clear_inspection":
 			selected_enemy = ""
 			selected_object_index = -1
@@ -2488,6 +2604,41 @@ func _handle_action(action: Dictionary) -> void:
 			overlay = "pause"
 		"cancel_target":
 			_cancel_targeting()
+		"begin_berserker_pair":
+			if String(sim.run.get("character_id", "")) != "berserker":
+				_show_notice("Only the Berserker can use this attack.")
+			elif bool(sim.run.get("berserker_power_used", false)):
+				_show_notice("The paired attack returns with the next map.")
+			else:
+				berserker_pair_actions.clear()
+				berserker_pair_targets.clear()
+				berserker_pair_page = 0
+				overlay = "berserker_pair"
+		"pair_select_action":
+			var options := _berserker_pair_options()
+			var option_index := int(action.get("index", -1))
+			if option_index >= 0 and option_index < options.size() and berserker_pair_actions.size() < 2:
+				var option: Dictionary = options[option_index]
+				var pair_action_type := String(option.type)
+				var action_id := String(option.id)
+				if not sim.is_berserker_action_available(pair_action_type, action_id):
+					_show_notice("That attack is not ready or affordable.")
+				elif pair_action_type == "cast" and berserker_pair_actions.any(func(selected: Dictionary) -> bool: return selected.get("type", "") == "cast" and selected.get("id", "") == action_id):
+					_show_notice("Choose a technique only once in a paired attack.")
+				else:
+					berserker_pair_actions.append({"type": pair_action_type, "id": action_id, "name": String(option.name)})
+		"berserker_pair_page":
+			var pair_pages := maxi(1, int(ceil(float(_berserker_pair_options().size()) / 12.0)))
+			berserker_pair_page = clampi(berserker_pair_page + int(action.get("delta", 0)), 0, pair_pages - 1)
+		"pair_remove_action":
+			if not berserker_pair_actions.is_empty():
+				berserker_pair_actions.pop_back()
+		"pair_choose_targets":
+			if berserker_pair_actions.size() == 2:
+				berserker_pair_targets.clear()
+				overlay = ""
+				_set_target_mode("pair_target_1")
+				_show_notice("Choose the first attack's foe. Then choose the second foe.")
 		"target_mode":
 			_set_target_mode(String(action.mode))
 		"ability":
@@ -2782,6 +2933,24 @@ func _battlefield_tap(cell: Vector2i) -> void:
 	if playback_active: return
 	if not sim._inside(cell):
 		return
+	if target_mode in ["pair_target_1", "pair_target_2"]:
+		var target_entity: Dictionary = sim.get_enemy_at(cell)
+		if target_entity.is_empty() or not _cell_is_legal_target(cell):
+			_show_notice("Choose a visible foe within this attack's reach.")
+			return
+		var action_index := 0 if target_mode == "pair_target_1" else 1
+		var chosen_action: Dictionary = berserker_pair_actions[action_index]
+		berserker_pair_targets.append({"type": chosen_action.type, "id": chosen_action.id, "target_id": String(target_entity.id), "target": [cell.x, cell.y]})
+		if action_index == 0:
+			_set_target_mode("pair_target_2")
+			_show_notice("First foe selected. Choose the second attack's foe.")
+		else:
+			var command_actions: Array = berserker_pair_targets.duplicate(true)
+			berserker_pair_targets.clear()
+			var result: Dictionary = sim.act({"type": "berserker_pair", "actions": command_actions})
+			_set_target_mode("")
+			_commit_action(result)
+		return
 	if target_mode.begins_with("item:"):
 		var item_index := int(target_mode.trim_prefix("item:"))
 		_commit_action(sim.act({"type": "use_item", "index": item_index, "target": [cell.x, cell.y]}))
@@ -2982,6 +3151,11 @@ func _point_in_board(point: Vector2) -> bool:
 	return _board_rect().has_point(point)
 
 func _target_ability() -> Dictionary:
+	if target_mode in ["pair_target_1", "pair_target_2"] and not berserker_pair_actions.is_empty():
+		var pair_action_index := 0 if target_mode == "pair_target_1" else 1
+		if pair_action_index < berserker_pair_actions.size():
+			var pair_action: Dictionary = berserker_pair_actions[pair_action_index]
+			return sim.content.abilities.get(String(pair_action.get("id", "")), {}) if pair_action.get("type", "") == "cast" else {}
 	if target_mode.begins_with("item:"):
 		var item_index := int(target_mode.trim_prefix("item:"))
 		if item_index < 0 or item_index >= sim.run.get("inventory", []).size():
@@ -2998,14 +3172,27 @@ func _entity_is_legal_target(entity: Dictionary) -> bool:
 	var footprint := int(entity.get("footprint", 1))
 	for y in range(pos.y, pos.y + footprint):
 		for x in range(pos.x, pos.x + footprint):
-			if sim.is_valid_target_cell(target_mode, Vector2i(x, y)):
+			if sim.is_valid_target_cell(_targeting_action_id(), Vector2i(x, y)):
 				return true
 	return false
 
 func _cell_is_legal_target(cell: Vector2i) -> bool:
 	if target_mode == "move":
 		return sim._terrain_at(cell) != "wall" and not sim.get_movement_path(cell).is_empty()
-	return sim.is_valid_target_cell(target_mode, cell)
+	if target_mode in ["pair_target_1", "pair_target_2"] and _target_ability().get("target", "") == "self":
+		var ability: Dictionary = _target_ability()
+		var radius := int(ability.get("radius", 0))
+		for effect in ability.get("effects", []): radius = maxi(radius, int(effect.get("radius", 0)))
+		return not sim.get_enemy_at(cell).is_empty() and radius > 0 and sim._dist(sim._pos(sim.get_player()), cell) <= radius
+	return sim.is_valid_target_cell(_targeting_action_id(), cell)
+
+func _targeting_action_id() -> String:
+	if target_mode in ["pair_target_1", "pair_target_2"] and not berserker_pair_actions.is_empty():
+		var pair_action_index := 0 if target_mode == "pair_target_1" else 1
+		if pair_action_index < berserker_pair_actions.size():
+			var pair_action: Dictionary = berserker_pair_actions[pair_action_index]
+			return "attack" if pair_action.get("type", "") == "attack" else String(pair_action.get("id", ""))
+	return target_mode
 
 func _draw_targetable_cells(origin: Vector2, tile: float) -> void:
 	if target_mode == "":
@@ -3017,7 +3204,16 @@ func _draw_targetable_cells(origin: Vector2, tile: float) -> void:
 			draw_rect(move_rect, Color(0.33, 0.9, 0.53, 0.24), true)
 			draw_rect(move_rect, COLORS.green, false, 2.0)
 		return
-	var preview: Dictionary = sim.get_targeting_preview(target_mode)
+	if target_mode in ["pair_target_1", "pair_target_2"] and _target_ability().get("target", "") == "self":
+		for entity in sim.get_visible_entities():
+			if entity.get("id", "") == "player" or not sim._is_hostile("player", String(entity.get("id", ""))): continue
+			var cell := sim._pos(entity)
+			if _cell_is_legal_target(cell):
+				var area_rect := Rect2(origin + Vector2(cell.x * tile, cell.y * tile), Vector2(tile - 1, tile - 1))
+				draw_rect(area_rect, Color(0.92, 0.76, 0.28, 0.15), true)
+				draw_rect(area_rect, COLORS.gold, false, 2.0)
+		return
+	var preview: Dictionary = sim.get_targeting_preview(_targeting_action_id())
 	if not preview.get("available", false):
 		return
 	var valid: Dictionary = {}
@@ -3084,6 +3280,9 @@ func _cancel_targeting() -> void:
 
 func _target_action_name() -> String:
 	if target_mode == "": return ""
+	if target_mode in ["pair_target_1", "pair_target_2"] and not berserker_pair_actions.is_empty():
+		var action_index := 0 if target_mode == "pair_target_1" else 1
+		if action_index < berserker_pair_actions.size(): return String(berserker_pair_actions[action_index].get("name", "ATTACK"))
 	if target_mode == "move": return "MOVE"
 	if target_mode == "attack": return "WEAPON ATTACK"
 	if target_mode.begins_with("item:"):
@@ -3193,7 +3392,100 @@ func _content_display_name(content_id: String) -> String:
 	return content_id.capitalize()
 
 func _prepare_capture_scenario() -> void:
+	if capture_scenario.begins_with("swordplay_ability_"):
+		var swordplay_ability_id := capture_scenario.trim_prefix("swordplay_ability_")
+		var swordplay_ability: Dictionary = sim.content.get("abilities", {}).get(swordplay_ability_id, {})
+		if not swordplay_ability.is_empty():
+			if not sim.run.known.has(swordplay_ability_id): sim.run.known.append(swordplay_ability_id)
+			var swordplay_school := String(swordplay_ability.get("school", ""))
+			if swordplay_school != "" and not sim.run.disciplines.has(swordplay_school): sim.run.disciplines.append(swordplay_school)
+			for parent_id in sim._ability_parent_ids(swordplay_ability):
+				if not sim.run.known.has(parent_id): sim.run.known.append(parent_id)
+			ui_state.active_lower_panel = "character"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Abilities"
+			ui_state.selected_ability_category = String(swordplay_ability.get("categories", [""])[0])
+			ui_state.selected_ability_id = swordplay_ability_id
+			var capture_entries: Array[String] = []
+			for ability_id in sim.content.abilities:
+				var candidate: Dictionary = sim.content.abilities[ability_id]
+				if candidate.get("kind", "active") == "passive" or not candidate.get("categories", []).has(ui_state.selected_ability_category): continue
+				if sim.get_ability_progress(String(ability_id)).get("visible", false): capture_entries.append(String(ability_id))
+			capture_entries.sort_custom(func(a: String, b: String) -> bool: return String(sim.content.abilities[a].get("name", a)) < String(sim.content.abilities[b].get("name", b)))
+			ui_state.ability_page = int(floor(float(maxi(0, capture_entries.find(swordplay_ability_id))) / 6.0))
+			return
 	match capture_scenario:
+		"swordplay_combat", "swordplay_parry", "swordplay_late_map":
+			var depth := "14" if capture_scenario == "swordplay_late_map" else "6"
+			sim.run.map_depth = depth
+			sim.run.current_map = sim._generate_map(depth, "", "swordplay_blade_warrens")
+			sim.run.map_history = [sim.run.current_map.duplicate(true)]
+			sim.run.stage_index = 2 if capture_scenario != "swordplay_late_map" else 4
+			var stage_template := String(sim.run.current_map.stage_templates[sim.run.stage_index])
+			sim._new_stage(stage_template, false, true)
+			for entity_id in sim.run.entities.keys():
+				if entity_id != "player": sim.run.entities.erase(entity_id)
+			sim._set_grid(Vector2i(12, 8), "floor")
+			sim._set_grid(Vector2i(16, 8), "floor")
+			sim._set_grid(Vector2i(15, 5), "floor")
+			sim._set_grid(Vector2i(18, 11), "floor")
+			if capture_scenario == "swordplay_late_map":
+				sim._spawn_enemy("goblin_blade_dancer", Vector2i(16, 8), false)
+				sim._spawn_enemy("orc_breaker", Vector2i(18, 11), false)
+			else:
+				sim._spawn_enemy("goblin_swordsman", Vector2i(16, 8), false)
+				sim._spawn_enemy("kobold_duelist", Vector2i(15, 5), false)
+				sim._spawn_enemy("orc_cleaver", Vector2i(18, 11), false)
+			if capture_scenario == "swordplay_parry": sim.run.entities.player.statuses = {"Parrying": {"stacks": 1, "duration": 1}}
+			sim.run.visible = sim._bool_grid(true)
+			sim.run.explored = sim._bool_grid(true)
+			ui_state.active_lower_panel = "character" if capture_scenario == "swordplay_parry" else "world_map"
+			ui_state.lower_dock_expanded = true
+			ui_state.character_tab = "Character"
+		"swordplay_boss_encounter", "swordplay_boss_reward":
+			sim.run.map_depth = "12"
+			sim.run.current_map = sim._generate_map("12", "", "swordplay_blade_warrens")
+			sim.run.current_map.boss_id = "sword_lord_of_the_goblin_horde"
+			sim.run.map_history = [sim.run.current_map.duplicate(true)]
+			sim.run.stage_index = 5
+			sim._new_stage(String(sim.run.current_map.stage_templates[0]), true, true)
+			for entity_id in sim.run.entities.keys():
+				if entity_id != "player" and sim.run.entities[entity_id].get("kind", "") != "boss": sim.run.entities.erase(entity_id)
+			for entity_id in sim.run.entities:
+				if sim.run.entities[entity_id].get("kind", "") == "boss": sim.run.entities[entity_id].pos = [17, 8]
+			for x in range(10, 19): sim._set_grid(Vector2i(x, 8), "floor")
+			sim.run.visible = sim._bool_grid(true)
+			sim.run.explored = sim._bool_grid(true)
+			if capture_scenario == "swordplay_boss_reward":
+				sim.run.stage_completed = true
+				sim.run.stages_completed = "72"
+				sim.run.enemies_defeated = "384"
+				sim.run.xp = 18400
+				sim.run.reward_choices = [
+					{"type": "item", "id": "swordplay_sword_of_the_goblin_horde", "claimed": false},
+					{"type": "relic", "id": "swordplay_mirror_guard", "claimed": false},
+					{"type": "artifact", "id": "swordplay_perfect_timing", "claimed": false}
+				]
+		"swordplay_weapon":
+			sim.run.inventory.append("goblinbane")
+			sim.run.equipment.Weapon = "goblinbane"
+			ui_state.active_lower_panel = "inventory"
+			ui_state.lower_dock_expanded = true
+			ui_state.inventory_tab = "Equipment"
+			ui_state.selected_equipment_slot = "Weapon"
+			ui_state.selected_inventory_index = sim.run.inventory.size() - 1
+		"swordplay_relic":
+			sim.run.relics = ["swordplay_mirror_guard"]
+			ui_state.active_lower_panel = "inventory"
+			ui_state.lower_dock_expanded = true
+			ui_state.inventory_tab = "Relics"
+			ui_state.selected_relic_index = 0
+		"swordplay_artifact":
+			sim.run.artifacts = ["swordplay_perfect_timing"]
+			ui_state.active_lower_panel = "inventory"
+			ui_state.lower_dock_expanded = true
+			ui_state.inventory_tab = "Artifacts"
+			ui_state.selected_artifact_index = 0
 		"exploration_chest", "exploration_book", "exploration_star":
 			var player_cell: Vector2i = sim._pos(sim.get_player())
 			var chest_cell := player_cell + Vector2i(2, 0)
